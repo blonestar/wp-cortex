@@ -328,6 +328,10 @@
 		toggle.setAttribute( 'aria-label', cfg.title || __( 'Chat', 'wp-cortex' ) );
 		toggle.setAttribute( 'aria-expanded', 'false' );
 		toggle.appendChild( icon( 'chat' ) );
+		if ( cfg.label ) {
+			toggle.classList.add( 'has-label' );
+			toggle.appendChild( el( 'span', P + 'toggle-label', cfg.label ) );
+		}
 		toggle.addEventListener( 'click', function () {
 			if ( panel.classList.contains( 'is-open' ) ) {
 				closePanel();

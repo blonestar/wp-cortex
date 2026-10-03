@@ -32,6 +32,32 @@ final class Settings {
 	public const PUBLIC_CHAT_TITLE_MAX   = 60;
 	public const PUBLIC_CHAT_WELCOME_MAX = 500;
 
+	/**
+	 * Maximum length of the visitor chat launcher label, in characters.
+	 */
+	public const PUBLIC_CHAT_LABEL_MAX = 30;
+
+	/**
+	 * Visitor chat appearance choices: setting key => allowed values (the first is the default).
+	 */
+	public const PUBLIC_CHAT_CHOICES = array(
+		'public_chat_scheme'   => array( 'light', 'dark', 'auto' ),
+		'public_chat_position' => array( 'right', 'left' ),
+		'public_chat_font'     => array( 'system', 'theme' ),
+	);
+
+	/**
+	 * Visitor chat sizes in pixels: setting key => array( min, max ).
+	 */
+	public const PUBLIC_CHAT_SIZES = array(
+		'public_chat_radius'        => array( 0, 28 ),
+		'public_chat_width'         => array( 300, 600 ),
+		'public_chat_height'        => array( 400, 800 ),
+		'public_chat_launcher_size' => array( 40, 80 ),
+		'public_chat_offset'        => array( 0, 80 ),
+		'public_chat_font_size'     => array( 12, 18 ),
+	);
+
 	public const EMBEDDING_MODELS = array(
 		'text-embedding-3-small' => array( 512, 1024, 1536 ),
 		'text-embedding-3-large' => array( 256, 1024, 3072 ),
@@ -44,37 +70,48 @@ final class Settings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'post_types'               => array( 'post', 'page' ),
-			'admin_statuses'           => array( 'publish', 'future', 'draft', 'pending', 'private' ),
-			'auto_sync'                => true,
-			'index_yoast'              => true,
-			'index_acf'                => true,
-			'acf_public'               => false,
-			'meta_keys'                => array(),
-			'index_media'              => false,
-			'chunk_size'               => 1200,
-			'chunk_overlap'            => 150,
-			'batch_size'               => 10,
-			'embeddings_enabled'       => true,
-			'embedding_model'          => 'text-embedding-3-small',
-			'embedding_dimensions'     => 1536,
-			'chat_enabled'             => true,
-			'chat_provider'            => '',
-			'chat_model'               => '',
-			'chat_instructions'        => '',
-			'chat_reasoning'           => '',
-			'chat_frontend'            => false,
-			'public_chat_enabled'      => false,
-			'public_chat_title'        => '',
-			'public_chat_welcome'      => '',
-			'public_chat_instructions' => '',
-			'public_chat_rate_limit'   => 20,
-			'public_chat_log'          => true,
-			'public_chat_retention'    => 0,
-			'public_chat_navigation'   => true,
-			'public_chat_contact'      => true,
-			'public_chat_store_ip'     => true,
-			'public_chat_ip_header'    => '',
+			'post_types'                 => array( 'post', 'page' ),
+			'admin_statuses'             => array( 'publish', 'future', 'draft', 'pending', 'private' ),
+			'auto_sync'                  => true,
+			'index_yoast'                => true,
+			'index_acf'                  => true,
+			'acf_public'                 => false,
+			'meta_keys'                  => array(),
+			'index_media'                => false,
+			'chunk_size'                 => 1200,
+			'chunk_overlap'              => 150,
+			'batch_size'                 => 10,
+			'embeddings_enabled'         => true,
+			'embedding_model'            => 'text-embedding-3-small',
+			'embedding_dimensions'       => 1536,
+			'chat_enabled'               => true,
+			'chat_provider'              => '',
+			'chat_model'                 => '',
+			'chat_instructions'          => '',
+			'chat_reasoning'             => '',
+			'chat_frontend'              => false,
+			'public_chat_enabled'        => false,
+			'public_chat_title'          => '',
+			'public_chat_welcome'        => '',
+			'public_chat_instructions'   => '',
+			'public_chat_rate_limit'     => 20,
+			'public_chat_log'            => true,
+			'public_chat_retention'      => 0,
+			'public_chat_navigation'     => true,
+			'public_chat_contact'        => true,
+			'public_chat_store_ip'       => true,
+			'public_chat_ip_header'      => '',
+			'public_chat_accent'         => '#2271b1',
+			'public_chat_scheme'         => 'light',
+			'public_chat_position'       => 'right',
+			'public_chat_launcher_label' => '',
+			'public_chat_font'           => 'system',
+			'public_chat_radius'         => 14,
+			'public_chat_width'          => 380,
+			'public_chat_height'         => 560,
+			'public_chat_launcher_size'  => 56,
+			'public_chat_offset'         => 20,
+			'public_chat_font_size'      => 14,
 		);
 	}
 
@@ -172,7 +209,20 @@ final class Settings {
 
 		$chunk_size = self::clamp( $input['chunk_size'] ?? $defaults['chunk_size'], 300, 6000 );
 
-		return array(
+		$accent     = sanitize_hex_color( (string) ( $input['public_chat_accent'] ?? '' ) );
+		$appearance = array(
+			'public_chat_accent'         => $accent ? $accent : $defaults['public_chat_accent'],
+			'public_chat_launcher_label' => mb_substr( trim( sanitize_text_field( (string) ( $input['public_chat_launcher_label'] ?? '' ) ) ), 0, self::PUBLIC_CHAT_LABEL_MAX ),
+		);
+		foreach ( self::PUBLIC_CHAT_CHOICES as $key => $choices ) {
+			$value              = (string) ( $input[ $key ] ?? '' );
+			$appearance[ $key ] = in_array( $value, $choices, true ) ? $value : $choices[0];
+		}
+		foreach ( self::PUBLIC_CHAT_SIZES as $key => $range ) {
+			$appearance[ $key ] = self::clamp( $input[ $key ] ?? $defaults[ $key ], $range[0], $range[1] );
+		}
+
+		return $appearance + array(
 			'post_types'               => array_values( array_filter( $post_types, 'post_type_exists' ) ),
 			'admin_statuses'           => array_values( array_intersect( $statuses, self::ADMIN_STATUSES ) ),
 			'auto_sync'                => ! empty( $input['auto_sync'] ),

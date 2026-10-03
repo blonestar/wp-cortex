@@ -23,6 +23,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 - Chat "Custom instructions" setting: text added to the system prompt of every chat message (for example a preferred answer language or tone).
 - Chat reasoning level: a "Reasoning" selector next to the chat model sets how much the model thinks (OpenAI, Anthropic and OpenRouter; other providers through the `wp_cortex_chat_reasoning_levels` and `wp_cortex_chat_reasoning_options` filters).
 - Optional media library indexing (`index_media` setting, off by default): attachments are indexed with title, caption, alt text, description, file URL and `media` fields (MIME type, file name and size, dimensions, audio/video metadata). Media inherit the status and password protection of their parent post and are kept in sync automatically.
+- Visitor chat appearance (Settings > Visitor chat > Appearance): accent color (with automatic readable text color), light, dark or automatic color scheme, bottom right or bottom left position and distance from the edge, chat button size and optional label, window width and height, corner radius, system or theme font and font size. A live preview shows the changes before saving. New settings `public_chat_accent`, `public_chat_scheme`, `public_chat_position`, `public_chat_offset`, `public_chat_launcher_size`, `public_chat_launcher_label`, `public_chat_width`, `public_chat_height`, `public_chat_radius`, `public_chat_font` and `public_chat_font_size`.
 
 ### Changed
 
