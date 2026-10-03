@@ -253,3 +253,52 @@
 .wp-cortex-reasoning[hidden] {
 	display: none;
 }
+
+.wp-cortex-intro {
+	max-width: 900px;
+}
+
+.wp-cortex-skills-table {
+	max-width: 1100px;
+}
+
+.wp-cortex-skills-table .wp-cortex-col-source,
+.wp-cortex-skills-table .wp-cortex-col-uses,
+.wp-cortex-skills-table .wp-cortex-col-status {
+	width: 110px;
+}
+
+.wp-cortex-skills-table .wp-cortex-col-date {
+	width: 170px;
+}
+
+.wp-cortex-skill-name {
+	font-family: Consolas, Monaco, monospace;
+}
+
+.wp-cortex-skill-description {
+	margin: 4px 0;
+}
+
+.wp-cortex-skill-details summary {
+	cursor: pointer;
+	color: #2271b1;
+}
+
+.wp-cortex-skill-instructions {
+	white-space: pre-wrap;
+	background: #f6f7f7;
+	padding: 8px 10px;
+	margin: 6px 0;
+	max-height: 260px;
+	overflow: auto;
+}
+
+.wp-cortex-skill-inactive .wp-cortex-skill-name,
+.wp-cortex-skill-inactive .wp-cortex-skill-description {
+	color: #8c8f94;
+}
+
+.wp-cortex-skills-table .wp-cortex-delete {
+	color: #b32d2e;
+}

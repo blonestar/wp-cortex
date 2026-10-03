@@ -18,6 +18,7 @@ final class Menu {
 
 	public const SLUG_SETTINGS = 'wp-cortex';
 	public const SLUG_INDEXING = 'wp-cortex-indexing';
+	public const SLUG_SKILLS   = 'wp-cortex-skills';
 
 	/**
 	 * Hook suffix of the Settings screen.
@@ -32,6 +33,13 @@ final class Menu {
 	 * @var string
 	 */
 	private string $indexing_hook = '';
+
+	/**
+	 * Hook suffix of the Skills screen.
+	 *
+	 * @var string
+	 */
+	private string $skills_hook = '';
 
 	/**
 	 * Registers admin hooks.
@@ -75,6 +83,15 @@ final class Menu {
 			self::SLUG_INDEXING,
 			array( new IndexingPage(), 'render' )
 		);
+
+		$this->skills_hook = (string) add_submenu_page(
+			self::SLUG_SETTINGS,
+			__( 'Cortex Skills', 'wp-cortex' ),
+			__( 'Skills', 'wp-cortex' ),
+			'manage_options',
+			self::SLUG_SKILLS,
+			array( new SkillsPage(), 'render' )
+		);
 	}
 
 	/**
@@ -85,8 +102,9 @@ final class Menu {
 	public function enqueue( string $hook_suffix ): void {
 		$is_settings = '' !== $this->settings_hook && $hook_suffix === $this->settings_hook;
 		$is_indexing = '' !== $this->indexing_hook && $hook_suffix === $this->indexing_hook;
+		$is_skills   = '' !== $this->skills_hook && $hook_suffix === $this->skills_hook;
 
-		if ( ! $is_settings && ! $is_indexing ) {
+		if ( ! $is_settings && ! $is_indexing && ! $is_skills ) {
 			return;
 		}
 
@@ -110,6 +128,11 @@ final class Menu {
 				) . ';',
 				'before'
 			);
+		}
+
+		if ( $is_skills ) {
+			wp_enqueue_script( 'wp-cortex-skills', WP_CORTEX_URL . 'assets/js/skills.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/skills.js' ), true );
+			wp_set_script_translations( 'wp-cortex-skills', 'wp-cortex' );
 		}
 	}
 
