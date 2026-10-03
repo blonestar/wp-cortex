@@ -54,6 +54,8 @@
 		var filterInput = document.getElementById( 'wp-cortex-model-filter' );
 		var refresh = document.getElementById( 'wp-cortex-model-refresh' );
 		var status = document.getElementById( 'wp-cortex-model-status' );
+		var reasoning = document.getElementById( 'wp-cortex-reasoning' );
+		var reasoningSelect = document.getElementById( 'wp-cortex-chat-reasoning' );
 		var chosen = picker.getAttribute( 'data-saved' ) || '';
 		var models = [];
 		var requestId = 0;
@@ -117,6 +119,46 @@
 				select.insertBefore( option( chosen, chosen ), select.options[ 1 ] || null );
 				select.value = chosen;
 			}
+
+			syncReasoning();
+		}
+
+		// Shows the reasoning levels of the selected provider, only once a model is chosen.
+		function syncReasoning() {
+			var available = false;
+			var currentValid;
+
+			if ( ! reasoning || ! reasoningSelect ) {
+				return;
+			}
+
+			currentValid = reasoningSelect.value === '';
+
+			Array.prototype.forEach.call( reasoningSelect.options, function ( el ) {
+				var providers = el.getAttribute( 'data-providers' );
+				var allowed;
+
+				if ( providers === null ) {
+					return;
+				}
+
+				allowed = providers.split( ' ' ).indexOf( provider.value ) !== -1;
+				el.hidden = ! allowed;
+				el.disabled = ! allowed;
+				available = available || allowed;
+
+				if ( allowed && el.value === reasoningSelect.value ) {
+					currentValid = true;
+				}
+			} );
+
+			if ( ! currentValid ) {
+				reasoningSelect.value = '';
+			}
+
+			available = available && provider.value !== '' && chosen !== '';
+			reasoning.hidden = ! available;
+			reasoningSelect.disabled = ! available;
 		}
 
 		function setBusy( busy ) {
@@ -187,6 +229,7 @@
 		} );
 		select.addEventListener( 'change', function () {
 			chosen = select.value;
+			syncReasoning();
 		} );
 		refresh.addEventListener( 'click', function () {
 			load( true );
