@@ -69,6 +69,12 @@ final class Settings {
 			'public_chat_welcome'      => '',
 			'public_chat_instructions' => '',
 			'public_chat_rate_limit'   => 20,
+			'public_chat_log'          => true,
+			'public_chat_retention'    => 0,
+			'public_chat_navigation'   => true,
+			'public_chat_contact'      => true,
+			'public_chat_store_ip'     => true,
+			'public_chat_ip_header'    => '',
 		);
 	}
 
@@ -192,6 +198,12 @@ final class Settings {
 			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),
 			'public_chat_instructions' => mb_substr( $public_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
 			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
+			'public_chat_log'          => ! empty( $input['public_chat_log'] ),
+			'public_chat_retention'    => self::clamp( $input['public_chat_retention'] ?? $defaults['public_chat_retention'], 0, 3650 ),
+			'public_chat_navigation'   => ! empty( $input['public_chat_navigation'] ),
+			'public_chat_contact'      => ! empty( $input['public_chat_contact'] ),
+			'public_chat_store_ip'     => ! empty( $input['public_chat_store_ip'] ),
+			'public_chat_ip_header'    => isset( Chat\ClientIp::HEADERS[ $input['public_chat_ip_header'] ?? '' ] ) ? (string) $input['public_chat_ip_header'] : '',
 		);
 	}
 

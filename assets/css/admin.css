@@ -302,3 +302,231 @@
 .wp-cortex-skills-table .wp-cortex-delete {
 	color: #b32d2e;
 }
+
+.wp-cortex-muted {
+	color: #646970;
+}
+
+.wp-cortex-vchats-table {
+	max-width: 1300px;
+}
+
+.wp-cortex-vchats-table .wp-cortex-col-contact {
+	width: 22%;
+}
+
+.wp-cortex-vchats-table .wp-cortex-col-uses,
+.wp-cortex-vchats-table .wp-cortex-col-status {
+	width: 90px;
+}
+
+.wp-cortex-vchats-table .wp-cortex-col-date {
+	width: 170px;
+}
+
+.wp-cortex-vchats-table .wp-cortex-block {
+	display: block;
+}
+
+.wp-cortex-vchat-unread .row-title {
+	font-weight: 700;
+}
+
+.wp-cortex-vchat-row-meta,
+.wp-cortex-vchat-row-note {
+	margin: 4px 0 0;
+	color: #646970;
+}
+
+.wp-cortex-vchat-row-note {
+	font-style: italic;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#wp-cortex-vchats-pages .pagination-links .button {
+	min-width: 30px;
+}
+
+.wp-cortex-vchat-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) 340px;
+	gap: 16px;
+	max-width: 1300px;
+	align-items: start;
+}
+
+.wp-cortex-vchat-layout .wp-cortex-card {
+	margin: 0 0 16px;
+	max-width: none;
+}
+
+.wp-cortex-vchat-meta {
+	margin: 0 0 12px;
+	color: #646970;
+}
+
+.wp-cortex-vchat-transcript {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 12px 0;
+}
+
+.wp-cortex-vchat-msg {
+	max-width: 80%;
+	padding: 8px 12px;
+	border-radius: 12px;
+	overflow-wrap: anywhere;
+}
+
+.wp-cortex-vchat-msg p {
+	margin: 0 0 6px;
+}
+
+.wp-cortex-vchat-msg p:last-child {
+	margin-bottom: 0;
+}
+
+.wp-cortex-vchat-msg-user {
+	align-self: flex-end;
+	background: #2271b1;
+	color: #fff;
+	white-space: pre-wrap;
+}
+
+.wp-cortex-vchat-msg-user a {
+	color: #fff;
+}
+
+.wp-cortex-vchat-msg-assistant {
+	align-self: flex-start;
+	background: #f0f0f1;
+}
+
+.wp-cortex-vchat-msg-error {
+	align-self: stretch;
+	max-width: 100%;
+	background: #fcf0f1;
+	color: #8a2424;
+}
+
+.wp-cortex-vchat-time,
+.wp-cortex-vchat-page {
+	display: block;
+	margin-top: 4px;
+	font-size: 11px;
+	opacity: 0.8;
+	white-space: normal;
+}
+
+.wp-cortex-vchat-sources,
+.wp-cortex-vchat-event {
+	align-self: flex-start;
+	font-size: 12px;
+	color: #646970;
+}
+
+.wp-cortex-vchat-event {
+	align-self: center;
+	padding: 2px 10px;
+	border: 1px solid #dcdcde;
+	border-radius: 10px;
+}
+
+.wp-cortex-vchat-contact {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 6px 12px;
+	margin: 0;
+}
+
+.wp-cortex-vchat-contact dt {
+	color: #646970;
+}
+
+.wp-cortex-vchat-contact dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.wp-cortex-button-delete.button {
+	color: #b32d2e;
+	border-color: #b32d2e;
+}
+
+@media (max-width: 960px) {
+	.wp-cortex-vchat-layout {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.wp-cortex-vchat-title {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 8px 0 4px;
+	font-size: 1.3em;
+}
+
+.wp-cortex-vchat-summary h2 {
+	justify-content: space-between;
+}
+
+.wp-cortex-vchat-summary-status {
+	margin: 0 0 8px;
+	color: #646970;
+}
+
+.wp-cortex-vchat-summary-status.is-stale {
+	padding: 6px 10px;
+	background: #fcf9e8;
+	border-left: 4px solid #dba617;
+	color: #614200;
+}
+
+.wp-cortex-vchat-summary-text p,
+.wp-cortex-vchat-summary-text ul,
+.wp-cortex-vchat-summary-text ol {
+	margin: 0 0 8px;
+}
+
+.wp-cortex-vchat-summary-text ul {
+	list-style: disc;
+	padding-left: 20px;
+}
+
+.wp-cortex-vchat-summary-text ol {
+	list-style: decimal;
+	padding-left: 20px;
+}
+
+.wp-cortex-vchat-pages {
+	margin: 6px 0 0;
+	color: #50575e;
+}
+
+#wp-cortex-vchat-pages {
+	border-top: 1px solid #f0f0f1;
+	margin-top: 8px;
+	padding-top: 4px;
+}
+
+#wp-cortex-vchat-pages:empty {
+	display: none;
+}
+
+.wp-cortex-vchat-forward-hint {
+	margin: 0 0 8px;
+	color: #646970;
+	font-size: 12px;
+}
+
+.wp-cortex-vchat-forward-hint.is-stale {
+	padding: 4px 8px;
+	background: #fcf9e8;
+	border-left: 4px solid #dba617;
+	color: #614200;
+}
