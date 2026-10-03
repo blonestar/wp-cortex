@@ -99,6 +99,7 @@ final class FrontendChat {
 		$welcome = (string) Settings::get( 'public_chat_welcome' );
 
 		wp_enqueue_style( 'wp-cortex-public-chat', WP_CORTEX_URL . 'assets/css/public-chat.css', array(), Plugin::asset_version( 'assets/css/public-chat.css' ) );
+		wp_add_inline_style( 'wp-cortex-public-chat', '#wp-cortex-public-chat-root{' . ChatAppearance::declarations() . '}' );
 		wp_enqueue_script( 'wp-cortex-markdown', WP_CORTEX_URL . 'assets/js/chat-markdown.js', array(), Plugin::asset_version( 'assets/js/chat-markdown.js' ), true );
 		wp_enqueue_script( 'wp-cortex-public-chat', WP_CORTEX_URL . 'assets/js/public-chat.js', array( 'wp-i18n', 'wp-cortex-markdown' ), Plugin::asset_version( 'assets/js/public-chat.js' ), true );
 		wp_set_script_translations( 'wp-cortex-public-chat', 'wp-cortex' );
@@ -112,6 +113,7 @@ final class FrontendChat {
 					'postId'    => $this->current_post_id(),
 					'title'     => '' !== $title ? $title : __( 'Ask a question', 'wp-cortex' ),
 					'welcome'   => '' !== $welcome ? $welcome : __( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
+					'label'     => (string) Settings::get( 'public_chat_launcher_label' ),
 					'maxLength' => PublicChatAgent::MAX_MESSAGE_LENGTH,
 				)
 			) . ';',
@@ -128,7 +130,7 @@ final class FrontendChat {
 		if ( self::MODE_ADMIN === $mode ) {
 			echo '<div id="wp-cortex-chat-root" class="wp-cortex-chat-frontend"></div>';
 		} elseif ( self::MODE_PUBLIC === $mode ) {
-			echo '<div id="wp-cortex-public-chat-root"></div>';
+			echo '<div id="wp-cortex-public-chat-root" class="' . esc_attr( implode( ' ', ChatAppearance::classes() ) ) . '"></div>';
 		}
 	}
 }
