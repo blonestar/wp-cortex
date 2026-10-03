@@ -165,7 +165,7 @@ final class ChatAgent {
 			$history = $outcome;
 		}
 
-		$transcript = array_merge( $transcript, $items );
+		$transcript = $this->merge_skill_proposals( $transcript, $items );
 		$stored     = null === $history ? $conversation['messages'] : array_map( static fn( Message $m ) => $m->toArray(), $this->trim_history( $history ) );
 
 		$this->store->save( $conversation_id, $user_id, $title, $stored, $transcript );
@@ -448,10 +448,12 @@ final class ChatAgent {
 		$existing = $this->skills->get_by_name( $clean['name'] );
 
 		$proposals[ $clean['name'] ] = array(
+			'proposal_id'  => wp_generate_uuid4(),
 			'name'         => $clean['name'],
 			'description'  => $clean['description'],
 			'instructions' => $clean['instructions'],
 			'existing_id'  => null !== $existing ? $existing['id'] : 0,
+			'status'       => 'pending',
 		);
 
 		return new FunctionResponse(
@@ -462,6 +464,60 @@ final class ChatAgent {
 				'note' => 'The proposal is shown to the user, who must confirm it. Tell the user briefly that they can save, edit or dismiss it below.',
 			)
 		);
+	}
+
+	/**
+	 * Replaces an earlier pending proposal for the same skill instead of adding
+	 * another actionable card to the conversation.
+	 *
+	 * @param array $transcript Existing transcript items.
+	 * @param array $items      New transcript items (by reference).
+	 * @return array Updated transcript items.
+	 */
+	private function merge_skill_proposals( array $transcript, array &$items ): array {
+		foreach ( $items as &$item ) {
+			if ( 'skill_proposal' !== ( $item['role'] ?? '' ) || ! is_array( $item['skill'] ?? null ) ) {
+				$transcript[] = $item;
+				continue;
+			}
+
+			$name       = strtolower( (string) ( $item['skill']['name'] ?? '' ) );
+			$replacement = -1;
+
+			for ( $index = count( $transcript ) - 1; $index >= 0; $index-- ) {
+				$old = $transcript[ $index ] ?? array();
+
+				if ( 'skill_proposal' !== ( $old['role'] ?? '' ) || ! is_array( $old['skill'] ?? null ) ) {
+					continue;
+				}
+
+				$old_status = array_key_exists( 'status', $old['skill'] ) ? (string) $old['skill']['status'] : '';
+				$old_name   = strtolower( (string) ( $old['skill']['name'] ?? '' ) );
+
+				if ( 'pending' === $old_status && '' !== $name && $name === $old_name ) {
+					$replacement = $index;
+					break;
+				}
+			}
+
+			if ( $replacement < 0 ) {
+				$transcript[] = $item;
+				continue;
+			}
+
+			$old_id = (string) ( $transcript[ $replacement ]['skill']['proposal_id'] ?? '' );
+
+			if ( '' !== $old_id ) {
+				$item['skill']['proposal_id'] = $old_id;
+			}
+
+			$item['skill']['status'] = 'pending';
+			array_splice( $transcript, $replacement, 1 );
+			$transcript[] = $item;
+		}
+		unset( $item );
+
+		return $transcript;
 	}
 
 	/**
@@ -904,6 +960,7 @@ final class ChatAgent {
 		);
 
 		$lines[] = 'After completing a task that took several tool calls (for example opening an admin screen and then a tab, or a multi-step search) that no saved skill covers, you may offer in one short sentence to save it as a skill. Call propose_skill only when the user asks you to remember or save a procedure, or accepts that offer.';
+		$lines[] = 'Do not propose a skill that already exists and covers the request unless the user explicitly asks to update it. If the user is refining a pending proposal, update that proposal instead of creating a duplicate.';
 
 		if ( $skills ) {
 			$list = array();

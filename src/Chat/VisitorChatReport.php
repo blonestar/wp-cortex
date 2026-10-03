@@ -39,6 +39,7 @@ final class VisitorChatReport {
 			'phone'      => __( 'Phone', 'wp-cortex' ),
 			'address'    => __( 'Address', 'wp-cortex' ),
 			'company'    => __( 'Company', 'wp-cortex' ),
+			'website'    => __( 'Website URL(s)', 'wp-cortex' ),
 			'request'    => __( 'Request', 'wp-cortex' ),
 		);
 		$contact = (array) $chat['contact'];

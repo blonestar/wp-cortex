@@ -27,12 +27,16 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Changed
 
+- Admin chat: the floating toggle and panel can be dragged together, with the position remembered for the current browser session only.
+- Visitor chat contact details: a confirmed first or last name can now be saved without requiring an email address or phone number, and visitors may optionally leave one or more website URLs.
 - Redesigned Cortex > Settings: settings are grouped into tabs (Content, Indexing, Admin chat, Visitor chat); a tab with several sections lists them as vertical tabs on the left (for example Visitor chat: General, Conversations & privacy, Assistant actions), with a sticky save bar. The active tab and section are kept in the URL (`&tab=`, `&section=`) and after saving. Settings is now the last item of the Cortex menu; the Cortex menu opens the Indexing screen.
 - Assets are versioned with the plugin version plus the file modification time, so changed JS/CSS reloads between releases.
 
 ### Fixed
 
 - Chat: "Conversation not found" when the conversation remembered in the browser session had been deleted; the panel now starts a new conversation instead.
+- Chat skills: saved or dismissed proposal cards now keep their resolved state across page navigation and conversation reloads; refining a pending proposal updates its existing card instead of adding a duplicate.
+- Visitor chat navigation no longer treats indexed media attachments, such as SVG logos, as pages that can be opened.
 
 ## [0.2.0] - 2026-10-03
 
