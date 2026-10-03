@@ -80,6 +80,16 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `public_chat_store_ip` | on | Store the visitor's IP address with the conversation (and in each visitor message). |
 | `public_chat_ip_header` | empty | Trusted proxy header for the visitor IP: `cf-connecting-ip`, `true-client-ip`, `x-real-ip` or `x-forwarded-for` (first address). Empty uses `REMOTE_ADDR`. Used for the message limit and the stored IP; pick one only when a proxy or CDN sets it, otherwise visitors could fake it. The settings screen shows the headers present on the current request. |
 | `public_chat_contact` | on | Let the visitor chat collect contact details (requires `public_chat_log`). |
+| `public_chat_accent` | `#2271b1` | Visitor chat accent color (button, header, visitor messages, links). The text on it is white or dark, whichever contrasts more. |
+| `public_chat_scheme` | light | Visitor chat color scheme: `light`, `dark` or `auto` (follows the visitor's `prefers-color-scheme`). |
+| `public_chat_position` | right | Corner of the visitor chat: `right` or `left` (bottom). |
+| `public_chat_offset` | 20 | Distance of the visitor chat from the screen edge, in px (0-80). |
+| `public_chat_launcher_size` | 56 | Size of the visitor chat button, in px (40-80). |
+| `public_chat_launcher_label` | empty | Optional text next to the chat button icon (up to 30 characters); turns the button into a pill. |
+| `public_chat_width` / `public_chat_height` | 380 / 560 | Visitor chat window size in px (300-600 / 400-800), capped to the screen; full width on phones. |
+| `public_chat_radius` | 14 | Corner radius of the visitor chat window and messages, in px (0-28); inputs and buttons use 70% of it. |
+| `public_chat_font` | system | Visitor chat font: `system` (system font stack) or `theme` (inherits the theme font). |
+| `public_chat_font_size` | 14 | Visitor chat base font size, in px (12-18). |
 | `chat_reasoning` | model default | Reasoning (thinking) effort, chosen next to the model and only applied when a model is selected. Levels depend on the provider: OpenAI `none`–`xhigh` (sent as `reasoning.effort`), Anthropic `low`–`max` (`output_config.effort`; the thinking mode stays at the model default), OpenRouter `none`–`xhigh` (`reasoning.effort`). Other providers show no selector unless added through the reasoning filters. A level the model does not support makes the request fail. |
 
 ### Data directory
@@ -209,6 +219,7 @@ src/
   Cli/Command.php          WP-CLI commands
   Admin/                   Menu, Settings page, Indexing page, Skills page, Visitor chats page, Chat panel
   Frontend/FrontendChat.php  Admin or visitor chat on the front end
+  Frontend/ChatAppearance.php  Visitor chat appearance settings as CSS custom properties and classes
 assets/                  JS (no build step) and CSS for the admin, the chat panels and the visitor chat
 ```
 

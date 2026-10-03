@@ -138,6 +138,8 @@ final class Menu {
 		wp_enqueue_style( 'wp-cortex-admin', WP_CORTEX_URL . 'assets/css/admin.css', array(), Plugin::asset_version( 'assets/css/admin.css' ) );
 
 		if ( $is_settings ) {
+			// Styles the visitor chat preview on the Appearance section.
+			wp_enqueue_style( 'wp-cortex-public-chat', WP_CORTEX_URL . 'assets/css/public-chat.css', array(), Plugin::asset_version( 'assets/css/public-chat.css' ) );
 			wp_enqueue_script( 'wp-cortex-settings', WP_CORTEX_URL . 'assets/js/settings.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/settings.js' ), true );
 			wp_set_script_translations( 'wp-cortex-settings', 'wp-cortex' );
 		}

@@ -320,6 +320,63 @@
 	margin-top: 6px;
 }
 
+.wp-cortex-pixels {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin: 0 16px 4px 0;
+}
+
+.wp-cortex-field-control select + .wp-cortex-pixels {
+	margin-left: 12px;
+}
+
+/* Visitor chat preview: the front-end chat (public-chat.css) laid out in place. */
+.wp-cortex-pchat-preview {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 12px;
+	padding: 20px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: repeating-linear-gradient(45deg, #f6f7f7, #f6f7f7 10px, #f0f0f1 10px, #f0f0f1 20px);
+	user-select: none;
+}
+
+.wp-cortex-pchat-preview.wp-cortex-pchat-left {
+	align-items: flex-start;
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-panel,
+.wp-cortex-pchat-preview .wp-cortex-pchat-toggle {
+	position: static;
+	max-height: none;
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-panel {
+	max-width: 100%;
+	height: min(var(--wp-cortex-height), 520px);
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-toggle:not(.has-label) .wp-cortex-pchat-toggle-label {
+	display: none;
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-input {
+	display: block;
+	color: var(--wp-cortex-text-muted);
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-send {
+	display: inline-flex;
+	align-items: center;
+}
+
+.wp-cortex-pchat-preview .wp-cortex-pchat-title {
+	font-family: inherit;
+}
+
 @media (max-width: 782px) {
 	.wp-cortex-field {
 		grid-template-columns: 1fr;
