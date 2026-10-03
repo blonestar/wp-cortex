@@ -59,3 +59,18 @@
 	.wp-cortex-chat-panel { right: 0; left: 0; bottom: 0; width: 100%; max-width: 100%; height: 85vh; max-height: 100vh; border-radius: 8px 8px 0 0; }
 	.wp-cortex-chat-toggle { right: 12px; bottom: 12px; }
 }
+/* Front end: the admin panel outside wp-admin, where theme styles apply and admin styles do not. */
+.wp-cortex-chat-frontend .wp-cortex-chat-panel { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif; text-align: left; }
+.wp-cortex-chat-frontend button, .wp-cortex-chat-frontend select, .wp-cortex-chat-frontend textarea { font: inherit; letter-spacing: normal; text-transform: none; text-shadow: none; margin: 0; }
+.wp-cortex-chat-frontend .wp-cortex-chat-toggle, .wp-cortex-chat-frontend .wp-cortex-chat-iconbtn { min-height: 0; box-shadow: none; }
+.wp-cortex-chat-frontend .wp-cortex-chat-toggle { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.wp-cortex-chat-frontend .wp-cortex-chat-title { color: #1d2327; line-height: 1.3; padding: 0; }
+.wp-cortex-chat-frontend .wp-cortex-chat-select { padding: 0 6px; border: 1px solid #8c8f94; border-radius: 4px; background: #fff; color: #1d2327; }
+.wp-cortex-chat-frontend .wp-cortex-chat-input { padding: 6px 8px; border: 1px solid #8c8f94; border-radius: 4px; background: #fff; color: #1d2327; }
+.wp-cortex-chat-frontend .wp-cortex-chat-msg a { color: inherit; text-decoration: underline; }
+.wp-cortex-chat-frontend .button {
+	display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; border: 1px solid #2271b1; border-radius: 3px;
+	background: #f6f7f7; color: #2271b1; font-size: 13px; line-height: 1; text-decoration: none; cursor: pointer; box-shadow: none;
+}
+.wp-cortex-chat-frontend .button-primary { background: #2271b1; color: #fff; }
+.wp-cortex-chat-frontend .button:disabled { opacity: 0.6; cursor: default; }

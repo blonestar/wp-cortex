@@ -6,6 +6,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Visitor chat (`public_chat_enabled`, off by default): a floating chat on the front end that answers visitor questions only from the public index, links the pages it used and lists them as sources. Configurable title, welcome message, custom instructions and a per-visitor hourly message limit. Conversations are kept in the browser session, not on the server. New public endpoint `POST /wp-cortex/v1/public-chat/message`.
+- Admin chat on the front end (`chat_frontend`, off by default): administrators can use the admin chat (admin index) while browsing the site; it knows which post is being viewed.
+- Filters `wp_cortex_public_chat_system_instruction` and `wp_cortex_public_chat_client_ip`.
+
 - Chat `open_admin_page` tool: asking the assistant to go to an admin screen (for example "open the permalink settings" or "go to plugins") navigates there automatically. Only screens from the current user's admin menu can be opened.
 - Chat `select_tab` tool: asking the assistant to open a tab on the current screen (for example the "Common" tab of an ACF options page) clicks it. `open_admin_page` accepts an optional `tab`, opened after the screen loads. Only tabs can be clicked.
 - Chat "Custom instructions" setting: text added to the system prompt of every chat message (for example a preferred answer language or tone).

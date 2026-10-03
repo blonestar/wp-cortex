@@ -13,6 +13,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Loads the chat assistant panel on every admin screen.
+ *
+ * The same panel is shown on the front end by Frontend\FrontendChat.
  */
 final class ChatPanel {
 
@@ -52,10 +54,6 @@ final class ChatPanel {
 			return;
 		}
 
-		wp_enqueue_style( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/css/chat.css', array( 'dashicons' ), Plugin::asset_version( 'assets/css/chat.css' ) );
-		wp_enqueue_script( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/js/chat.js', array( 'wp-api-fetch', 'wp-i18n', 'wp-dom-ready' ), Plugin::asset_version( 'assets/js/chat.js' ), true );
-		wp_set_script_translations( 'wp-cortex-chat', 'wp-cortex' );
-
 		$screen  = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 		$post_id = 0;
 
@@ -69,19 +67,40 @@ final class ChatPanel {
 			}
 		}
 
-		wp_add_inline_script(
-			'wp-cortex-chat',
-			'window.wpCortexChat = ' . wp_json_encode(
-				array(
-					'userId'      => get_current_user_id(),
-					'screen'      => $screen ? (string) $screen->id : '',
-					'postId'      => $post_id,
-					'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
-					'adminPages'  => AdminPages::from_menu(),
-				)
-			) . ';',
-			'before'
+		self::enqueue_assets(
+			array(
+				'screen'     => $screen ? (string) $screen->id : '',
+				'postId'     => $post_id,
+				'adminPages' => AdminPages::from_menu(),
+			)
 		);
+	}
+
+	/**
+	 * Enqueues the chat script and styles with their configuration. Shared by the
+	 * admin screens and the front end.
+	 *
+	 * @param array<string, mixed> $config Panel configuration: screen, postId, adminPages, frontend.
+	 */
+	public static function enqueue_assets( array $config ): void {
+		wp_enqueue_style( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/css/chat.css', array( 'dashicons' ), Plugin::asset_version( 'assets/css/chat.css' ) );
+		wp_enqueue_script( 'wp-cortex-markdown', WP_CORTEX_URL . 'assets/js/chat-markdown.js', array(), Plugin::asset_version( 'assets/js/chat-markdown.js' ), true );
+		wp_enqueue_script( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/js/chat.js', array( 'wp-api-fetch', 'wp-i18n', 'wp-dom-ready', 'wp-cortex-markdown' ), Plugin::asset_version( 'assets/js/chat.js' ), true );
+		wp_set_script_translations( 'wp-cortex-chat', 'wp-cortex' );
+
+		$config = array_merge(
+			array(
+				'userId'      => get_current_user_id(),
+				'screen'      => '',
+				'postId'      => 0,
+				'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
+				'adminPages'  => array(),
+				'frontend'    => false,
+			),
+			$config
+		);
+
+		wp_add_inline_script( 'wp-cortex-chat', 'window.wpCortexChat = ' . wp_json_encode( $config ) . ';', 'before' );
 	}
 
 	/**
