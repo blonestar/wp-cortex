@@ -26,6 +26,12 @@ final class Settings {
 	 */
 	public const CHAT_INSTRUCTIONS_MAX = 4000;
 
+	/**
+	 * Maximum length of the visitor chat title and welcome message, in characters.
+	 */
+	public const PUBLIC_CHAT_TITLE_MAX   = 60;
+	public const PUBLIC_CHAT_WELCOME_MAX = 500;
+
 	public const EMBEDDING_MODELS = array(
 		'text-embedding-3-small' => array( 512, 1024, 1536 ),
 		'text-embedding-3-large' => array( 256, 1024, 3072 ),
@@ -38,25 +44,31 @@ final class Settings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'post_types'           => array( 'post', 'page' ),
-			'admin_statuses'       => array( 'publish', 'future', 'draft', 'pending', 'private' ),
-			'auto_sync'            => true,
-			'index_yoast'          => true,
-			'index_acf'            => true,
-			'acf_public'           => false,
-			'meta_keys'            => array(),
-			'index_media'          => false,
-			'chunk_size'           => 1200,
-			'chunk_overlap'        => 150,
-			'batch_size'           => 10,
-			'embeddings_enabled'   => true,
-			'embedding_model'      => 'text-embedding-3-small',
-			'embedding_dimensions' => 1536,
-			'chat_enabled'         => true,
-			'chat_provider'        => '',
-			'chat_model'           => '',
-			'chat_instructions'    => '',
-			'chat_reasoning'       => '',
+			'post_types'               => array( 'post', 'page' ),
+			'admin_statuses'           => array( 'publish', 'future', 'draft', 'pending', 'private' ),
+			'auto_sync'                => true,
+			'index_yoast'              => true,
+			'index_acf'                => true,
+			'acf_public'               => false,
+			'meta_keys'                => array(),
+			'index_media'              => false,
+			'chunk_size'               => 1200,
+			'chunk_overlap'            => 150,
+			'batch_size'               => 10,
+			'embeddings_enabled'       => true,
+			'embedding_model'          => 'text-embedding-3-small',
+			'embedding_dimensions'     => 1536,
+			'chat_enabled'             => true,
+			'chat_provider'            => '',
+			'chat_model'               => '',
+			'chat_instructions'        => '',
+			'chat_reasoning'           => '',
+			'chat_frontend'            => false,
+			'public_chat_enabled'      => false,
+			'public_chat_title'        => '',
+			'public_chat_welcome'      => '',
+			'public_chat_instructions' => '',
+			'public_chat_rate_limit'   => 20,
 		);
 	}
 
@@ -148,28 +160,38 @@ final class Settings {
 		$chat_instructions = trim( sanitize_textarea_field( (string) ( $input['chat_instructions'] ?? '' ) ) );
 		$chat_instructions = mb_substr( $chat_instructions, 0, self::CHAT_INSTRUCTIONS_MAX );
 
+		$public_instructions = trim( sanitize_textarea_field( (string) ( $input['public_chat_instructions'] ?? '' ) ) );
+		$public_welcome      = trim( sanitize_textarea_field( (string) ( $input['public_chat_welcome'] ?? '' ) ) );
+		$public_title        = trim( sanitize_text_field( (string) ( $input['public_chat_title'] ?? '' ) ) );
+
 		$chunk_size = self::clamp( $input['chunk_size'] ?? $defaults['chunk_size'], 300, 6000 );
 
 		return array(
-			'post_types'           => array_values( array_filter( $post_types, 'post_type_exists' ) ),
-			'admin_statuses'       => array_values( array_intersect( $statuses, self::ADMIN_STATUSES ) ),
-			'auto_sync'            => ! empty( $input['auto_sync'] ),
-			'index_yoast'          => ! empty( $input['index_yoast'] ),
-			'index_acf'            => ! empty( $input['index_acf'] ),
-			'acf_public'           => ! empty( $input['acf_public'] ),
-			'meta_keys'            => $meta_keys,
-			'index_media'          => ! empty( $input['index_media'] ),
-			'chunk_size'           => $chunk_size,
-			'chunk_overlap'        => self::clamp( $input['chunk_overlap'] ?? $defaults['chunk_overlap'], 0, (int) floor( $chunk_size / 2 ) ),
-			'batch_size'           => self::clamp( $input['batch_size'] ?? $defaults['batch_size'], 1, 100 ),
-			'embeddings_enabled'   => ! empty( $input['embeddings_enabled'] ),
-			'embedding_model'      => $model,
-			'embedding_dimensions' => $dimensions,
-			'chat_enabled'         => ! empty( $input['chat_enabled'] ),
-			'chat_provider'        => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
-			'chat_model'           => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
-			'chat_instructions'    => $chat_instructions,
-			'chat_reasoning'       => sanitize_key( (string) ( $input['chat_reasoning'] ?? '' ) ),
+			'post_types'               => array_values( array_filter( $post_types, 'post_type_exists' ) ),
+			'admin_statuses'           => array_values( array_intersect( $statuses, self::ADMIN_STATUSES ) ),
+			'auto_sync'                => ! empty( $input['auto_sync'] ),
+			'index_yoast'              => ! empty( $input['index_yoast'] ),
+			'index_acf'                => ! empty( $input['index_acf'] ),
+			'acf_public'               => ! empty( $input['acf_public'] ),
+			'meta_keys'                => $meta_keys,
+			'index_media'              => ! empty( $input['index_media'] ),
+			'chunk_size'               => $chunk_size,
+			'chunk_overlap'            => self::clamp( $input['chunk_overlap'] ?? $defaults['chunk_overlap'], 0, (int) floor( $chunk_size / 2 ) ),
+			'batch_size'               => self::clamp( $input['batch_size'] ?? $defaults['batch_size'], 1, 100 ),
+			'embeddings_enabled'       => ! empty( $input['embeddings_enabled'] ),
+			'embedding_model'          => $model,
+			'embedding_dimensions'     => $dimensions,
+			'chat_enabled'             => ! empty( $input['chat_enabled'] ),
+			'chat_provider'            => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
+			'chat_model'               => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
+			'chat_instructions'        => $chat_instructions,
+			'chat_reasoning'           => sanitize_key( (string) ( $input['chat_reasoning'] ?? '' ) ),
+			'chat_frontend'            => ! empty( $input['chat_frontend'] ),
+			'public_chat_enabled'      => ! empty( $input['public_chat_enabled'] ),
+			'public_chat_title'        => mb_substr( $public_title, 0, self::PUBLIC_CHAT_TITLE_MAX ),
+			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),
+			'public_chat_instructions' => mb_substr( $public_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
+			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
 		);
 	}
 
