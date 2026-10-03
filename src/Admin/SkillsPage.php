@@ -56,7 +56,7 @@ final class SkillsPage {
 					<label class="wp-cortex-field-label" for="wp-cortex-skill-instructions"><?php esc_html_e( 'Instructions', 'wp-cortex' ); ?></label>
 					<div class="wp-cortex-field-control">
 						<textarea class="large-text code" rows="8" id="wp-cortex-skill-instructions" name="instructions" maxlength="<?php echo esc_attr( (string) SkillStore::MAX_INSTRUCTIONS ); ?>" required></textarea>
-						<p class="description"><?php esc_html_e( 'Numbered steps naming the tools and their arguments, for example: 1. Call open_admin_page with page "admin.php?page=wp-cortex" and tab "Chat".', 'wp-cortex' ); ?></p>
+						<p class="description"><?php esc_html_e( 'Numbered steps naming the tools and their arguments, for example: 1. Call open_admin_page with page "admin.php?page=wp-cortex" and tab "Admin chat".', 'wp-cortex' ); ?></p>
 					</div>
 				</div>
 				<div class="wp-cortex-field">

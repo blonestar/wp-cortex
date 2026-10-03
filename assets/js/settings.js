@@ -244,6 +244,95 @@
 		load( false );
 	}
 
+	// Switches tabs without reloading; all panels share one form, so every value is saved.
+	function initTabs() {
+		var tabs = Array.prototype.slice.call( document.querySelectorAll( '.wp-cortex-tabs .nav-tab' ) );
+		var referer = document.querySelector( '.wp-cortex-settings-form input[name="_wp_http_referer"]' );
+
+		if ( ! tabs.length ) {
+			return;
+		}
+
+		function activate( tab, focus ) {
+			var id = tab.getAttribute( 'data-tab' );
+
+			tabs.forEach( function ( item ) {
+				var selected = item === tab;
+				var panel = document.getElementById( 'wp-cortex-panel-' + item.getAttribute( 'data-tab' ) );
+
+				item.classList.toggle( 'nav-tab-active', selected );
+				item.setAttribute( 'aria-selected', selected ? 'true' : 'false' );
+				item.setAttribute( 'tabindex', selected ? '0' : '-1' );
+				if ( panel ) {
+					panel.hidden = ! selected;
+				}
+			} );
+
+			if ( focus ) {
+				tab.focus();
+			}
+
+			// Keep the tab in the URL and return to it after saving.
+			if ( window.history && window.history.replaceState ) {
+				window.history.replaceState( null, '', tab.href );
+			}
+			if ( referer ) {
+				var url = new URL( referer.value, window.location.origin );
+				url.searchParams.set( 'tab', id );
+				url.searchParams.delete( 'settings-updated' );
+				referer.value = url.pathname + url.search;
+			}
+		}
+
+		tabs.forEach( function ( tab, index ) {
+			tab.setAttribute( 'tabindex', tab.classList.contains( 'nav-tab-active' ) ? '0' : '-1' );
+
+			tab.addEventListener( 'click', function ( event ) {
+				event.preventDefault();
+				activate( tab, false );
+			} );
+
+			tab.addEventListener( 'keydown', function ( event ) {
+				var next = null;
+
+				if ( event.key === 'ArrowRight' ) {
+					next = tabs[ ( index + 1 ) % tabs.length ];
+				} else if ( event.key === 'ArrowLeft' ) {
+					next = tabs[ ( index - 1 + tabs.length ) % tabs.length ];
+				} else if ( event.key === 'Home' ) {
+					next = tabs[ 0 ];
+				} else if ( event.key === 'End' ) {
+					next = tabs[ tabs.length - 1 ];
+				}
+
+				if ( next ) {
+					event.preventDefault();
+					activate( next, true );
+				}
+			} );
+		} );
+
+		// A field the browser rejects on submit may sit on a hidden tab: show that tab first.
+		document.querySelectorAll( '.wp-cortex-settings-form input, .wp-cortex-settings-form select, .wp-cortex-settings-form textarea' ).forEach( function ( field ) {
+			field.addEventListener( 'invalid', function () {
+				var panel = field.closest( '.wp-cortex-tab-panel' );
+				var tab = panel && document.getElementById( panel.getAttribute( 'aria-labelledby' ) );
+
+				if ( tab && panel.hidden ) {
+					activate( tab, false );
+				}
+			} );
+		} );
+
+		var current = tabs.filter( function ( tab ) {
+			return tab.classList.contains( 'nav-tab-active' );
+		} )[ 0 ];
+		if ( current && referer ) {
+			activate( current, false );
+		}
+	}
+
+	initTabs();
 	initEmbeddings();
 	initModelPicker();
 }() );
