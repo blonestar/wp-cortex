@@ -15,6 +15,7 @@ use WordPress\AiClient\Providers\Http\DTO\RequestOptions;
 use WordPress\AiClient\Tools\DTO\FunctionCall;
 use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
 use WordPress\AiClient\Tools\DTO\FunctionResponse;
+use WPCortex\Admin\AdminPages;
 use WPCortex\Settings;
 use WP_AI_Client_Ability_Function_Resolver;
 use WP_Error;
@@ -32,6 +33,9 @@ final class ChatAgent {
 	private const MAX_RESULT_ITEMS   = 12;
 	private const REQUEST_TIMEOUT    = 90.0;
 	private const OPEN_POST_FUNCTION = 'open_post';
+	private const OPEN_PAGE_FUNCTION = 'open_admin_page';
+
+	private const SELECT_TAB_FUNCTION = 'select_tab';
 	private const ABILITIES          = array( 'wp-cortex/search-content', 'wp-cortex/find-duplicates', 'wp-cortex/get-document', 'wp-cortex/list-fields' );
 
 	/**
@@ -191,7 +195,9 @@ final class ChatAgent {
 
 		$resolver  = new WP_AI_Client_Ability_Function_Resolver( ...self::ABILITIES );
 		$system    = $this->system_instruction( $context );
-		$functions = $this->function_declarations();
+		$pages     = AdminPages::sanitize( $context['admin_pages'] ?? array() );
+		$tabs      = AdminPages::sanitize_tabs( $context['tabs'] ?? array() );
+		$functions = $this->function_declarations( $pages, $tabs );
 		$known_ids = $this->known_post_ids( $history, $context );
 		$seen      = array();
 
@@ -279,6 +285,10 @@ final class ChatAgent {
 			foreach ( $calls as $call ) {
 				if ( self::OPEN_POST_FUNCTION === $call->getName() ) {
 					$response = $this->handle_open_post( $call, $known_ids, $actions );
+				} elseif ( self::OPEN_PAGE_FUNCTION === $call->getName() && $pages ) {
+					$response = $this->handle_open_admin_page( $call, $pages, $actions );
+				} elseif ( self::SELECT_TAB_FUNCTION === $call->getName() && $tabs ) {
+					$response = $this->handle_select_tab( $call, $tabs, $actions );
 				} elseif ( $resolver->is_ability_call( $call ) ) {
 					$response  = $resolver->execute_ability( $call );
 					$known_ids = array_merge( $known_ids, $this->response_post_ids( $response ) );
@@ -323,14 +333,16 @@ final class ChatAgent {
 	}
 
 	/**
-	 * Function declarations for the model: the abilities plus open_post.
+	 * Function declarations for the model: the abilities, open_post, open_admin_page and select_tab.
 	 *
 	 * Mirrors WP_AI_Client_Prompt_Builder::using_abilities(), which cannot be
 	 * combined with custom declarations because both replace the list.
 	 *
+	 * @param array<int, array{path: string, label: string}> $pages Admin screens the user can open.
+	 * @param string[]                                       $tabs  Tab labels on the screen the user is viewing.
 	 * @return FunctionDeclaration[]
 	 */
-	private function function_declarations(): array {
+	private function function_declarations( array $pages, array $tabs ): array {
 		$declarations = array();
 
 		foreach ( self::ABILITIES as $name ) {
@@ -351,7 +363,149 @@ final class ChatAgent {
 
 		$declarations[] = $this->open_post_declaration();
 
+		if ( $pages ) {
+			$declarations[] = $this->open_admin_page_declaration( $pages );
+		}
+
+		if ( $tabs ) {
+			$declarations[] = $this->select_tab_declaration( $tabs );
+		}
+
 		return $declarations;
+	}
+
+	/**
+	 * Declaration of the open_admin_page function; the screens are listed in the description.
+	 *
+	 * @param array<int, array{path: string, label: string}> $pages Admin screens the user can open.
+	 */
+	private function open_admin_page_declaration( array $pages ): FunctionDeclaration {
+		$lines = array();
+
+		foreach ( $pages as $page ) {
+			$lines[] = '- ' . $page['path'] . ': ' . $page['label'];
+		}
+
+		return new FunctionDeclaration(
+			self::OPEN_PAGE_FUNCTION,
+			"Navigates the user to a WordPress admin screen (menu item), for example Settings › Permalinks or Plugins. Not for posts or pages of the site: use open_post for those. Call it only when the user explicitly asks to open or go to an admin screen. Available screens (page: menu label):\n" . implode( "\n", $lines ),
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'page' => array(
+						'type'        => 'string',
+						'description' => 'The page value of one of the available screens.',
+						'enum'        => wp_list_pluck( $pages, 'path' ),
+					),
+					'tab'  => array(
+						'type'        => 'string',
+						'description' => 'Optional. The name of a tab to open on that screen after it loads. Use it when the user names a tab; tabs of other screens are not listed.',
+					),
+				),
+				'required'   => array( 'page' ),
+			)
+		);
+	}
+
+	/**
+	 * Handles the open_admin_page function. Only screens from the user's admin menu
+	 * can be opened and the URL is built server-side.
+	 *
+	 * @param FunctionCall                                   $call    Function call.
+	 * @param array<int, array{path: string, label: string}> $pages   Admin screens the user can open.
+	 * @param array                                          $actions UI actions (by reference).
+	 */
+	private function handle_open_admin_page( FunctionCall $call, array $pages, array &$actions ): FunctionResponse {
+		$args  = (array) $call->getArgs();
+		$path  = (string) ( $args['page'] ?? '' );
+		$match = null;
+
+		foreach ( $pages as $page ) {
+			if ( $page['path'] === $path ) {
+				$match = $page;
+				break;
+			}
+		}
+
+		if ( null === $match ) {
+			return new FunctionResponse(
+				$call->getId(),
+				$call->getName(),
+				array(
+					'ok'    => false,
+					'error' => __( 'Unknown admin screen. Use one of the listed page values.', 'wp-cortex' ),
+				)
+			);
+		}
+
+		$action = array(
+			'type'  => 'navigate',
+			'url'   => admin_url( $match['path'] ),
+			'title' => $match['label'],
+		);
+
+		$tab = mb_substr( sanitize_text_field( (string) ( $args['tab'] ?? '' ) ), 0, AdminPages::MAX_TAB_LENGTH );
+
+		if ( '' !== $tab ) {
+			$action['tab'] = $tab;
+		}
+
+		$actions[] = $action;
+
+		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
+	}
+
+	/**
+	 * Declaration of the select_tab function; the tabs are the labels found on the current screen.
+	 *
+	 * @param string[] $tabs Tab labels on the screen the user is viewing.
+	 */
+	private function select_tab_declaration( array $tabs ): FunctionDeclaration {
+		return new FunctionDeclaration(
+			self::SELECT_TAB_FUNCTION,
+			'Switches to a tab on the admin screen the user is currently viewing (for example a tab of an options page). Call it only when the user explicitly asks to open or switch to a tab.',
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'tab' => array(
+						'type'        => 'string',
+						'description' => 'The label of a tab on the current screen.',
+						'enum'        => $tabs,
+					),
+				),
+				'required'   => array( 'tab' ),
+			)
+		);
+	}
+
+	/**
+	 * Handles the select_tab function. Only tabs reported for the current screen can be selected.
+	 *
+	 * @param FunctionCall $call    Function call.
+	 * @param string[]     $tabs    Tab labels on the screen the user is viewing.
+	 * @param array        $actions UI actions (by reference).
+	 */
+	private function handle_select_tab( FunctionCall $call, array $tabs, array &$actions ): FunctionResponse {
+		$args  = (array) $call->getArgs();
+		$label = (string) ( $args['tab'] ?? '' );
+
+		if ( ! in_array( $label, $tabs, true ) ) {
+			return new FunctionResponse(
+				$call->getId(),
+				$call->getName(),
+				array(
+					'ok'    => false,
+					'error' => __( 'Unknown tab. Use one of the listed tab values.', 'wp-cortex' ),
+				)
+			);
+		}
+
+		$actions[] = array(
+			'type'  => 'select_tab',
+			'label' => $label,
+		);
+
+		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
 	}
 
 	/**
@@ -650,6 +804,8 @@ final class ChatAgent {
 			'When you are unsure about field names for filters, call the list-fields tool first.',
 			'To find posts by an author, use the author filter of search-content, not a text query. For duplicate titles, meta descriptions or content, use find-duplicates.',
 			'Call open_post ONLY when the user explicitly asks to open, go to, edit or show a specific post (including references such as "this one" or "open the first" to earlier results). Otherwise just list the results.',
+			'When the user asks to go to an admin screen (settings, plugins, users, media library, a post type list and similar), call open_admin_page if it is available.',
+			'To switch to a tab on the screen the user is currently viewing, call select_tab if it is available. When the user names both an admin screen and a tab, call open_admin_page with its tab parameter. You cannot click anything other than tabs.',
 			'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.',
 		);
 
