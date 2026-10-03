@@ -281,12 +281,72 @@
 		list.appendChild( wrap );
 	}
 
+	function findSkillProposalCard( proposalId ) {
+		if ( ! proposalId ) {
+			return null;
+		}
+		var cards = list.querySelectorAll( '.' + P + 'skill' );
+		for ( var i = 0; i < cards.length; i++ ) {
+			if ( cards[ i ].getAttribute( 'data-proposal-id' ) === proposalId ) {
+				return cards[ i ];
+			}
+		}
+		return null;
+	}
+
+	function placeSkillProposalCard( card ) {
+		var existing = findSkillProposalCard( card.getAttribute( 'data-proposal-id' ) );
+		if ( existing && existing.parentNode ) {
+			existing.parentNode.removeChild( existing );
+		}
+		list.appendChild( card );
+	}
+
+	function resolveSkillProposal( proposalId, status, skillId ) {
+		if ( ! proposalId || ! state.conversationId ) {
+			return Promise.resolve();
+		}
+		return wp.apiFetch( {
+			path: '/wp-cortex/v1/chat/conversations/' + state.conversationId + '/skill-proposals/' + encodeURIComponent( proposalId ),
+			method: 'POST',
+			data: { status: status, skill_id: skillId || 0 }
+		} );
+	}
+
+	function addResolvedSkillProposal( skill ) {
+		var status = String( skill.status || '' );
+		var dismissed = 'dismissed' === status;
+		var card = el( 'div', P + 'card ' + P + 'skill ' + P + 'skill-resolved' );
+		var proposalId = String( skill.proposal_id || '' );
+		if ( proposalId ) {
+			card.setAttribute( 'data-proposal-id', proposalId );
+		}
+		card.appendChild( el( 'p', P + 'card-title', dismissed ? __( 'Skill proposal dismissed.', 'wp-cortex' ) : ( skill.legacy ? __( 'Skill already saved.', 'wp-cortex' ) : __( 'Skill saved.', 'wp-cortex' ) ) ) );
+
+		if ( cfg.skillsUrl && ! dismissed ) {
+			var link = el( 'a', '', __( 'Manage skills', 'wp-cortex' ) );
+			link.href = cfg.skillsUrl;
+			card.appendChild( link );
+		}
+
+		placeSkillProposalCard( card );
+	}
+
 	function addSkillProposal( skill ) {
 		if ( ! skill || ! skill.name ) {
 			return;
 		}
+		if ( 'saved' === skill.status || 'dismissed' === skill.status ) {
+			addResolvedSkillProposal( skill );
+			return;
+		}
+
 		var existingId = parseInt( skill.existing_id, 10 ) || 0;
+		var proposalId = String( skill.proposal_id || '' );
 		var card = el( 'form', P + 'card ' + P + 'skill' );
+		if ( proposalId ) {
+			card.setAttribute( 'data-proposal-id', proposalId );
+		}
 		card.appendChild( el( 'p', P + 'card-title', existingId ? __( 'Update this skill?', 'wp-cortex' ) : __( 'Save as a skill?', 'wp-cortex' ) ) );
 
 		function field( label, control ) {
@@ -307,7 +367,7 @@
 		steps.rows = 5;
 		steps.value = skill.instructions || '';
 
-		var status = el( 'p', P + 'skill-status' );
+		var statusEl = el( 'p', P + 'skill-status' );
 		var actions = el( 'div', P + 'card-actions' );
 		var save = el( 'button', 'button button-small button-primary', existingId ? __( 'Update skill', 'wp-cortex' ) : __( 'Save skill', 'wp-cortex' ) );
 		save.type = 'submit';
@@ -316,29 +376,37 @@
 		actions.appendChild( save );
 		actions.appendChild( dismiss );
 		card.appendChild( actions );
-		card.appendChild( status );
+		card.appendChild( statusEl );
 
 		function done( text ) {
 			[ name, desc, steps ].forEach( function ( c ) {
 				c.disabled = true;
 			} );
 			actions.hidden = true;
-			status.textContent = text;
+			statusEl.textContent = text;
 			if ( cfg.skillsUrl ) {
 				var link = el( 'a', '', __( 'Manage skills', 'wp-cortex' ) );
 				link.href = cfg.skillsUrl;
-				status.appendChild( document.createTextNode( ' ' ) );
-				status.appendChild( link );
+				statusEl.appendChild( document.createTextNode( ' ' ) );
+				statusEl.appendChild( link );
 			}
 		}
 
 		dismiss.addEventListener( 'click', function () {
-			done( __( 'Not saved.', 'wp-cortex' ) );
+			dismiss.disabled = true;
+			statusEl.textContent = '';
+			resolveSkillProposal( proposalId, 'dismissed', 0 ).then( function () {
+				skill.status = 'dismissed';
+				done( __( 'Not saved.', 'wp-cortex' ) );
+			} ).catch( function ( err ) {
+				dismiss.disabled = false;
+				statusEl.textContent = ( err && err.message ) || __( 'Could not remember this decision.', 'wp-cortex' );
+			} );
 		} );
 		card.addEventListener( 'submit', function ( e ) {
 			e.preventDefault();
 			save.disabled = true;
-			status.textContent = '';
+			statusEl.textContent = '';
 			var data = { name: name.value, description: desc.value, instructions: steps.value };
 			if ( ! existingId ) {
 				data.source = 'agent';
@@ -347,15 +415,25 @@
 				path: '/wp-cortex/v1/skills' + ( existingId ? '/' + existingId : '' ),
 				method: existingId ? 'PUT' : 'POST',
 				data: data
-			} ).then( function () {
-				done( __( 'Skill saved.', 'wp-cortex' ) );
+			} ).then( function ( savedSkill ) {
+				var savedId = parseInt( savedSkill && savedSkill.id, 10 ) || existingId;
+				return resolveSkillProposal( proposalId, 'saved', savedId ).then( function () {
+					skill.status = 'saved';
+					skill.skill_id = savedId;
+					done( __( 'Skill saved.', 'wp-cortex' ) );
+				} ).catch( function () {
+					// The skill is saved even if an old conversation cannot be updated.
+					skill.status = 'saved';
+					skill.skill_id = savedId;
+					done( __( 'Skill saved. This card will be finalized when the conversation is reloaded.', 'wp-cortex' ) );
+				} );
 			} ).catch( function ( err ) {
 				save.disabled = false;
-				status.textContent = ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' );
+				statusEl.textContent = ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' );
 			} );
 		} );
 
-		list.appendChild( card );
+		placeSkillProposalCard( card );
 	}
 
 	function renderItem( item ) {
