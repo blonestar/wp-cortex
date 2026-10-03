@@ -63,6 +63,7 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `chat_enabled` | on | Show the admin chat assistant. |
 | `chat_provider` | automatic | Registered AI provider ID (for example `openai`, `anthropic`), or empty to let the AI Client choose a configured one. |
 | `chat_model` | provider default | Model ID used with the selected provider (for example `gpt-5.4-mini` or `anthropic/claude-sonnet-4.5`). Chosen from a list loaded from the provider (cached 12 h in the `wp_cortex_models_<provider>` transient, "Refresh models" button reloads it); models without tool calling are listed but disabled. Ignored when the provider is automatic. An explicit model is used as is, without the AI Client's capability matching (some providers, such as OpenRouter, do not declare tool support in their metadata), so pick one that supports tool calling. With a provider but no model, the AI Client must find a tool-capable model in the provider metadata. |
+| `chat_instructions` | empty | Custom instructions (up to 4000 characters) appended to the chat system prompt on every message, for example a preferred answer language or tone. They take precedence over the default instructions (such as "answer in the language the user writes in"). |
 
 ### Data directory
 
