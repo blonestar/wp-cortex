@@ -64,12 +64,13 @@ final class Menu {
 	 * Adds the top-level menu and its submenus.
 	 */
 	public function add_menu(): void {
-		$this->settings_hook = (string) add_menu_page(
+		// Indexing is the landing screen; Settings is listed last.
+		$this->indexing_hook = (string) add_menu_page(
 			__( 'Cortex', 'wp-cortex' ),
 			__( 'Cortex', 'wp-cortex' ),
 			'manage_options',
-			self::SLUG_SETTINGS,
-			array( new SettingsPage(), 'render' ),
+			self::SLUG_INDEXING,
+			array( new IndexingPage(), 'render' ),
 			'dashicons-database',
 			81
 		);
@@ -77,24 +78,15 @@ final class Menu {
 		// Same slug as the parent: only renames the first submenu item. Passing a callback
 		// here would hook the render a second time and print the page twice.
 		add_submenu_page(
-			self::SLUG_SETTINGS,
-			__( 'Cortex Settings', 'wp-cortex' ),
-			__( 'Settings', 'wp-cortex' ),
-			'manage_options',
-			self::SLUG_SETTINGS
-		);
-
-		$this->indexing_hook = (string) add_submenu_page(
-			self::SLUG_SETTINGS,
+			self::SLUG_INDEXING,
 			__( 'Cortex Indexing', 'wp-cortex' ),
 			__( 'Indexing', 'wp-cortex' ),
 			'manage_options',
-			self::SLUG_INDEXING,
-			array( new IndexingPage(), 'render' )
+			self::SLUG_INDEXING
 		);
 
 		$this->skills_hook = (string) add_submenu_page(
-			self::SLUG_SETTINGS,
+			self::SLUG_INDEXING,
 			__( 'Cortex Skills', 'wp-cortex' ),
 			__( 'Skills', 'wp-cortex' ),
 			'manage_options',
@@ -110,12 +102,21 @@ final class Menu {
 		}
 
 		$this->visitors_hook = (string) add_submenu_page(
-			self::SLUG_SETTINGS,
+			self::SLUG_INDEXING,
 			__( 'Cortex Visitor Chats', 'wp-cortex' ),
 			$label,
 			'manage_options',
 			self::SLUG_VISITORS,
 			array( new VisitorChatsPage(), 'render' )
+		);
+
+		$this->settings_hook = (string) add_submenu_page(
+			self::SLUG_INDEXING,
+			__( 'Cortex Settings', 'wp-cortex' ),
+			__( 'Settings', 'wp-cortex' ),
+			'manage_options',
+			self::SLUG_SETTINGS,
+			array( new SettingsPage(), 'render' )
 		);
 	}
 
