@@ -74,3 +74,12 @@
 }
 .wp-cortex-chat-frontend .button-primary { background: #2271b1; color: #fff; }
 .wp-cortex-chat-frontend .button:disabled { opacity: 0.6; cursor: default; }
+.wp-cortex-chat-skill { align-self: stretch; display: flex; flex-direction: column; gap: 6px; background: #f6f7f7; }
+.wp-cortex-chat-skill-field { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+.wp-cortex-chat-skill-label { color: #50575e; font-size: 11px; font-weight: 600; }
+.wp-cortex-chat-skill-input { width: 100%; max-width: 100%; margin: 0; font-size: 12px; }
+textarea.wp-cortex-chat-skill-input { resize: vertical; font-family: Consolas, Monaco, monospace; }
+.wp-cortex-chat-skill-status { margin: 0; color: #50575e; }
+.wp-cortex-chat-skill-status:empty { display: none; }
+.wp-cortex-chat-skill .wp-cortex-chat-card-actions[hidden] { display: none; }
+.wp-cortex-chat-frontend .wp-cortex-chat-skill-input { padding: 4px 6px; border: 1px solid #8c8f94; border-radius: 4px; background: #fff; color: #1d2327; }

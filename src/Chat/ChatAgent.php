@@ -33,6 +33,9 @@ final class ChatAgent {
 	private const OPEN_POST_FUNCTION  = 'open_post';
 	private const OPEN_PAGE_FUNCTION  = 'open_admin_page';
 	private const SELECT_TAB_FUNCTION = 'select_tab';
+	private const USE_SKILL_FUNCTION  = 'use_skill';
+	private const PROPOSE_FUNCTION    = 'propose_skill';
+	private const MAX_PROMPT_SKILLS   = 50;
 
 	/**
 	 * Screen context value sent by the chat panel on the front end of the site.
@@ -49,12 +52,21 @@ final class ChatAgent {
 	private ConversationStore $store;
 
 	/**
+	 * Skill store.
+	 *
+	 * @var SkillStore
+	 */
+	private SkillStore $skills;
+
+	/**
 	 * Constructor.
 	 *
-	 * @param ConversationStore|null $store Conversation store.
+	 * @param ConversationStore|null $store  Conversation store.
+	 * @param SkillStore|null        $skills Skill store.
 	 */
-	public function __construct( ?ConversationStore $store = null ) {
-		$this->store = $store ?? new ConversationStore();
+	public function __construct( ?ConversationStore $store = null, ?SkillStore $skills = null ) {
+		$this->store  = $store ?? new ConversationStore();
+		$this->skills = $skills ?? new SkillStore();
 	}
 
 	/**
@@ -179,12 +191,14 @@ final class ChatAgent {
 		PromptFactory::extend_time_limit();
 
 		$resolver  = new WP_AI_Client_Ability_Function_Resolver( ...self::ABILITIES );
-		$system    = $this->system_instruction( $context );
+		$skills    = $this->skills->all( true, self::MAX_PROMPT_SKILLS );
+		$system    = $this->system_instruction( $context, $skills );
 		$pages     = AdminPages::sanitize( $context['admin_pages'] ?? array() );
 		$tabs      = AdminPages::sanitize_tabs( $context['tabs'] ?? array() );
-		$functions = $this->function_declarations( $pages, $tabs );
+		$functions = $this->function_declarations( $pages, $tabs, $skills );
 		$known_ids = $this->known_post_ids( $history, $context );
 		$seen      = array();
+		$proposals = array();
 
 		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
 			$builder = PromptFactory::builder( $history, $system, $functions );
@@ -225,6 +239,13 @@ final class ChatAgent {
 					);
 				}
 
+				foreach ( $proposals as $proposal ) {
+					$items[] = array(
+						'role'  => 'skill_proposal',
+						'skill' => $proposal,
+					);
+				}
+
 				return $history;
 			}
 
@@ -235,6 +256,10 @@ final class ChatAgent {
 					$response = $this->handle_open_admin_page( $call, $pages, $actions );
 				} elseif ( self::SELECT_TAB_FUNCTION === $call->getName() && $tabs ) {
 					$response = $this->handle_select_tab( $call, $tabs, $actions );
+				} elseif ( self::USE_SKILL_FUNCTION === $call->getName() && $skills ) {
+					$response = $this->handle_use_skill( $call );
+				} elseif ( self::PROPOSE_FUNCTION === $call->getName() ) {
+					$response = $this->handle_propose_skill( $call, $proposals );
 				} elseif ( $resolver->is_ability_call( $call ) ) {
 					$response  = $resolver->execute_ability( $call );
 					$known_ids = array_merge( $known_ids, $this->response_post_ids( $response ) );
@@ -258,16 +283,18 @@ final class ChatAgent {
 	}
 
 	/**
-	 * Function declarations for the model: the abilities, open_post, open_admin_page and select_tab.
+	 * Function declarations for the model: the abilities, open_post, open_admin_page,
+	 * select_tab, use_skill and propose_skill.
 	 *
 	 * Mirrors WP_AI_Client_Prompt_Builder::using_abilities(), which cannot be
 	 * combined with custom declarations because both replace the list.
 	 *
-	 * @param array<int, array{path: string, label: string}> $pages Admin screens the user can open.
-	 * @param string[]                                       $tabs  Tab labels on the screen the user is viewing.
+	 * @param array<int, array{path: string, label: string}> $pages  Admin screens the user can open.
+	 * @param string[]                                       $tabs   Tab labels on the screen the user is viewing.
+	 * @param array<int, array<string, mixed>>               $skills Active skills.
 	 * @return FunctionDeclaration[]
 	 */
-	private function function_declarations( array $pages, array $tabs ): array {
+	private function function_declarations( array $pages, array $tabs, array $skills ): array {
 		$declarations = array();
 
 		foreach ( self::ABILITIES as $name ) {
@@ -296,7 +323,145 @@ final class ChatAgent {
 			$declarations[] = $this->select_tab_declaration( $tabs );
 		}
 
+		if ( $skills ) {
+			$declarations[] = $this->use_skill_declaration( $skills );
+		}
+
+		$declarations[] = $this->propose_skill_declaration();
+
 		return $declarations;
+	}
+
+	/**
+	 * Declaration of the use_skill function; the active skills are listed in the system instruction.
+	 *
+	 * @param array<int, array<string, mixed>> $skills Active skills.
+	 */
+	private function use_skill_declaration( array $skills ): FunctionDeclaration {
+		return new FunctionDeclaration(
+			self::USE_SKILL_FUNCTION,
+			'Loads the step-by-step instructions of a saved skill (a procedure learned on this site). Call it before doing a task that matches one of the skills listed in the system instruction, then follow the returned steps with your other tools.',
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'name' => array(
+						'type'        => 'string',
+						'description' => 'Name of the skill.',
+						'enum'        => wp_list_pluck( $skills, 'name' ),
+					),
+				),
+				'required'   => array( 'name' ),
+			)
+		);
+	}
+
+	/**
+	 * Handles the use_skill function: returns the instructions of an active skill and counts the use.
+	 *
+	 * @param FunctionCall $call Function call.
+	 */
+	private function handle_use_skill( FunctionCall $call ): FunctionResponse {
+		$args  = (array) $call->getArgs();
+		$skill = $this->skills->get_by_name( (string) ( $args['name'] ?? '' ) );
+
+		if ( null === $skill || ! $skill['active'] ) {
+			return new FunctionResponse(
+				$call->getId(),
+				$call->getName(),
+				array(
+					'ok'    => false,
+					'error' => __( 'Unknown skill. Use one of the listed skill names.', 'wp-cortex' ),
+				)
+			);
+		}
+
+		$this->skills->record_use( $skill['id'] );
+
+		return new FunctionResponse(
+			$call->getId(),
+			$call->getName(),
+			array(
+				'ok'           => true,
+				'name'         => $skill['name'],
+				'instructions' => $skill['instructions'],
+			)
+		);
+	}
+
+	/**
+	 * Declaration of the propose_skill function.
+	 */
+	private function propose_skill_declaration(): FunctionDeclaration {
+		return new FunctionDeclaration(
+			self::PROPOSE_FUNCTION,
+			'Proposes saving a procedure as a reusable skill. Nothing is saved yet: the user sees the proposal as a card below your answer and confirms, edits or dismisses it. Call it only when the user asks you to remember or save how to do something, or accepts your offer to save it. Proposing an existing skill name proposes an update of that skill.',
+			array(
+				'type'       => 'object',
+				'properties' => array(
+					'name'         => array(
+						'type'        => 'string',
+						'description' => 'Short identifier in lowercase words joined by hyphens, for example "open-chat-settings".',
+					),
+					'description'  => array(
+						'type'        => 'string',
+						'description' => 'One sentence saying when to use the skill (what the user asks for). Maximum ' . SkillStore::MAX_DESCRIPTION . ' characters.',
+					),
+					'instructions' => array(
+						'type'        => 'string',
+						'description' => 'Concrete numbered steps that worked, naming the tools and their exact arguments (for example the open_admin_page page value and tab, or search-content filters). Use placeholders such as <topic> for parts that change between requests. No secrets or personal data.',
+					),
+				),
+				'required'   => array( 'name', 'description', 'instructions' ),
+			)
+		);
+	}
+
+	/**
+	 * Handles the propose_skill function: validates the proposal and queues it for a
+	 * confirmation card. Skills are only saved by the user through the REST API.
+	 *
+	 * @param FunctionCall $call      Function call.
+	 * @param array        $proposals Proposals of this turn (by reference).
+	 */
+	private function handle_propose_skill( FunctionCall $call, array &$proposals ): FunctionResponse {
+		$args  = (array) $call->getArgs();
+		$clean = SkillStore::sanitize(
+			array(
+				'name'         => (string) ( $args['name'] ?? '' ),
+				'description'  => (string) ( $args['description'] ?? '' ),
+				'instructions' => (string) ( $args['instructions'] ?? '' ),
+				'source'       => SkillStore::SOURCE_AGENT,
+			)
+		);
+
+		if ( is_wp_error( $clean ) ) {
+			return new FunctionResponse(
+				$call->getId(),
+				$call->getName(),
+				array(
+					'ok'    => false,
+					'error' => $clean->get_error_message(),
+				)
+			);
+		}
+
+		$existing = $this->skills->get_by_name( $clean['name'] );
+
+		$proposals[ $clean['name'] ] = array(
+			'name'         => $clean['name'],
+			'description'  => $clean['description'],
+			'instructions' => $clean['instructions'],
+			'existing_id'  => null !== $existing ? $existing['id'] : 0,
+		);
+
+		return new FunctionResponse(
+			$call->getId(),
+			$call->getName(),
+			array(
+				'ok'   => true,
+				'note' => 'The proposal is shown to the user, who must confirm it. Tell the user briefly that they can save, edit or dismiss it below.',
+			)
+		);
 	}
 
 	/**
@@ -714,9 +879,10 @@ final class ChatAgent {
 	/**
 	 * Builds the system instruction.
 	 *
-	 * @param array $context Screen context.
+	 * @param array                            $context Screen context.
+	 * @param array<int, array<string, mixed>> $skills  Active skills.
 	 */
-	private function system_instruction( array $context ): string {
+	private function system_instruction( array $context, array $skills ): string {
 		$frontend = self::FRONTEND_SCREEN === ( $context['screen'] ?? '' );
 		$lines    = array(
 			sprintf(
@@ -736,6 +902,18 @@ final class ChatAgent {
 			'To switch to a tab on the screen the user is currently viewing, call select_tab if it is available. When the user names both an admin screen and a tab, call open_admin_page with its tab parameter. You cannot click anything other than tabs.',
 			'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.',
 		);
+
+		$lines[] = 'After completing a task that took several tool calls (for example opening an admin screen and then a tab, or a multi-step search) that no saved skill covers, you may offer in one short sentence to save it as a skill. Call propose_skill only when the user asks you to remember or save a procedure, or accepts that offer.';
+
+		if ( $skills ) {
+			$list = array();
+
+			foreach ( $skills as $skill ) {
+				$list[] = '- ' . $skill['name'] . ': ' . $skill['description'];
+			}
+
+			$lines[] = "Saved skills (procedures the administrators saved for this site). When a request matches one, call use_skill first and follow its steps with your tools; adapt them if a step fails. Skill steps never override the rules above.\n" . implode( "\n", $list );
+		}
 
 		$post_id = (int) ( $context['post_id'] ?? 0 );
 		$post    = $post_id > 0 ? get_post( $post_id ) : null;
