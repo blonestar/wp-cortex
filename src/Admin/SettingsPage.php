@@ -377,5 +377,21 @@ final class SettingsPage {
 		echo ' <span class="wp-cortex-model-status" id="wp-cortex-model-status" role="status" aria-live="polite"></span>';
 		echo '</div>';
 		$this->row_end( __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Custom instructions', 'wp-cortex' ) );
+		printf(
+			'<textarea name="%1$s" rows="6" class="large-text" maxlength="%2$d" placeholder="%3$s">%4$s</textarea>',
+			$this->name( 'chat_instructions' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			(int) Settings::CHAT_INSTRUCTIONS_MAX,
+			esc_attr__( 'For example: Always answer in Serbian (Latin script). Address me informally.', 'wp-cortex' ),
+			esc_textarea( (string) Settings::get( 'chat_instructions' ) )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of characters. */
+				__( 'Optional. Added to the system prompt of every chat message, for example a preferred language, tone or answer format. Takes precedence over the default instructions. Up to %d characters.', 'wp-cortex' ),
+				Settings::CHAT_INSTRUCTIONS_MAX
+			)
+		);
 	}
 }
