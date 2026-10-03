@@ -21,6 +21,11 @@ final class Settings {
 	 */
 	public const ADMIN_STATUSES = array( 'publish', 'future', 'draft', 'pending', 'private' );
 
+	/**
+	 * Maximum length of the custom chat instructions, in characters.
+	 */
+	public const CHAT_INSTRUCTIONS_MAX = 4000;
+
 	public const EMBEDDING_MODELS = array(
 		'text-embedding-3-small' => array( 512, 1024, 1536 ),
 		'text-embedding-3-large' => array( 256, 1024, 3072 ),
@@ -50,6 +55,7 @@ final class Settings {
 			'chat_enabled'         => true,
 			'chat_provider'        => '',
 			'chat_model'           => '',
+			'chat_instructions'    => '',
 		);
 	}
 
@@ -138,6 +144,9 @@ final class Settings {
 			$dimensions = max( self::EMBEDDING_MODELS[ $model ] );
 		}
 
+		$chat_instructions = trim( sanitize_textarea_field( (string) ( $input['chat_instructions'] ?? '' ) ) );
+		$chat_instructions = mb_substr( $chat_instructions, 0, self::CHAT_INSTRUCTIONS_MAX );
+
 		$chunk_size = self::clamp( $input['chunk_size'] ?? $defaults['chunk_size'], 300, 6000 );
 
 		return array(
@@ -158,6 +167,7 @@ final class Settings {
 			'chat_enabled'         => ! empty( $input['chat_enabled'] ),
 			'chat_provider'        => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
 			'chat_model'           => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
+			'chat_instructions'    => $chat_instructions,
 		);
 	}
 
