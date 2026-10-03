@@ -8,6 +8,7 @@
 namespace WPCortex\Cli;
 
 use WPCortex\Indexing\IndexRun;
+use WPCortex\Search\SearchService;
 use WPCortex\Storage\Database;
 use WPCortex\Storage\Storage;
 
@@ -83,6 +84,88 @@ final class Command {
 		} else {
 			\WP_CLI::error( $summary );
 		}
+	}
+
+	/**
+	 * Searches an index (hybrid, keyword or semantic) and prints the matching documents.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <query>
+	 * : Search text. May be empty ("") to list the newest documents.
+	 *
+	 * [--scope=<scope>]
+	 * : Index to search.
+	 * ---
+	 * default: admin
+	 * options:
+	 *   - admin
+	 *   - public
+	 * ---
+	 *
+	 * [--mode=<mode>]
+	 * : Search mode.
+	 * ---
+	 * default: hybrid
+	 * options:
+	 *   - hybrid
+	 *   - keyword
+	 *   - semantic
+	 * ---
+	 *
+	 * [--limit=<n>]
+	 * : Maximum results (1-50).
+	 * ---
+	 * default: 10
+	 * ---
+	 *
+	 * [--type=<post_type>]
+	 * : Only documents of this post type.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp cortex search "pricing plans"
+	 *     wp cortex search "pricing plans" --scope=public --mode=keyword --limit=5
+	 *
+	 * @param array $args       Positional arguments.
+	 * @param array $assoc_args Associative arguments.
+	 */
+	public function search( $args, $assoc_args ): void {
+		$scope = (string) \WP_CLI\Utils\get_flag_value( $assoc_args, 'scope', 'admin' );
+		if ( ! in_array( $scope, Storage::SCOPES, true ) ) {
+			\WP_CLI::error( 'Unknown scope: ' . $scope );
+		}
+
+		$search_args = array(
+			'mode'  => (string) \WP_CLI\Utils\get_flag_value( $assoc_args, 'mode', 'hybrid' ),
+			'limit' => (int) \WP_CLI\Utils\get_flag_value( $assoc_args, 'limit', 10 ),
+		);
+
+		$type = (string) \WP_CLI\Utils\get_flag_value( $assoc_args, 'type', '' );
+		if ( '' !== $type ) {
+			$search_args['post_types'] = array( $type );
+		}
+
+		$results = SearchService::for_scope( $scope )->search( (string) ( $args[0] ?? '' ), $search_args );
+
+		if ( ! $results ) {
+			\WP_CLI::log( 'No results.' );
+			return;
+		}
+
+		$rows = array();
+		foreach ( $results as $result ) {
+			$rows[] = array(
+				'id'      => $result['id'],
+				'type'    => $result['post_type'],
+				'status'  => $result['status'],
+				'score'   => round( $result['score'], 4 ),
+				'title'   => $result['title'],
+				'heading' => $result['heading'],
+			);
+		}
+
+		\WP_CLI\Utils\format_items( 'table', $rows, array( 'id', 'type', 'status', 'score', 'title', 'heading' ) );
 	}
 
 	/**

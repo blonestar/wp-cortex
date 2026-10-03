@@ -46,6 +46,9 @@ final class Settings {
 			'embeddings_enabled'   => true,
 			'embedding_model'      => 'text-embedding-3-small',
 			'embedding_dimensions' => 1536,
+			'chat_enabled'         => true,
+			'chat_provider'        => '',
+			'chat_model'           => '',
 		);
 	}
 
@@ -143,6 +146,9 @@ final class Settings {
 			'embeddings_enabled'   => ! empty( $input['embeddings_enabled'] ),
 			'embedding_model'      => $model,
 			'embedding_dimensions' => $dimensions,
+			'chat_enabled'         => ! empty( $input['chat_enabled'] ),
+			'chat_provider'        => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
+			'chat_model'           => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
 		);
 	}
 

@@ -1,0 +1,515 @@
+/**
+ * Cortex admin chat panel.
+ */
+( function () {
+	'use strict';
+
+	var cfg = window.wpCortexChat || {};
+	var __ = wp.i18n.__;
+	var STORE_KEY = 'wpCortexChat';
+	var P = 'wp-cortex-chat-';
+	var root, toggle, panel, list, select, input, sendBtn, thinkingEl;
+	var state = { open: false, conversationId: 0 };
+	var busy = false;
+	var listLoaded = false;
+
+	function loadState() {
+		try {
+			var s = JSON.parse( window.sessionStorage.getItem( STORE_KEY ) || '{}' );
+			state.open = !! s.open;
+			state.conversationId = parseInt( s.conversationId, 10 ) || 0;
+		} catch ( e ) {}
+	}
+
+	function saveState() {
+		try {
+			window.sessionStorage.setItem( STORE_KEY, JSON.stringify( state ) );
+		} catch ( e ) {}
+	}
+
+	function el( tag, cls, text ) {
+		var n = document.createElement( tag );
+		if ( cls ) {
+			n.className = cls;
+		}
+		if ( undefined !== text ) {
+			n.textContent = text;
+		}
+		return n;
+	}
+
+	function iconButton( icon, label, onClick ) {
+		var b = el( 'button', P + 'iconbtn' );
+		b.type = 'button';
+		b.setAttribute( 'aria-label', label );
+		b.title = label;
+		var i = el( 'span', 'dashicons dashicons-' + icon );
+		i.setAttribute( 'aria-hidden', 'true' );
+		b.appendChild( i );
+		b.addEventListener( 'click', onClick );
+		return b;
+	}
+
+	/* ---------- Safe markdown ---------- */
+
+	function escapeHtml( s ) {
+		return String( s ).replace( /&/g, '&amp;' ).replace( /</g, '&lt;' ).replace( />/g, '&gt;' ).replace( /"/g, '&quot;' ).replace( /'/g, '&#39;' );
+	}
+
+	function safeUrl( url ) {
+		// The input is already HTML-escaped; undo only for URL parsing.
+		var raw = url.replace( /&amp;/g, '&' );
+		try {
+			var u = new URL( raw, window.location.href );
+			if ( 'http:' === u.protocol || 'https:' === u.protocol ) {
+				// Only plain http(s) or relative URLs (no other schemes) are accepted.
+				if ( /^[a-z][a-z0-9+.-]*:/i.test( raw ) && ! /^https?:/i.test( raw ) ) {
+					return '';
+				}
+				return escapeHtml( raw );
+			}
+		} catch ( e ) {}
+		return '';
+	}
+
+	function inline( s ) {
+		var codes = [];
+		s = s.replace( /`([^`]+)`/g, function ( m, c ) {
+			codes.push( c );
+			return '\u0000' + ( codes.length - 1 ) + '\u0000';
+		} );
+		s = s.replace( /\[([^\]]+)\]\(([^)\s]+)\)/g, function ( m, label, url ) {
+			var safe = safeUrl( url );
+			if ( ! safe ) {
+				return label;
+			}
+			return '<a href="' + safe + '" rel="noopener">' + label + '</a>';
+		} );
+		s = s.replace( /\*\*([^*]+)\*\*/g, '<strong>$1</strong>' );
+		s = s.replace( /(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>' );
+		s = s.replace( /\u0000(\d+)\u0000/g, function ( m, i ) {
+			return '<code>' + codes[ +i ] + '</code>';
+		} );
+		return s;
+	}
+
+	function renderMarkdown( text ) {
+		var lines = escapeHtml( text ).split( /\r?\n/ );
+		var out = '';
+		var para = [];
+		var listType = '';
+
+		function flushPara() {
+			if ( para.length ) {
+				out += '<p>' + inline( para.join( '<br>' ) ) + '</p>';
+				para = [];
+			}
+		}
+		function closeList() {
+			if ( listType ) {
+				out += '</' + listType + '>';
+				listType = '';
+			}
+		}
+
+		lines.forEach( function ( line ) {
+			var ul = /^\s*[-*]\s+(.*)$/.exec( line );
+			var ol = /^\s*\d+[.)]\s+(.*)$/.exec( line );
+			if ( ul || ol ) {
+				flushPara();
+				var type = ul ? 'ul' : 'ol';
+				if ( listType !== type ) {
+					closeList();
+					out += '<' + type + '>';
+					listType = type;
+				}
+				out += '<li>' + inline( ( ul || ol )[ 1 ] ) + '</li>';
+			} else if ( '' === line.trim() ) {
+				flushPara();
+				closeList();
+			} else {
+				closeList();
+				para.push( line );
+			}
+		} );
+		flushPara();
+		closeList();
+		return out;
+	}
+
+	/* ---------- Rendering ---------- */
+
+	function scrollBottom() {
+		list.scrollTop = list.scrollHeight;
+	}
+
+	function addMessage( cls, text, markdown ) {
+		var m = el( 'div', P + 'msg ' + P + 'msg-' + cls );
+		if ( markdown ) {
+			m.innerHTML = renderMarkdown( text );
+		} else {
+			m.textContent = text;
+		}
+		list.appendChild( m );
+		return m;
+	}
+
+	function addResults( results ) {
+		var wrap = el( 'div', P + 'results' );
+		( results || [] ).forEach( function ( r ) {
+			var card = el( 'div', P + 'card' );
+			card.appendChild( el( 'p', P + 'card-title', r.title || __( '(no title)', 'wp-cortex' ) ) );
+			var badges = el( 'div', P + 'badges' );
+			if ( r.post_type ) {
+				badges.appendChild( el( 'span', P + 'badge', r.post_type ) );
+			}
+			if ( r.status ) {
+				badges.appendChild( el( 'span', P + 'badge ' + P + 'badge-' + String( r.status ).replace( /[^a-z0-9_-]/gi, '' ), r.status ) );
+			}
+			if ( r.author ) {
+				badges.appendChild( el( 'span', P + 'author', r.author ) );
+			}
+			card.appendChild( badges );
+			if ( r.snippet ) {
+				card.appendChild( el( 'p', P + 'snippet', r.snippet ) );
+			}
+			var actions = el( 'div', P + 'card-actions' );
+			if ( r.edit_url ) {
+				var e = el( 'a', 'button button-small', __( 'Edit', 'wp-cortex' ) );
+				e.href = r.edit_url;
+				actions.appendChild( e );
+			}
+			if ( r.url && 'publish' === r.status ) {
+				var v = el( 'a', 'button button-small', __( 'View', 'wp-cortex' ) );
+				v.href = r.url;
+				actions.appendChild( v );
+			}
+			card.appendChild( actions );
+			wrap.appendChild( card );
+		} );
+		list.appendChild( wrap );
+	}
+
+	function renderItem( item ) {
+		if ( ! item ) {
+			return;
+		}
+		switch ( item.role ) {
+			case 'user':
+				addMessage( 'user', item.text || '', false );
+				break;
+			case 'assistant':
+				addMessage( 'assistant', item.text || '', true );
+				break;
+			case 'results':
+				addResults( item.results );
+				break;
+			case 'error':
+				addMessage( 'error', item.text || '', false );
+				break;
+		}
+	}
+
+	function renderEmpty() {
+		list.innerHTML = '';
+		list.appendChild( el( 'div', P + 'empty', __( 'Ask me about your site content, for example: find posts about a topic without a meta description.', 'wp-cortex' ) ) );
+	}
+
+	function renderTranscript( items ) {
+		list.innerHTML = '';
+		if ( ! items || ! items.length ) {
+			renderEmpty();
+			return;
+		}
+		items.forEach( renderItem );
+		scrollBottom();
+	}
+
+	function setBusy( on ) {
+		busy = on;
+		input.disabled = on;
+		sendBtn.disabled = on;
+		if ( on ) {
+			thinkingEl = el( 'div', P + 'thinking', __( 'Thinking…', 'wp-cortex' ) );
+			list.appendChild( thinkingEl );
+			scrollBottom();
+		} else {
+			if ( thinkingEl && thinkingEl.parentNode ) {
+				thinkingEl.parentNode.removeChild( thinkingEl );
+			}
+			thinkingEl = null;
+			input.focus();
+		}
+	}
+
+	/* ---------- Conversations ---------- */
+
+	function loadList() {
+		return wp.apiFetch( { path: '/wp-cortex/v1/chat/conversations' } ).then( function ( res ) {
+			listLoaded = true;
+			select.innerHTML = '';
+			var blank = el( 'option', '', __( 'New conversation', 'wp-cortex' ) );
+			blank.value = '0';
+			select.appendChild( blank );
+			( res.conversations || [] ).forEach( function ( c ) {
+				var o = el( 'option', '', c.title || __( 'Untitled', 'wp-cortex' ) );
+				o.value = String( c.id );
+				select.appendChild( o );
+			} );
+			select.value = String( state.conversationId );
+			if ( select.value !== String( state.conversationId ) ) {
+				select.value = '0';
+			}
+		} ).catch( function () {} );
+	}
+
+	function loadConversation( id ) {
+		state.conversationId = id;
+		saveState();
+		if ( ! id ) {
+			renderEmpty();
+			return Promise.resolve();
+		}
+		return wp.apiFetch( { path: '/wp-cortex/v1/chat/conversations/' + id } ).then( function ( res ) {
+			renderTranscript( res.transcript );
+		} ).catch( function ( err ) {
+			state.conversationId = 0;
+			saveState();
+			list.innerHTML = '';
+			addMessage( 'error', ( err && err.message ) || __( 'Could not load the conversation.', 'wp-cortex' ), false );
+		} );
+	}
+
+	function newChat() {
+		if ( busy ) {
+			return;
+		}
+		state.conversationId = 0;
+		saveState();
+		if ( select ) {
+			select.value = '0';
+		}
+		renderEmpty();
+		input.focus();
+	}
+
+	function deleteCurrent() {
+		if ( busy || ! state.conversationId ) {
+			return;
+		}
+		if ( ! window.confirm( __( 'Delete this conversation?', 'wp-cortex' ) ) ) {
+			return;
+		}
+		wp.apiFetch( { path: '/wp-cortex/v1/chat/conversations/' + state.conversationId, method: 'DELETE' } ).then( function () {
+			newChat();
+			return loadList();
+		} ).catch( function ( err ) {
+			addMessage( 'error', ( err && err.message ) || __( 'Could not delete the conversation.', 'wp-cortex' ), false );
+			scrollBottom();
+		} );
+	}
+
+	/* ---------- Sending ---------- */
+
+	function handleActions( actions ) {
+		var nav = ( actions || [] ).filter( function ( a ) {
+			return a && 'navigate' === a.type && a.url;
+		} )[ 0 ];
+		if ( ! nav ) {
+			return;
+		}
+		var target;
+		try {
+			target = new URL( nav.url, window.location.href );
+		} catch ( e ) {
+			return;
+		}
+		if ( target.origin !== window.location.origin ) {
+			return;
+		}
+		var title = nav.title || target.pathname;
+		/* translators: %s: post title */
+		addMessage( 'assistant', __( 'Opening “%s”…', 'wp-cortex' ).replace( '%s', title ), false );
+		scrollBottom();
+		state.open = true;
+		saveState();
+		window.setTimeout( function () {
+			window.location.href = target.href;
+		}, 600 );
+	}
+
+	function send() {
+		var text = input.value.trim();
+		if ( busy || ! text ) {
+			return;
+		}
+		input.value = '';
+		var empty = list.querySelector( '.' + P + 'empty' );
+		if ( empty ) {
+			list.removeChild( empty );
+		}
+		renderItem( { role: 'user', text: text } );
+		setBusy( true );
+
+		wp.apiFetch( {
+			path: '/wp-cortex/v1/chat/message',
+			method: 'POST',
+			data: {
+				conversation_id: state.conversationId || 0,
+				message: text,
+				context: { screen: cfg.screen || '', post_id: cfg.postId || 0 }
+			}
+		} ).then( function ( res ) {
+			var isNew = res.conversation_id && res.conversation_id !== state.conversationId;
+			state.conversationId = parseInt( res.conversation_id, 10 ) || 0;
+			saveState();
+			setBusy( false );
+			// The user item was already shown locally; skip the first returned user item.
+			var skipped = false;
+			( res.items || [] ).forEach( function ( item ) {
+				if ( ! skipped && 'user' === item.role ) {
+					skipped = true;
+					return;
+				}
+				renderItem( item );
+			} );
+			scrollBottom();
+			if ( isNew || listLoaded ) {
+				loadList();
+			}
+			handleActions( res.actions );
+		} ).catch( function ( err ) {
+			setBusy( false );
+			renderItem( { role: 'error', text: ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' ) } );
+			scrollBottom();
+		} );
+	}
+
+	/* ---------- Open / close ---------- */
+
+	function openPanel() {
+		state.open = true;
+		saveState();
+		panel.classList.add( 'is-open' );
+		toggle.setAttribute( 'aria-expanded', 'true' );
+		if ( ! listLoaded ) {
+			loadList();
+		}
+		input.focus();
+	}
+
+	function closePanel() {
+		state.open = false;
+		saveState();
+		panel.classList.remove( 'is-open' );
+		toggle.setAttribute( 'aria-expanded', 'false' );
+		toggle.focus();
+	}
+
+	/* ---------- Build UI ---------- */
+
+	function build() {
+		root = document.getElementById( 'wp-cortex-chat-root' );
+		if ( ! root ) {
+			return;
+		}
+
+		toggle = el( 'button', P + 'toggle' );
+		toggle.type = 'button';
+		toggle.setAttribute( 'aria-label', __( 'Toggle Cortex chat', 'wp-cortex' ) );
+		toggle.setAttribute( 'aria-expanded', 'false' );
+		var ti = el( 'span', 'dashicons dashicons-format-chat' );
+		ti.setAttribute( 'aria-hidden', 'true' );
+		toggle.appendChild( ti );
+		toggle.addEventListener( 'click', function () {
+			if ( panel.classList.contains( 'is-open' ) ) {
+				closePanel();
+			} else {
+				openPanel();
+			}
+		} );
+
+		panel = el( 'div', P + 'panel' );
+		panel.setAttribute( 'role', 'dialog' );
+		panel.setAttribute( 'aria-label', __( 'Cortex chat', 'wp-cortex' ) );
+
+		var header = el( 'div', P + 'header' );
+		header.appendChild( el( 'h2', P + 'title', __( 'Cortex', 'wp-cortex' ) ) );
+		select = el( 'select', P + 'select' );
+		select.setAttribute( 'aria-label', __( 'Conversation', 'wp-cortex' ) );
+		var first = el( 'option', '', __( 'New conversation', 'wp-cortex' ) );
+		first.value = '0';
+		select.appendChild( first );
+		select.addEventListener( 'change', function () {
+			if ( busy ) {
+				select.value = String( state.conversationId );
+				return;
+			}
+			loadConversation( parseInt( select.value, 10 ) || 0 );
+		} );
+		header.appendChild( select );
+		header.appendChild( iconButton( 'plus-alt2', __( 'New chat', 'wp-cortex' ), newChat ) );
+		header.appendChild( iconButton( 'trash', __( 'Delete conversation', 'wp-cortex' ), deleteCurrent ) );
+		header.appendChild( iconButton( 'no-alt', __( 'Close', 'wp-cortex' ), closePanel ) );
+
+		list = el( 'div', P + 'messages' );
+		list.setAttribute( 'aria-live', 'polite' );
+
+		var form = el( 'form', P + 'form' );
+		input = el( 'textarea', P + 'input' );
+		input.rows = 2;
+		input.placeholder = __( 'Ask about your content…', 'wp-cortex' );
+		input.setAttribute( 'aria-label', __( 'Message', 'wp-cortex' ) );
+		sendBtn = el( 'button', 'button button-primary', __( 'Send', 'wp-cortex' ) );
+		sendBtn.type = 'submit';
+		form.appendChild( input );
+		form.appendChild( sendBtn );
+		form.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			send();
+		} );
+		input.addEventListener( 'keydown', function ( e ) {
+			if ( 'Enter' === e.key && ! e.shiftKey && ! e.isComposing ) {
+				e.preventDefault();
+				send();
+			}
+		} );
+
+		panel.appendChild( header );
+		panel.appendChild( list );
+		panel.appendChild( form );
+
+		// Keep editor shortcuts from firing while typing in the panel.
+		panel.addEventListener( 'keydown', function ( e ) {
+			if ( 'Escape' === e.key ) {
+				closePanel();
+			}
+			e.stopPropagation();
+		} );
+		panel.addEventListener( 'keyup', function ( e ) {
+			e.stopPropagation();
+		} );
+		panel.addEventListener( 'keypress', function ( e ) {
+			e.stopPropagation();
+		} );
+
+		root.appendChild( toggle );
+		root.appendChild( panel );
+
+		renderEmpty();
+		loadState();
+		if ( state.open ) {
+			openPanel();
+			if ( state.conversationId ) {
+				loadConversation( state.conversationId ).then( function () {
+					if ( listLoaded ) {
+						select.value = String( state.conversationId );
+					}
+					scrollBottom();
+				} );
+			}
+		}
+	}
+
+	wp.domReady( build );
+}() );

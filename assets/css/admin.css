@@ -205,3 +205,41 @@
 		transition: none;
 	}
 }
+
+.wp-cortex-model-picker {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 8px;
+}
+
+.wp-cortex-model-picker .wp-cortex-model-filter {
+	flex: 0 0 100%;
+	max-width: 340px;
+}
+
+.wp-cortex-model-picker .wp-cortex-model-select {
+	max-width: 420px;
+}
+
+.wp-cortex-model-refresh .dashicons {
+	margin-top: 4px;
+}
+
+.wp-cortex-model-refresh.is-loading .dashicons {
+	animation: wp-cortex-spin 1s linear infinite;
+}
+
+.wp-cortex-model-status {
+	color: #646970;
+}
+
+.wp-cortex-model-status.is-error {
+	color: #b32d2e;
+}
+
+@keyframes wp-cortex-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}

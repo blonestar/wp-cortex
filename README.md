@@ -2,11 +2,11 @@
 
 WP Cortex is a memory layer for WordPress. It indexes site content into a local SQLite store (structured fields, FTS5 full-text search and vector embeddings) so that AI search and chat features can be built on top of it. Everything is stored locally; the only external call is the optional OpenAI embeddings request.
 
-- Version: 0.1.0
+- Version: 0.2.0
 - Author: Bojan
 - License: GPL-2.0-or-later
 
-> Status: the **indexing layer** is implemented. Search, chat and agent features are on the [roadmap](#roadmap) and do not exist yet.
+> Status: the **indexing layer**, the **hybrid search service** and the **admin chat assistant** are implemented. Frontend chat and MCP access are on the [roadmap](#roadmap).
 
 ## Features (current)
 
@@ -19,7 +19,10 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 - **OpenAI embeddings** with reuse by chunk hash: unchanged text is never re-embedded, even across documents and scopes.
 - **Batch indexing with progress UI**: resumable and cancellable (Cortex > Indexing).
 - **Incremental auto-sync** via WP-Cron when content, terms or relevant meta change.
-- **WP-CLI** commands (`wp cortex index`, `wp cortex status`).
+- **Hybrid search service** (`WPCortex\Search\SearchService`): FTS5 BM25 keyword search, brute-force cosine semantic search, merged with Reciprocal Rank Fusion and grouped per document. Structured filters on post type, status, modified date and any indexed field (`eq`, `neq`, `contains`, `not_contains`, `empty`, `not_empty`, `missing`, `exists`). Degrades to keyword search when embeddings are unavailable. Also offers `get_document()` and `field_catalog()`.
+- **Admin chat assistant**: a floating chat panel on every admin screen for administrators. An LLM (through the WordPress AI Client, any configured provider) answers questions about site content by calling tools over the admin index, shows the posts cited in its answer (as `#ID`) as cards below it and can open a post in the editor on request. Conversations are stored per user in the `{prefix}wp_cortex_conversations` table. Needs an AI provider API key under Settings > Connectors.
+- **Abilities** (WordPress Abilities API, category `wp-cortex`, read-only, `manage_options`, admin index): `wp-cortex/search-content` (hybrid search with field, status, type, author and date filters), `wp-cortex/find-duplicates` (posts sharing a title, field value or text content), `wp-cortex/get-document`, `wp-cortex/list-fields`. Used by the chat agent as tools; not exposed over REST or MCP yet.
+- **WP-CLI** commands (`wp cortex index`, `wp cortex status`, `wp cortex search`).
 
 ## Requirements
 
@@ -55,6 +58,9 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `embeddings_enabled` | on | Generate vector embeddings. |
 | `embedding_model` | `text-embedding-3-small` | Or `text-embedding-3-large`. |
 | `embedding_dimensions` | 1536 | small: 512/1024/1536; large: 256/1024/3072. |
+| `chat_enabled` | on | Show the admin chat assistant. |
+| `chat_provider` | automatic | Registered AI provider ID (for example `openai`, `anthropic`), or empty to let the AI Client choose a configured one. |
+| `chat_model` | provider default | Model ID used with the selected provider (for example `gpt-5.4-mini` or `anthropic/claude-sonnet-4.5`). Chosen from a list loaded from the provider (cached 12 h in the `wp_cortex_models_<provider>` transient, "Refresh models" button reloads it); models without tool calling are listed but disabled. Ignored when the provider is automatic. An explicit model is used as is, without the AI Client's capability matching (some providers, such as OpenRouter, do not declare tool support in their metadata), so pick one that supports tool calling. With a provider but no model, the AI Client must find a tool-capable model in the provider metadata. |
 
 ### Data directory
 
@@ -72,6 +78,7 @@ The directory must be writable by the web server user. Changing the location doe
 
 - `wp_cortex_extractors` (`Extractor[] $extractors`): add, remove or reorder extractors. Non-`Extractor` entries are discarded.
 - `wp_cortex_openai_api_key` (`string $key`): override the OpenAI API key.
+- `wp_cortex_chat_system_instruction` (`string $instruction`, `array $context`): modify the chat assistant's system instruction. `$context` holds `screen` and `post_id`.
 
 ## Indexing
 
@@ -88,9 +95,10 @@ The directory must be writable by the web server user. Changing the location doe
 ```
 wp cortex index [--rebuild]
 wp cortex status
+wp cortex search <query> [--scope=<admin|public>] [--mode=<hybrid|keyword|semantic>] [--limit=<n>] [--type=<post_type>]
 ```
 
-`index` runs a full Sync (or Rebuild with `--rebuild`) with a progress bar and prints a summary. `status` shows per-scope statistics and the last run.
+`index` runs a full Sync (or Rebuild with `--rebuild`) with a progress bar and prints a summary. `status` shows per-scope statistics and the last run. `search` prints matching documents (id, type, status, score, title, best heading); scope defaults to `admin`, mode to `hybrid`.
 
 ## REST API
 
@@ -102,6 +110,11 @@ Namespace `wp-cortex/v1`. All routes require the `manage_options` capability (an
 | POST | `/index/start` | Start a run. Param `mode`: `sync` (default) or `rebuild`. |
 | POST | `/index/batch` | Process one batch of the running run. Response includes `locked: true` if another request holds the lock. |
 | POST | `/index/cancel` | Cancel the running run. |
+| GET | `/chat/conversations` | The current user's conversations: `{ conversations: [ { id, title, updated_at } ] }`. |
+| GET | `/chat/conversations/<id>` | `{ id, title, transcript: [ items ] }`; 404 when not owned. |
+| DELETE | `/chat/conversations/<id>` | `{ deleted: true }`. |
+| GET | `/chat/models` | Params `provider` (registered provider ID), `refresh` (0/1). Returns `{ provider, models: [ { id, name, tools } ], cached }` for text-generation models, tool-capable first. 400 for unknown or unconfigured provider, 502 when the provider request fails. |
+| POST | `/chat/message` | Params `conversation_id` (0 = new), `message` (max 4000 chars), `context` (`{ screen, post_id }`). Returns `{ conversation_id, title, items, actions }`. AI failures are returned as an `error` item with status 200. |
 
 ## Data model
 
@@ -140,9 +153,15 @@ src/
     EmbeddingProvider.php  Provider interface
     OpenAIEmbeddings.php   OpenAI client
     VectorCodec.php        float32 BLOB pack/unpack
-  Rest/IndexController.php REST endpoints
+  Search/SearchService.php Hybrid search, document lookup, field catalog
+  Abilities/Abilities.php  Abilities API category and read-only abilities
+  Chat/
+    ChatAgent.php          LLM tool-calling loop (WordPress AI Client)
+    ModelCatalog.php       Provider model list (cached)
+    ConversationStore.php  MySQL conversation table
+  Rest/                    IndexController, ChatController
   Cli/Command.php          WP-CLI commands
-  Admin/                   Menu, Settings page, Indexing page
+  Admin/                   Menu, Settings page, Indexing page, Chat panel
 assets/                  Admin JS (no build step) and CSS
 ```
 
@@ -150,9 +169,7 @@ assets/                  Admin JS (no build step) and CSS
 
 None of the following is implemented yet.
 
-- **Hybrid search service**: FTS5 BM25 plus vector similarity, merged with Reciprocal Rank Fusion (RRF).
 - **Frontend chat with content**: block/widget with citations, backed by the public index.
-- **Backend admin chat agent with tools**: structured queries over the admin index, for example "posts whose Yoast focus keyword is X and have no meta description".
 - **MCP access for external agents** via the WordPress Abilities API and MCP Adapter: public tools use the public index; admin tools use the admin index and are capability-gated.
 - **Optional sqlite-vec acceleration** for vector search.
 
