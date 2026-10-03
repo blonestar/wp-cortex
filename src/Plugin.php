@@ -12,6 +12,7 @@ use WPCortex\Admin\ChatPanel;
 use WPCortex\Admin\Menu;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\SkillStore;
+use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Cli\Command;
 use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
@@ -20,6 +21,7 @@ use WPCortex\Rest\ChatController;
 use WPCortex\Rest\IndexController;
 use WPCortex\Rest\PublicChatController;
 use WPCortex\Rest\SkillController;
+use WPCortex\Rest\VisitorChatController;
 use WPCortex\Storage\Storage;
 
 defined( 'ABSPATH' ) || exit;
@@ -38,10 +40,19 @@ final class Plugin {
 		( new ChatController() )->register();
 		( new PublicChatController() )->register();
 		( new SkillController() )->register();
+		( new VisitorChatController() )->register();
 		( new Abilities() )->register();
 
 		ConversationStore::maybe_upgrade();
 		SkillStore::maybe_upgrade();
+		VisitorChatStore::maybe_upgrade();
+
+		add_action( VisitorChatStore::PURGE_HOOK, array( self::class, 'purge_visitor_chats' ) );
+		add_action( 'admin_init', array( self::class, 'privacy_policy_content' ) );
+
+		if ( ! wp_next_scheduled( VisitorChatStore::PURGE_HOOK ) ) {
+			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', VisitorChatStore::PURGE_HOOK );
+		}
 
 		if ( is_admin() ) {
 			( new Menu() )->register();
@@ -68,6 +79,34 @@ final class Plugin {
 	}
 
 	/**
+	 * Daily cron: deletes visitor chats older than the retention setting.
+	 */
+	public static function purge_visitor_chats(): void {
+		( new VisitorChatStore() )->purge( (int) Settings::get( 'public_chat_retention' ) );
+	}
+
+	/**
+	 * Suggested privacy policy text (Settings > Privacy) while the visitor chat is on.
+	 */
+	public static function privacy_policy_content(): void {
+		if ( ! function_exists( 'wp_add_privacy_policy_content' ) || ! Settings::get( 'public_chat_enabled' ) ) {
+			return;
+		}
+
+		$text = '<p>' . esc_html__( 'This site offers a chat assistant that answers questions using an AI service. The messages you send in the chat are sent to that service to generate the answers.', 'wp-cortex' ) . '</p>';
+
+		if ( Settings::get( 'public_chat_log' ) ) {
+			$text .= '<p>' . esc_html__( 'Chat conversations are stored on this site so that the site team can read them. If you choose to leave contact details in the chat (such as your name, email address, phone number or address), they are stored with the conversation and used only to get back to you. No cookie is stored.', 'wp-cortex' ) . '</p>';
+
+			if ( Settings::get( 'public_chat_store_ip' ) ) {
+				$text .= '<p>' . esc_html__( 'Your IP address is stored with the conversation to protect the chat from abuse and to help the site team handle your request.', 'wp-cortex' ) . '</p>';
+			}
+		}
+
+		wp_add_privacy_policy_content( __( 'WP Cortex', 'wp-cortex' ), wp_kses_post( $text ) );
+	}
+
+	/**
 	 * Activation: prepare the protected data directory and default settings.
 	 */
 	public static function activate(): void {
@@ -75,6 +114,7 @@ final class Plugin {
 		Storage::ensure_data_dir();
 		ConversationStore::install();
 		SkillStore::install();
+		VisitorChatStore::install();
 	}
 
 	/**
@@ -82,6 +122,7 @@ final class Plugin {
 	 */
 	public static function deactivate(): void {
 		wp_clear_scheduled_hook( PostSync::CRON_HOOK );
+		wp_clear_scheduled_hook( VisitorChatStore::PURGE_HOOK );
 		IndexRun::cancel();
 	}
 }

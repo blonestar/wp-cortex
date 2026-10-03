@@ -7,8 +7,10 @@
 
 namespace WPCortex\Rest;
 
+use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\RateLimiter;
+use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Settings;
 use WP_Error;
 use WP_REST_Request;
@@ -21,7 +23,8 @@ defined( 'ABSPATH' ) || exit;
  * The only endpoint open to visitors: POST /wp-cortex/v1/public-chat/message.
  *
  * It answers from the public index only, is available only while the visitor chat is
- * enabled and is limited per client IP.
+ * enabled and is limited per client IP. While the conversation log is on, each turn is
+ * appended to the conversation of the browser's session token.
  */
 final class PublicChatController {
 
@@ -72,6 +75,11 @@ final class PublicChatController {
 						'default' => 0,
 						'minimum' => 0,
 					),
+					'session' => array(
+						'type'    => 'string',
+						'default' => '',
+						'pattern' => '^([a-f0-9]{32})?$',
+					),
 				),
 			)
 		);
@@ -102,16 +110,41 @@ final class PublicChatController {
 		}
 
 		$history = $request->get_param( 'history' );
+		$message = (string) $request->get_param( 'message' );
+		$post_id = absint( $request->get_param( 'post_id' ) );
+		$store   = new VisitorChatStore();
+		$chat_id = Settings::get( 'public_chat_log' ) && '' !== trim( $message ) ? $store->open( (string) $request->get_param( 'session' ), $post_id ) : 0;
 
-		$result = ( new PublicChatAgent() )->respond(
-			(string) $request->get_param( 'message' ),
-			is_array( $history ) ? $history : array(),
-			absint( $request->get_param( 'post_id' ) )
-		);
+		$result = ( new PublicChatAgent() )->respond( $message, is_array( $history ) ? $history : array(), $post_id, $chat_id );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
 		}
+
+		if ( $chat_id > 0 ) {
+			$now    = current_time( 'mysql', true );
+			$client = Settings::get( 'public_chat_store_ip' ) ? ClientIp::details() : array();
+			$log    = array(
+				array_merge(
+					array(
+						'role'    => 'user',
+						'text'    => mb_substr( trim( $message ), 0, PublicChatAgent::MAX_MESSAGE_LENGTH ),
+						'post_id' => $post_id,
+						'at'      => $now,
+					),
+					array_filter( $client )
+				),
+			);
+
+			foreach ( $result['items'] as $item ) {
+				$log[] = array_merge( $item, array( 'at' => $now ) );
+			}
+
+			$store->append( $chat_id, $log, $client );
+		}
+
+		// Notices are for the log: the assistant confirms in the visitor's language.
+		$result['items'] = array_values( array_filter( $result['items'], static fn( $item ) => 'notice' !== ( $item['role'] ?? '' ) ) );
 
 		$response = rest_ensure_response( $result );
 		$response->header( 'Cache-Control', 'no-store' );
