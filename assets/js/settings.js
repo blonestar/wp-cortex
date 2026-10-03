@@ -296,6 +296,86 @@
 		return select;
 	}
 
+	// Text color readable on the accent: white or near black, whichever contrasts more.
+	// Mirrors ChatAppearance::text_on().
+	function textOn( hex ) {
+		var m = /^#?([0-9a-f]{6})$/i.exec( hex || '' );
+		var luminance = 0;
+
+		if ( ! m ) {
+			return '#fff';
+		}
+		[ 0.2126, 0.7152, 0.0722 ].forEach( function ( weight, i ) {
+			var c = parseInt( m[ 1 ].substr( i * 2, 2 ), 16 ) / 255;
+			luminance += weight * ( c <= 0.03928 ? c / 12.92 : Math.pow( ( c + 0.055 ) / 1.055, 2.4 ) );
+		} );
+
+		return 1.05 / ( luminance + 0.05 ) >= ( luminance + 0.05 ) / 0.066 ? '#fff' : '#1d2327';
+	}
+
+	// Keeps the visitor chat preview (Visitor chat > Appearance) in step with the unsaved fields.
+	function initChatPreview() {
+		var preview = document.getElementById( 'wp-cortex-pchat-preview' );
+		var form = preview && preview.closest( 'form' );
+		var sizes = {
+			public_chat_radius: '--wp-cortex-radius',
+			public_chat_width: '--wp-cortex-width',
+			public_chat_height: '--wp-cortex-height',
+			public_chat_launcher_size: '--wp-cortex-launcher',
+			public_chat_offset: '--wp-cortex-offset',
+			public_chat_font_size: '--wp-cortex-font-size'
+		};
+
+		if ( ! form ) {
+			return;
+		}
+
+		function field( key ) {
+			return form.elements[ 'wp_cortex_settings[' + key + ']' ];
+		}
+
+		function value( key ) {
+			var f = field( key );
+			return f ? f.value : '';
+		}
+
+		function update() {
+			var accent = value( 'public_chat_accent' );
+			var label = value( 'public_chat_launcher_label' ).trim();
+			var title = preview.querySelector( '.wp-cortex-pchat-title' );
+			var toggle = preview.querySelector( '.wp-cortex-pchat-toggle' );
+			var scheme = value( 'public_chat_scheme' );
+
+			Object.keys( sizes ).forEach( function ( key ) {
+				var f = field( key );
+				var n = f ? parseInt( f.value, 10 ) : NaN;
+
+				if ( ! isNaN( n ) ) {
+					n = Math.min( Math.max( n, parseInt( f.min, 10 ) || 0 ), parseInt( f.max, 10 ) || n );
+					preview.style.setProperty( sizes[ key ], n + 'px' );
+				}
+			} );
+
+			if ( /^#[0-9a-f]{6}$/i.test( accent ) ) {
+				preview.style.setProperty( '--wp-cortex-accent', accent );
+				preview.style.setProperty( '--wp-cortex-accent-text', textOn( accent ) );
+			}
+
+			[ 'light', 'dark', 'auto' ].forEach( function ( name ) {
+				preview.classList.toggle( 'wp-cortex-pchat-scheme-' + name, name === scheme );
+			} );
+			preview.classList.toggle( 'wp-cortex-pchat-left', 'left' === value( 'public_chat_position' ) );
+			preview.classList.toggle( 'wp-cortex-pchat-font-theme', 'theme' === value( 'public_chat_font' ) );
+
+			toggle.classList.toggle( 'has-label', '' !== label );
+			toggle.querySelector( '.wp-cortex-pchat-toggle-label' ).textContent = label;
+			title.textContent = value( 'public_chat_title' ).trim() || title.getAttribute( 'data-placeholder' );
+		}
+
+		form.addEventListener( 'input', update );
+		form.addEventListener( 'change', update );
+	}
+
 	// Switches tabs and their vertical section tabs without reloading. All panels share
 	// one form, so every value is saved; the URL and the post-save redirect keep the view.
 	function initTabs() {
@@ -372,4 +452,5 @@
 	initTabs();
 	initEmbeddings();
 	initModelPicker();
+	initChatPreview();
 }() );

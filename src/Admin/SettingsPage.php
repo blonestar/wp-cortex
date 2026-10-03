@@ -12,6 +12,7 @@ use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\Reasoning;
 use WPCortex\Embeddings\OpenAIEmbeddings;
+use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Settings;
 
 defined( 'ABSPATH' ) || exit;
@@ -80,9 +81,10 @@ final class SettingsPage {
 				'label'    => __( 'Visitor chat', 'wp-cortex' ),
 				'icon'     => 'dashicons-groups',
 				'sections' => array(
-					'general' => array( __( 'General', 'wp-cortex' ), __( 'A chat assistant for site visitors that answers only from the public index.', 'wp-cortex' ), array( $this, 'fields_public_chat' ) ),
-					'privacy' => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
-					'actions' => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
+					'general'    => array( __( 'General', 'wp-cortex' ), __( 'A chat assistant for site visitors that answers only from the public index.', 'wp-cortex' ), array( $this, 'fields_public_chat' ) ),
+					'appearance' => array( __( 'Appearance', 'wp-cortex' ), __( 'How the visitor chat looks on the site. The preview updates as you change the settings; the site after saving.', 'wp-cortex' ), array( $this, 'fields_public_chat_appearance' ) ),
+					'privacy'    => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
+					'actions'    => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
 				),
 			),
 		);
@@ -581,6 +583,145 @@ final class SettingsPage {
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
 		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
 
+	}
+
+	/**
+	 * Renders a select of fixed choices.
+	 *
+	 * @param string                $key     Setting key.
+	 * @param array<string, string> $options Value => label.
+	 */
+	private function select( string $key, array $options ): void {
+		$saved = (string) Settings::get( $key );
+
+		printf( '<select name="%s">', $this->name( $key ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+		foreach ( $options as $value => $label ) {
+			printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( $value ), selected( $saved, $value, false ), esc_html( $label ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
+		echo '</select>';
+	}
+
+	/**
+	 * Renders a pixel size input with its range from Settings::PUBLIC_CHAT_SIZES.
+	 *
+	 * @param string $key   Setting key.
+	 * @param string $label Label shown before the input.
+	 */
+	private function pixels( string $key, string $label ): void {
+		printf( '<label class="wp-cortex-pixels">%s ', esc_html( $label ) );
+		$this->number( $key, Settings::PUBLIC_CHAT_SIZES[ $key ][0], Settings::PUBLIC_CHAT_SIZES[ $key ][1] );
+		echo ' px</label>';
+	}
+
+	/**
+	 * Visitor chat appearance section: colors, position, sizes, font and a live preview.
+	 */
+	public function fields_public_chat_appearance(): void {
+		$this->row_start( __( 'Accent color', 'wp-cortex' ) );
+		printf(
+			'<input type="color" name="%1$s" value="%2$s" aria-label="%3$s" />',
+			$this->name( 'public_chat_accent' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'public_chat_accent' ) ),
+			esc_attr__( 'Accent color', 'wp-cortex' )
+		);
+		$this->row_end( __( 'Used for the chat button, the header, visitor messages and links. Text on it turns white or dark automatically, whichever is easier to read.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Color scheme', 'wp-cortex' ) );
+		$this->select(
+			'public_chat_scheme',
+			array(
+				'light' => __( 'Light', 'wp-cortex' ),
+				'dark'  => __( 'Dark', 'wp-cortex' ),
+				'auto'  => __( 'Match the visitor\'s device', 'wp-cortex' ),
+			)
+		);
+		$this->row_end( __( 'Background and text colors of the chat window.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Position', 'wp-cortex' ) );
+		$this->select(
+			'public_chat_position',
+			array(
+				'right' => __( 'Bottom right', 'wp-cortex' ),
+				'left'  => __( 'Bottom left', 'wp-cortex' ),
+			)
+		);
+		$this->pixels( 'public_chat_offset', __( 'Distance from the edge', 'wp-cortex' ) );
+		$this->row_end( __( 'Move the chat to the left when it covers another widget, for example a cookie notice or a "back to top" button.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Chat button', 'wp-cortex' ) );
+		$this->pixels( 'public_chat_launcher_size', __( 'Size', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" maxlength="%3$d" placeholder="%4$s" aria-label="%5$s" />',
+			$this->name( 'public_chat_launcher_label' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'public_chat_launcher_label' ) ),
+			(int) Settings::PUBLIC_CHAT_LABEL_MAX,
+			esc_attr__( 'Label (optional), for example: Chat with us', 'wp-cortex' ),
+			esc_attr__( 'Chat button label', 'wp-cortex' )
+		);
+		$this->row_end( __( 'Size of the round button that opens the chat. With a label it becomes a pill with the icon and the text.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Chat window', 'wp-cortex' ) );
+		$this->pixels( 'public_chat_width', __( 'Width', 'wp-cortex' ) );
+		$this->pixels( 'public_chat_height', __( 'Height', 'wp-cortex' ) );
+		$this->row_end( __( 'Width and height. The window never grows beyond the screen and fills the bottom of the screen on phones.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Rounded corners', 'wp-cortex' ) );
+		$this->pixels( 'public_chat_radius', __( 'Radius', 'wp-cortex' ) );
+		$this->row_end( __( 'Corner radius of the window and messages; the input and buttons use a slightly smaller one. 0 gives square corners.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Font', 'wp-cortex' ) );
+		$this->select(
+			'public_chat_font',
+			array(
+				'system' => __( 'System font', 'wp-cortex' ),
+				'theme'  => __( 'Theme font', 'wp-cortex' ),
+			)
+		);
+		$this->pixels( 'public_chat_font_size', __( 'Size', 'wp-cortex' ) );
+		$this->row_end( __( 'The system font looks the same on every theme; the theme font matches the rest of the site.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Preview', 'wp-cortex' ) );
+		$this->appearance_preview();
+		$this->row_end();
+	}
+
+	/**
+	 * Static mock-up of the visitor chat, styled by public-chat.css and updated by settings.js.
+	 */
+	private function appearance_preview(): void {
+		$title = (string) Settings::get( 'public_chat_title' );
+		$label = (string) Settings::get( 'public_chat_launcher_label' );
+		$icon  = static function ( string $path ): string {
+			return '<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="' . esc_attr( $path ) . '"></path></svg>';
+		};
+
+		printf(
+			'<div class="wp-cortex-pchat-preview %1$s" id="wp-cortex-pchat-preview" style="%2$s" aria-hidden="true" inert>',
+			esc_attr( implode( ' ', ChatAppearance::classes() ) ),
+			esc_attr( ChatAppearance::declarations() )
+		);
+		echo '<div class="wp-cortex-pchat-panel is-open">';
+		echo '<div class="wp-cortex-pchat-header">';
+		printf( '<p class="wp-cortex-pchat-title" data-placeholder="%1$s">%2$s</p>', esc_attr__( 'Ask a question', 'wp-cortex' ), esc_html( '' !== $title ? $title : __( 'Ask a question', 'wp-cortex' ) ) );
+		echo '<span class="wp-cortex-pchat-iconbtn">' . $icon( 'M12 5v14M5 12h14' ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static markup.
+		echo '<span class="wp-cortex-pchat-iconbtn">' . $icon( 'M6 6l12 12M18 6L6 18' ) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static markup.
+		echo '</div><div class="wp-cortex-pchat-messages">';
+		echo '<div class="wp-cortex-pchat-msg wp-cortex-pchat-msg-assistant">' . esc_html__( 'Hi! Ask me anything about this website.', 'wp-cortex' ) . '</div>';
+		echo '<div class="wp-cortex-pchat-msg wp-cortex-pchat-msg-user">' . esc_html__( 'What services do you offer?', 'wp-cortex' ) . '</div>';
+		echo '<div class="wp-cortex-pchat-msg wp-cortex-pchat-msg-assistant"><p>' . esc_html__( 'We offer design, development and support. You can find the details on our services page.', 'wp-cortex' ) . '</p></div>';
+		echo '<div class="wp-cortex-pchat-sources"><p class="wp-cortex-pchat-sources-title">' . esc_html__( 'Sources', 'wp-cortex' ) . '</p><ul><li><span class="wp-cortex-pchat-source-link">' . esc_html__( 'Services', 'wp-cortex' ) . '</span></li></ul></div>';
+		echo '</div><div class="wp-cortex-pchat-form">';
+		echo '<span class="wp-cortex-pchat-input">' . esc_html__( 'Type your question…', 'wp-cortex' ) . '</span>';
+		echo '<span class="wp-cortex-pchat-send">' . esc_html__( 'Send', 'wp-cortex' ) . '</span>';
+		echo '</div></div>';
+		printf(
+			'<span class="wp-cortex-pchat-toggle%1$s">%2$s<span class="wp-cortex-pchat-toggle-label">%3$s</span></span>',
+			'' !== $label ? ' has-label' : '',
+			$icon( 'M4 4h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Static markup.
+			esc_html( $label )
+		);
+		echo '</div>';
+		echo '<p class="description">' . esc_html__( 'Theme styles on the site may change the result slightly, for example with the theme font.', 'wp-cortex' ) . '</p>';
 	}
 
 	/**
