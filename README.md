@@ -13,7 +13,8 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 - **Two isolated indexes**
   - `public.sqlite` holds only published, publicly viewable, non-password-protected content, and only fields/sections flagged as public.
   - `admin.sqlite` holds everything eligible: drafts, pending, scheduled and private posts (configurable), plus Yoast SEO, ACF and custom meta data.
-- **Extractors**: core post data, taxonomies, Yoast SEO, ACF, custom meta keys. Extensible through a filter.
+- **Extractors**: core post data, taxonomies, Yoast SEO, ACF, custom meta keys, media library files. Extensible through a filter.
+- **Media indexing** (optional): attachments are indexed as post type `attachment` with title, caption, alt text, description, file URL and `media` fields (MIME type, file name and size, dimensions, audio/video duration, artist, album; EXIF credit, copyright and camera in the admin index only). Media inherit the status and password protection of the post they are attached to; unattached media count as published. Image `alt_text` is stored even when empty. Yoast fields are not indexed for media.
 - **Front-end-equivalent content**: blocks (including dynamic ones) are rendered as an anonymous visitor, so the index matches what the public sees and logged-in-only content never leaks into it. Forms, navigation, scripts and styles are stripped.
 - **Heading-aware chunking**: HTML is split at headings; consecutive short sections are packed together and long ones split at paragraph/sentence boundaries into chunks of roughly N characters with configurable overlap.
 - **OpenAI embeddings** with reuse by chunk hash: unchanged text is never re-embedded, even across documents and scopes.
@@ -45,13 +46,14 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `post_types` | `post`, `page` | Post types to index (internal types such as attachments and templates are not offered). |
+| `post_types` | `post`, `page` | Post types to index (internal types such as templates are not offered; attachments are controlled by `index_media`). |
 | `admin_statuses` | publish, future, draft, pending, private | Statuses included in the admin index. `publish` is always included. The public index only ever holds `publish`. |
 | `auto_sync` | on | Queue changed posts and index them in the background via WP-Cron. |
 | `index_yoast` | on | Index Yoast SEO fields (admin index only). Requires Yoast SEO. |
 | `index_acf` | on | Index ACF fields. Requires ACF. |
 | `acf_public` | off | Also put ACF text into the public index. |
 | `meta_keys` | none | Extra post meta keys to index (one per line; admin index only). |
+| `index_media` | off | Index media library attachments (see Features). File contents such as PDF text are not extracted. |
 | `chunk_size` | 1200 | Approximate characters per chunk (300-6000). |
 | `chunk_overlap` | 150 | Characters shared between chunks (0 to half of chunk size). |
 | `batch_size` | 10 | Posts per indexing request (1-100). |
@@ -87,7 +89,7 @@ The directory must be writable by the web server user. Changing the location doe
 - **Skipping**: for each scope a content hash is computed over the document columns, fields and chunk hashes. If it matches the stored hash (and, when embeddings are active, no chunk lacks a vector for the current embedding signature), the post is skipped.
 - **Embedding reuse**: each chunk is hashed (title, section heading, text). Existing vectors with the same hash and signature are reused; only missing ones are sent to OpenAI, in one pass per batch (96 inputs per request, up to 3 attempts on 429/5xx).
 - **Stale removal**: documents not seen by a run (deleted posts, changed status, deselected post types) are deleted when the run finishes. Posts that become ineligible are also removed immediately when processed.
-- **Auto-sync**: on save, trash/untrash/delete, status transition, term changes and changes of `_yoast_wpseo_*` or configured meta keys, post IDs are queued (option `wp_cortex_sync_queue`) and processed by a single WP-Cron event ~15 seconds later, 50 posts at a time. It pauses while a full run is active.
+- **Auto-sync**: on save, trash/untrash/delete, status transition, term changes and changes of `_yoast_wpseo_*` or configured meta keys (with media indexing also alt text, attachment metadata, attach/detach, and the media attached to a post whose status or password changes), post IDs are queued (option `wp_cortex_sync_queue`) and processed by a single WP-Cron event ~15 seconds later, 50 posts at a time. It pauses while a full run is active.
 - Run state is kept in the `wp_cortex_index_run` option and shared by the admin UI, REST and WP-CLI; a lock option prevents concurrent batches (stale after 300 s).
 
 ## WP-CLI
@@ -121,7 +123,7 @@ Namespace `wp-cortex/v1`. All routes require the `manage_options` capability (an
 Both databases share one schema (`PRAGMA user_version` = 1; WAL mode, foreign keys on):
 
 - `documents`: one row per object (`object_type`, `object_id`, `subtype`, `status`, `title`, `url`, `excerpt`, author, `published_at`, `modified_at`, `content_hash`, `indexed_at`, `run_id`), unique on `(object_type, object_id)`.
-- `fields`: structured key/value rows (`document_id`, `source`, `name`, `value`). Sources: `core`, `taxonomy`, `yoast`, `acf`, `meta`.
+- `fields`: structured key/value rows (`document_id`, `source`, `name`, `value`). Sources: `core`, `taxonomy`, `yoast`, `acf`, `meta`, `media`.
 - `chunks`: `document_id`, `position`, `heading`, `content`, `content_hash`, `embedding` BLOB, `embedding_model`.
 - `chunks_fts`: FTS5 virtual table (`title`, `heading`, `content`; tokenizer `unicode61 remove_diacritics 2`) with `rowid = chunks.id`.
 
@@ -148,7 +150,7 @@ src/
     Indexer.php          Pipeline: extract, chunk, embed, write
     IndexRun.php         Resumable batch run state machine
     PostSync.php         Auto-sync queue and WP-Cron worker
-    Extractors/          Core, Taxonomy, Yoast, Acf, Meta extractors
+    Extractors/          Core, Taxonomy, Yoast, Acf, Meta, Media extractors
   Embeddings/
     EmbeddingProvider.php  Provider interface
     OpenAIEmbeddings.php   OpenAI client
@@ -172,6 +174,7 @@ None of the following is implemented yet.
 - **Frontend chat with content**: block/widget with citations, backed by the public index.
 - **MCP access for external agents** via the WordPress Abilities API and MCP Adapter: public tools use the public index; admin tools use the admin index and are capability-gated.
 - **Optional sqlite-vec acceleration** for vector search.
+- **Media file contents**: extracting text from PDFs and other documents in the media library.
 
 ## License
 

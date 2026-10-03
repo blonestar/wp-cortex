@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Optional media library indexing (`index_media` setting, off by default): attachments are indexed with title, caption, alt text, description, file URL and `media` fields (MIME type, file name and size, dimensions, audio/video metadata). Media inherit the status and password protection of their parent post and are kept in sync automatically.
+
 ### Changed
 
 - Assets are versioned with the plugin version plus the file modification time, so changed JS/CSS reloads between releases.

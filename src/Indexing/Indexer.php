@@ -14,6 +14,7 @@ use WPCortex\Embeddings\VectorCodec;
 use WPCortex\Indexing\Extractors\AcfExtractor;
 use WPCortex\Indexing\Extractors\CoreExtractor;
 use WPCortex\Indexing\Extractors\Extractor;
+use WPCortex\Indexing\Extractors\MediaExtractor;
 use WPCortex\Indexing\Extractors\MetaExtractor;
 use WPCortex\Indexing\Extractors\TaxonomyExtractor;
 use WPCortex\Indexing\Extractors\YoastExtractor;
@@ -54,6 +55,7 @@ final class Indexer {
 			new YoastExtractor(),
 			new AcfExtractor(),
 			new MetaExtractor(),
+			new MediaExtractor(),
 		);
 
 		/**
@@ -210,14 +212,15 @@ final class Indexer {
 	 * @return array<string, array{doc: Document, hash: string, chunks: array<int, array{heading: string, content: string, hash: string}>}> Writes by scope.
 	 */
 	private function prepare_post( int $post_id, ?string $run_id, bool $active, string $signature, array &$result ): array {
-		$post = get_post( $post_id );
+		$post   = get_post( $post_id );
+		$status = $post instanceof WP_Post ? self::effective_status( $post ) : '';
 
 		$admin_ok  = $post instanceof WP_Post
 			&& in_array( $post->post_type, Settings::post_types(), true )
-			&& in_array( $post->post_status, Settings::admin_statuses(), true );
+			&& in_array( $status, Settings::admin_statuses(), true );
 		$public_ok = $admin_ok
-			&& 'publish' === $post->post_status
-			&& '' === (string) $post->post_password
+			&& 'publish' === $status
+			&& ! self::is_password_protected( $post )
 			&& is_post_type_viewable( $post->post_type );
 
 		$eligible = array(
@@ -362,24 +365,61 @@ final class Indexer {
 	}
 
 	/**
+	 * Status a post is treated as for eligibility. Attachments are stored as "inherit"
+	 * and take the status of the post they are attached to ("publish" when unattached).
+	 *
+	 * @param WP_Post $post Post.
+	 */
+	public static function effective_status( WP_Post $post ): string {
+		return 'attachment' === $post->post_type ? (string) get_post_status( $post ) : $post->post_status;
+	}
+
+	/**
+	 * Whether the post, or for an attachment the post it is attached to, has a password.
+	 *
+	 * @param WP_Post $post Post.
+	 */
+	private static function is_password_protected( WP_Post $post ): bool {
+		if ( '' !== (string) $post->post_password ) {
+			return true;
+		}
+
+		if ( 'attachment' === $post->post_type && $post->post_parent ) {
+			$parent = get_post( $post->post_parent );
+
+			return $parent instanceof WP_Post && '' !== (string) $parent->post_password;
+		}
+
+		return false;
+	}
+
+	/**
 	 * SQL condition (without WHERE) matching posts that belong in the admin index.
+	 *
+	 * Attachments are matched by their stored status only; the inherited status is
+	 * checked per post in prepare_post(), which removes the ineligible ones.
 	 *
 	 * @return string Empty string when no post type is selected.
 	 */
 	private static function eligible_post_where(): string {
 		global $wpdb;
 
-		$types    = Settings::post_types();
+		$types    = array_values( array_diff( Settings::post_types(), array( 'attachment' ) ) );
 		$statuses = Settings::admin_statuses();
+		$clauses  = array();
 
-		if ( ! $types || ! $statuses ) {
-			return '';
+		if ( $types && $statuses ) {
+			$type_sql   = implode( ',', array_fill( 0, count( $types ), '%s' ) );
+			$status_sql = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			$clauses[] = $wpdb->prepare( "(post_type IN ($type_sql) AND post_status IN ($status_sql))", array_merge( $types, $statuses ) );
 		}
 
-		$type_sql   = implode( ',', array_fill( 0, count( $types ), '%s' ) );
-		$status_sql = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
+		if ( in_array( 'attachment', Settings::post_types(), true ) ) {
+			$clauses[] = "(post_type = 'attachment' AND post_status IN ('inherit', 'private'))";
+		}
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-		return $wpdb->prepare( "post_type IN ($type_sql) AND post_status IN ($status_sql)", array_merge( $types, $statuses ) );
+		return $clauses ? '(' . implode( ' OR ', $clauses ) . ')' : '';
 	}
 }
