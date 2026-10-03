@@ -236,15 +236,7 @@ final class PublicChatAgent {
 	 * @return array{id: int, title: string, url: string, snippet: string}|null
 	 */
 	private function context_document( int $post_id ): ?array {
-		if ( $post_id < 1 ) {
-			return null;
-		}
-
-		try {
-			$doc = $this->search()->get_document( $post_id );
-		} catch ( \Throwable $e ) {
-			return null;
-		}
+		$doc = $this->get_public_document( $post_id );
 
 		if ( null === $doc ) {
 			return null;
@@ -368,6 +360,35 @@ final class PublicChatAgent {
 	}
 
 	/**
+	 * Gets a public visitor-chat document of an allowed content type.
+	 *
+	 * Media attachments are valid public index documents when media indexing is enabled,
+	 * but they are not pages the visitor chat may read or open.
+	 *
+	 * @param int $post_id WordPress post ID.
+	 * @return array<string, mixed>|null
+	 */
+	private function get_public_document( int $post_id ): ?array {
+		if ( $post_id < 1 ) {
+			return null;
+		}
+
+		try {
+			$doc = $this->search()->get_document( $post_id );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		if ( null === $doc
+			|| 'post' !== (string) ( $doc['object_type'] ?? '' )
+			|| ! in_array( (string) ( $doc['subtype'] ?? '' ), $this->post_types(), true ) ) {
+			return null;
+		}
+
+		return $doc;
+	}
+
+	/**
 	 * Tool: go_to_page. Only pages in the public index can be opened.
 	 *
 	 * @param array $args Function arguments.
@@ -375,12 +396,7 @@ final class PublicChatAgent {
 	 */
 	private function go_to_page( array $args ): array {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
-
-		try {
-			$doc = $post_id > 0 ? $this->search()->get_document( $post_id ) : null;
-		} catch ( \Throwable $e ) {
-			$doc = null;
-		}
+		$doc     = $this->get_public_document( $post_id );
 
 		if ( null === $doc || '' === (string) $doc['url'] ) {
 			return array( 'error' => 'No published page with this ID.' );
@@ -444,10 +460,21 @@ final class PublicChatAgent {
 			return array( 'error' => 'Pass a query.' );
 		}
 
-		$search = array( 'limit' => max( 1, min( self::MAX_RESULTS, (int) ( $args['limit'] ?? 5 ) ) ) );
+		$types = $this->post_types();
+		if ( ! $types ) {
+			return array(
+				'results' => array(),
+				'total'   => 0,
+			);
+		}
+
+		$search = array(
+			'limit'      => max( 1, min( self::MAX_RESULTS, (int) ( $args['limit'] ?? 5 ) ) ),
+			'post_types' => $types,
+		);
 		$type   = (string) ( $args['post_type'] ?? '' );
 
-		if ( '' !== $type && in_array( $type, $this->post_types(), true ) ) {
+		if ( '' !== $type && in_array( $type, $types, true ) ) {
 			$search['post_types'] = array( $type );
 		}
 
@@ -494,12 +521,7 @@ final class PublicChatAgent {
 	 */
 	private function get_page( array $args, array &$seen ): array {
 		$post_id = (int) ( $args['post_id'] ?? 0 );
-
-		try {
-			$doc = $post_id > 0 ? $this->search()->get_document( $post_id ) : null;
-		} catch ( \Throwable $e ) {
-			$doc = null;
-		}
+		$doc     = $this->get_public_document( $post_id );
 
 		if ( null === $doc ) {
 			return array( 'error' => 'No published page with this ID.' );
@@ -668,7 +690,12 @@ final class PublicChatAgent {
 	 * @return string[]
 	 */
 	private function post_types(): array {
-		return array_values( array_filter( Settings::post_types(), 'is_post_type_viewable' ) );
+		return array_values(
+			array_filter(
+				Settings::post_types(),
+				static fn( $type ) => 'attachment' !== $type && is_post_type_viewable( $type )
+			)
+		);
 	}
 
 	/**
