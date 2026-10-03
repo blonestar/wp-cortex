@@ -1,0 +1,207 @@
+.wp-cortex-wrap [hidden] {
+	display: none !important;
+}
+
+.wp-cortex-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+	padding: 1px 20px 16px;
+	margin: 16px 0;
+	max-width: 1100px;
+}
+
+.wp-cortex-card h2 {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 16px 0 12px;
+	padding: 0;
+	font-size: 1.15em;
+}
+
+.wp-cortex-card h3 {
+	margin: 16px 0 8px;
+}
+
+.wp-cortex-stats-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+	gap: 16px;
+	max-width: 1100px;
+}
+
+.wp-cortex-stats-grid .wp-cortex-card {
+	margin: 0;
+}
+
+.wp-cortex-stats,
+.wp-cortex-counters {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	gap: 12px;
+	margin: 0;
+}
+
+.wp-cortex-stat,
+.wp-cortex-counter {
+	margin: 0;
+}
+
+.wp-cortex-stat dt,
+.wp-cortex-counter dt {
+	color: #646970;
+	font-size: 12px;
+	margin: 0 0 2px;
+}
+
+.wp-cortex-stat dd,
+.wp-cortex-counter dd {
+	margin: 0;
+	font-size: 18px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.wp-cortex-by-type {
+	margin: 0;
+}
+
+.wp-cortex-by-type li {
+	display: flex;
+	justify-content: space-between;
+	margin: 0;
+	padding: 4px 0;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.wp-cortex-progress {
+	height: 14px;
+	background: #f0f0f1;
+	border-radius: 7px;
+	overflow: hidden;
+	margin: 8px 0;
+}
+
+.wp-cortex-progress-bar {
+	height: 100%;
+	width: 0;
+	background: #2271b1;
+	border-radius: 7px;
+	transition: width 0.4s ease;
+}
+
+.wp-cortex-progress.is-complete .wp-cortex-progress-bar {
+	background: #00a32a;
+}
+
+.wp-cortex-progress.is-failed .wp-cortex-progress-bar {
+	background: #d63638;
+}
+
+.wp-cortex-progress-text {
+	margin: 4px 0 16px;
+	font-weight: 600;
+}
+
+.wp-cortex-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 16px 0 8px;
+}
+
+.wp-cortex-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 12px;
+	font-weight: 500;
+	line-height: 1.5;
+	background: #f0f0f1;
+	color: #50575e;
+}
+
+.wp-cortex-badge-ok,
+.wp-cortex-badge-completed {
+	background: #edfaef;
+	color: #00450c;
+}
+
+.wp-cortex-badge-warn,
+.wp-cortex-badge-cancelled {
+	background: #fcf9e8;
+	color: #614200;
+}
+
+.wp-cortex-badge-running {
+	background: #f0f6fc;
+	color: #043959;
+}
+
+.wp-cortex-badge-failed {
+	background: #fcf0f1;
+	color: #8a2424;
+}
+
+.wp-cortex-errors {
+	margin: 0;
+	max-height: 240px;
+	overflow: auto;
+}
+
+.wp-cortex-errors li {
+	margin: 0;
+	padding: 6px 0;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.wp-cortex-stats-error {
+	color: #d63638;
+}
+
+.wp-cortex-last-sync {
+	max-width: 1100px;
+}
+
+.wp-cortex-block {
+	display: block;
+	margin: 0 0 6px;
+}
+
+.wp-cortex-section-fields th {
+	display: none;
+}
+
+.wp-cortex-section-fields td {
+	padding-left: 0;
+}
+
+.wp-cortex-field {
+	display: grid;
+	grid-template-columns: 200px 1fr;
+	gap: 8px 16px;
+	padding: 10px 0;
+	border-bottom: 1px solid #f0f0f1;
+	max-width: 900px;
+}
+
+.wp-cortex-field-label {
+	font-weight: 600;
+}
+
+.wp-cortex-field-control .description {
+	margin-top: 6px;
+}
+
+@media (max-width: 782px) {
+	.wp-cortex-field {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wp-cortex-progress-bar {
+		transition: none;
+	}
+}
