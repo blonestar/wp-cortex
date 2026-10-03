@@ -1,9 +1,10 @@
 /**
  * Cortex visitor chat: answers from the public index only.
  *
- * Conversations are kept in the browser session (not on the server); the previous text
- * turns are sent with every message. Requests carry no cookies or nonce, so they are
- * always anonymous and work on cached pages.
+ * Conversations are kept in the browser session; the previous text turns are sent with
+ * every message. A random session token identifies the conversation in the server log
+ * (when the site keeps one). Requests carry no cookies or nonce, so they are always
+ * anonymous and work on cached pages.
  */
 ( function () {
 	'use strict';
@@ -13,6 +14,7 @@
 	var STORE_KEY = 'wpCortexPublicChat';
 	var MAX_STORED = 40;
 	var MAX_HISTORY = 12;
+	var NAVIGATE_DELAY = 1200;
 	var P = 'wp-cortex-pchat-';
 	var SVG_NS = 'http://www.w3.org/2000/svg';
 	var ICONS = {
@@ -21,7 +23,7 @@
 		close: 'M6 6l12 12M18 6L6 18'
 	};
 	var root, toggle, panel, list, input, sendBtn, thinkingEl;
-	var state = { open: false, items: [] };
+	var state = { open: false, items: [], session: '' };
 	var busy = false;
 
 	function loadState() {
@@ -29,7 +31,26 @@
 			var s = JSON.parse( window.sessionStorage.getItem( STORE_KEY ) || '{}' );
 			state.open = !! s.open;
 			state.items = Array.isArray( s.items ) ? s.items : [];
+			state.session = 'string' === typeof s.session && /^[a-f0-9]{32}$/.test( s.session ) ? s.session : '';
 		} catch ( e ) {}
+		if ( ! state.session ) {
+			state.session = newSession();
+		}
+	}
+
+	// 128 random bits as 32 hex characters.
+	function newSession() {
+		var bytes = new Uint8Array( 16 );
+		if ( window.crypto && window.crypto.getRandomValues ) {
+			window.crypto.getRandomValues( bytes );
+		} else {
+			for ( var i = 0; i < bytes.length; i++ ) {
+				bytes[ i ] = Math.floor( Math.random() * 256 );
+			}
+		}
+		return Array.prototype.map.call( bytes, function ( b ) {
+			return ( b < 16 ? '0' : '' ) + b.toString( 16 );
+		} ).join( '' );
 	}
 
 	function saveState() {
@@ -118,11 +139,26 @@
 		list.appendChild( wrap );
 	}
 
+	function addNote( text, linkText, url ) {
+		var n = el( 'div', P + 'note', text );
+		if ( url && isHttpUrl( url ) ) {
+			n.appendChild( document.createTextNode( ' ' ) );
+			var a = el( 'a', '', linkText );
+			a.href = url;
+			n.appendChild( a );
+		}
+		list.appendChild( n );
+	}
+
 	function renderItem( item ) {
 		if ( ! item ) {
 			return;
 		}
 		switch ( item.role ) {
+			case 'navigate':
+				addNote( '→', item.title || item.url, item.url );
+				break;
+
 			case 'user':
 				addMessage( 'user', item.text || '', false );
 				break;
@@ -197,7 +233,7 @@
 			method: 'POST',
 			credentials: 'omit',
 			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-			body: JSON.stringify( { message: text, history: previous, post_id: cfg.postId || 0 } )
+			body: JSON.stringify( { message: text, history: previous, post_id: cfg.postId || 0, session: state.session } )
 		} ).then( function ( res ) {
 			return res.json().catch( function () {
 				return {};
@@ -210,19 +246,41 @@
 			} );
 		} ).then( function ( body ) {
 			setBusy( false );
+			var target = null;
 			( body.items || [] ).forEach( function ( item ) {
 				if ( item && 'user' !== item.role ) {
 					addItem( item );
+					if ( 'navigate' === item.role && item.url && isHttpUrl( item.url ) ) {
+						target = item.url;
+					}
 				}
 			} );
 			saveState();
 			scrollBottom();
+			if ( target ) {
+				navigate( target );
+			}
 		} ).catch( function ( err ) {
 			setBusy( false );
 			// Errors are shown but not kept, so a reload starts clean.
 			addMessage( 'error', ( err && err.message ) || __( 'Sorry, something went wrong. Please try again.', 'wp-cortex' ), false );
 			scrollBottom();
 		} );
+	}
+
+	// Opens a page the visitor asked for; the chat state (open, history) survives the load.
+	function navigate( url ) {
+		var to = new URL( url, window.location.href );
+		var here = window.location;
+		if ( to.origin === here.origin && to.pathname === here.pathname && to.search === here.search ) {
+			return;
+		}
+		busy = true;
+		input.disabled = true;
+		sendBtn.disabled = true;
+		window.setTimeout( function () {
+			window.location.assign( to.href );
+		}, NAVIGATE_DELAY );
 	}
 
 	/* ---------- Open / close ---------- */
@@ -251,6 +309,7 @@
 			return;
 		}
 		state.items = [];
+		state.session = newSession();
 		saveState();
 		render();
 		input.focus();
