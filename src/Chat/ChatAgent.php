@@ -12,6 +12,7 @@ use WordPress\AiClient\Messages\DTO\Message;
 use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\UserMessage;
 use WordPress\AiClient\Providers\Http\DTO\RequestOptions;
+use WordPress\AiClient\Providers\Models\DTO\ModelConfig;
 use WordPress\AiClient\Tools\DTO\FunctionCall;
 use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
 use WordPress\AiClient\Tools\DTO\FunctionResponse;
@@ -223,6 +224,13 @@ final class ChatAgent {
 					} catch ( \Throwable $e ) {
 						/* translators: 1: model ID, 2: error message */
 						return new WP_Error( 'wp_cortex_model_unavailable', sprintf( __( 'The chat model "%1$s" is not available: %2$s', 'wp-cortex' ), $model, $e->getMessage() ) );
+					}
+
+					// Reasoning effort is model specific, so it only applies to an explicit model.
+					$reasoning = Reasoning::custom_options( $provider, (string) Settings::get( 'chat_reasoning' ) );
+
+					if ( $reasoning ) {
+						$builder = $builder->using_model_config( ModelConfig::fromArray( array( ModelConfig::KEY_CUSTOM_OPTIONS => $reasoning ) ) );
 					}
 				}
 			}

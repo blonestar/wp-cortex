@@ -243,3 +243,13 @@
 		transform: rotate(360deg);
 	}
 }
+
+.wp-cortex-reasoning {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.wp-cortex-reasoning[hidden] {
+	display: none;
+}

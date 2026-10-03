@@ -9,6 +9,7 @@ namespace WPCortex\Admin;
 
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ModelCatalog;
+use WPCortex\Chat\Reasoning;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Settings;
 
@@ -374,13 +375,14 @@ final class SettingsPage {
 			);
 		}
 		echo '</select> ';
+		$this->reasoning_select( array_keys( $providers ), $selected, $saved );
 		printf(
 			'<button type="button" class="button wp-cortex-model-refresh" id="wp-cortex-model-refresh" hidden><span class="dashicons dashicons-update" aria-hidden="true"></span> %s</button>',
 			esc_html__( 'Refresh models', 'wp-cortex' )
 		);
 		echo ' <span class="wp-cortex-model-status" id="wp-cortex-model-status" role="status" aria-live="polite"></span>';
 		echo '</div>';
-		$this->row_end( __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose.', 'wp-cortex' ) );
+		$this->row_end( __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose. Reasoning sets how much the model thinks before answering (more is slower and costs more); it is shown once a model is chosen, and a level the model does not support makes the request fail.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'Custom instructions', 'wp-cortex' ) );
 		printf(
@@ -397,5 +399,45 @@ final class SettingsPage {
 				Settings::CHAT_INSTRUCTIONS_MAX
 			)
 		);
+	}
+
+	/**
+	 * Reasoning level select, shown next to the model when the provider supports it.
+	 *
+	 * Every level is rendered with the providers that support it; settings.js shows only
+	 * those of the selected provider.
+	 *
+	 * @param string[] $providers Registered provider IDs.
+	 * @param string   $provider  Selected provider ID.
+	 * @param string   $model     Saved model ID.
+	 */
+	private function reasoning_select( array $providers, string $provider, string $model ): void {
+		$saved     = (string) Settings::get( 'chat_reasoning' );
+		$labels    = Reasoning::labels();
+		$available = '' !== $model && Reasoning::levels( $provider );
+
+		printf(
+			'<label class="wp-cortex-reasoning" id="wp-cortex-reasoning" %s>%s ',
+			$available ? '' : 'hidden',
+			esc_html__( 'Reasoning', 'wp-cortex' )
+		);
+		printf(
+			'<select name="%s" id="wp-cortex-chat-reasoning" %s>',
+			$this->name( 'chat_reasoning' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			$available ? '' : 'disabled'
+		);
+		printf( '<option value="" %s>%s</option>', selected( $saved, '', false ), esc_html__( 'Model default', 'wp-cortex' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		foreach ( Reasoning::level_providers( $providers ) as $level => $level_providers ) {
+			$supported = in_array( $provider, $level_providers, true );
+			printf(
+				'<option value="%1$s" data-providers="%2$s" %3$s %4$s>%5$s</option>',
+				esc_attr( $level ),
+				esc_attr( implode( ' ', $level_providers ) ),
+				selected( $saved, $level, false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				$supported ? '' : 'hidden disabled',
+				esc_html( $labels[ $level ] ?? $level )
+			);
+		}
+		echo '</select></label> ';
 	}
 }
