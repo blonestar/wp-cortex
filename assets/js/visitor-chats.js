@@ -22,6 +22,7 @@
 		phone: __( 'Phone', 'wp-cortex' ),
 		address: __( 'Address', 'wp-cortex' ),
 		company: __( 'Company', 'wp-cortex' ),
+		website: __( 'Website URL(s)', 'wp-cortex' ),
 		request: __( 'Request', 'wp-cortex' )
 	};
 
@@ -130,6 +131,15 @@
 		return [ contact.first_name, contact.last_name ].filter( Boolean ).join( ' ' );
 	}
 
+	function appendWebsiteLinks( parent, value, cls ) {
+		String( value ).split( /\r?\n/ ).filter( Boolean ).forEach( function ( url, i ) {
+			if ( i && ! cls ) {
+				parent.appendChild( document.createTextNode( ', ' ) );
+			}
+			parent.appendChild( link( url, url, cls ) );
+		} );
+	}
+
 	function badge( chat ) {
 		return el( 'span', 'wp-cortex-badge ' + ( chat.is_read ? '' : 'wp-cortex-badge-running' ), chat.is_read ? __( 'Read', 'wp-cortex' ) : __( 'Unread', 'wp-cortex' ) );
 	}
@@ -234,6 +244,9 @@
 		[ c.email, c.phone, c.company ].filter( Boolean ).forEach( function ( v ) {
 			td.appendChild( el( 'span', 'wp-cortex-block', v ) );
 		} );
+		if ( c.website ) {
+			appendWebsiteLinks( td, c.website, 'wp-cortex-block' );
+		}
 		return td;
 	}
 
@@ -420,6 +433,8 @@
 				var tel = el( 'a', '', value );
 				tel.href = 'tel:' + value.replace( /[^0-9+]/g, '' );
 				dd.appendChild( tel );
+			} else if ( 'website' === k ) {
+				appendWebsiteLinks( dd, value );
 			} else {
 				dd.textContent = value;
 			}
