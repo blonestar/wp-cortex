@@ -105,6 +105,83 @@
 		list.appendChild( wrap );
 	}
 
+	function addSkillProposal( skill ) {
+		if ( ! skill || ! skill.name ) {
+			return;
+		}
+		var existingId = parseInt( skill.existing_id, 10 ) || 0;
+		var card = el( 'form', P + 'card ' + P + 'skill' );
+		card.appendChild( el( 'p', P + 'card-title', existingId ? __( 'Update this skill?', 'wp-cortex' ) : __( 'Save as a skill?', 'wp-cortex' ) ) );
+
+		function field( label, control ) {
+			var l = el( 'label', P + 'skill-field' );
+			l.appendChild( el( 'span', P + 'skill-label', label ) );
+			l.appendChild( control );
+			card.appendChild( l );
+			return control;
+		}
+
+		var name = field( __( 'Name', 'wp-cortex' ), el( 'input', P + 'skill-input' ) );
+		name.type = 'text';
+		name.value = skill.name;
+		var desc = field( __( 'When to use', 'wp-cortex' ), el( 'input', P + 'skill-input' ) );
+		desc.type = 'text';
+		desc.value = skill.description || '';
+		var steps = field( __( 'Instructions', 'wp-cortex' ), el( 'textarea', P + 'skill-input' ) );
+		steps.rows = 5;
+		steps.value = skill.instructions || '';
+
+		var status = el( 'p', P + 'skill-status' );
+		var actions = el( 'div', P + 'card-actions' );
+		var save = el( 'button', 'button button-small button-primary', existingId ? __( 'Update skill', 'wp-cortex' ) : __( 'Save skill', 'wp-cortex' ) );
+		save.type = 'submit';
+		var dismiss = el( 'button', 'button button-small', __( 'Dismiss', 'wp-cortex' ) );
+		dismiss.type = 'button';
+		actions.appendChild( save );
+		actions.appendChild( dismiss );
+		card.appendChild( actions );
+		card.appendChild( status );
+
+		function done( text ) {
+			[ name, desc, steps ].forEach( function ( c ) {
+				c.disabled = true;
+			} );
+			actions.hidden = true;
+			status.textContent = text;
+			if ( cfg.skillsUrl ) {
+				var link = el( 'a', '', __( 'Manage skills', 'wp-cortex' ) );
+				link.href = cfg.skillsUrl;
+				status.appendChild( document.createTextNode( ' ' ) );
+				status.appendChild( link );
+			}
+		}
+
+		dismiss.addEventListener( 'click', function () {
+			done( __( 'Not saved.', 'wp-cortex' ) );
+		} );
+		card.addEventListener( 'submit', function ( e ) {
+			e.preventDefault();
+			save.disabled = true;
+			status.textContent = '';
+			var data = { name: name.value, description: desc.value, instructions: steps.value };
+			if ( ! existingId ) {
+				data.source = 'agent';
+			}
+			wp.apiFetch( {
+				path: '/wp-cortex/v1/skills' + ( existingId ? '/' + existingId : '' ),
+				method: existingId ? 'PUT' : 'POST',
+				data: data
+			} ).then( function () {
+				done( __( 'Skill saved.', 'wp-cortex' ) );
+			} ).catch( function ( err ) {
+				save.disabled = false;
+				status.textContent = ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' );
+			} );
+		} );
+
+		list.appendChild( card );
+	}
+
 	function renderItem( item ) {
 		if ( ! item ) {
 			return;
@@ -118,6 +195,9 @@
 				break;
 			case 'results':
 				addResults( item.results );
+				break;
+			case 'skill_proposal':
+				addSkillProposal( item.skill );
 				break;
 			case 'error':
 				addMessage( 'error', item.text || '', false );

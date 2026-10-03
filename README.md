@@ -22,6 +22,7 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 - **Incremental auto-sync** via WP-Cron when content, terms or relevant meta change.
 - **Hybrid search service** (`WPCortex\Search\SearchService`): FTS5 BM25 keyword search, brute-force cosine semantic search, merged with Reciprocal Rank Fusion and grouped per document. Structured filters on post type, status, modified date and any indexed field (`eq`, `neq`, `contains`, `not_contains`, `empty`, `not_empty`, `missing`, `exists`). Degrades to keyword search when embeddings are unavailable. Also offers `get_document()` and `field_catalog()`.
 - **Admin chat assistant**: a floating chat panel on every admin screen for administrators. An LLM (through the WordPress AI Client, any configured provider) answers questions about site content by calling tools over the admin index, shows the posts cited in its answer (as `#ID`) as cards below it and on request can open a post in the editor or go to any admin screen from the user's admin menu (optionally straight to a named tab) and switch tabs on the current screen. Conversations are stored per user in the `{prefix}wp_cortex_conversations` table. Needs an AI provider API key under Settings > Connectors.
+- **Chat skills** (Cortex > Skills): saved procedures the admin chat follows, for example how to reach a settings tab or run a recurring search. Active skills are listed by name and description in the chat system prompt; the assistant loads the steps of a matching skill with its `use_skill` tool. After a multi-step task the assistant can offer to save it, and its `propose_skill` tool shows a card in the chat where the user edits, saves or dismisses the proposal: the assistant never saves a skill by itself. Skills can be added, edited, activated, deactivated and deleted on the Skills screen, which also shows the source (user or assistant), the use count and the last use. Stored in the `{prefix}wp_cortex_skills` table; admin chat only, never used by the visitor chat.
 - **Admin chat on the front end** (`chat_frontend`, off by default): administrators get the same chat panel on the public pages of the site. It uses the admin index and the same conversations, knows which post is being viewed and can open posts in the editor; admin screens and tabs can only be opened from the admin.
 - **Visitor chat** (`public_chat_enabled`, off by default): a floating chat for visitors on the front end that answers only from the **public index**, through its own `search_site` and `get_page` tools (the abilities are not used, they read the admin index). Pages the answer is based on are linked inline and listed as sources. Nothing is stored on the server: the conversation lives in the browser session and its previous text turns are sent with each message. Requests are anonymous (no cookies or nonce), so cached pages keep working, and are limited per client IP (`public_chat_rate_limit` messages per hour). Title, welcome message and custom instructions are configurable; colors can be changed through CSS custom properties on `#wp-cortex-public-chat-root` (`--wp-cortex-accent`, `--wp-cortex-accent-text`, ...). Administrators see the admin chat instead while it is shown on the front end.
 - **Abilities** (WordPress Abilities API, category `wp-cortex`, read-only, `manage_options`, admin index): `wp-cortex/search-content` (hybrid search with field, status, type, author and date filters), `wp-cortex/find-duplicates` (posts sharing a title, field value or text content), `wp-cortex/get-document`, `wp-cortex/list-fields`. Used by the chat agent as tools; not exposed over REST or MCP yet.
@@ -131,6 +132,11 @@ Namespace `wp-cortex/v1`. All routes require the `manage_options` capability (an
 | DELETE | `/chat/conversations/<id>` | `{ deleted: true }`. |
 | GET | `/chat/models` | Params `provider` (registered provider ID), `refresh` (0/1). Returns `{ provider, models: [ { id, name, tools } ], cached }` for text-generation models, tool-capable first. 400 for unknown or unconfigured provider, 502 when the provider request fails. |
 | POST | `/public-chat/message` | Visitor chat. Params `message` (max 2000 chars), `history` (previous turns `[ { role: user\|assistant, text } ]`, the last 12 are used), `post_id` (page being viewed). Returns `{ items }` with `assistant`, `sources` (`[ { id, title, url, snippet } ]`) or `error` items. Public index only. 403 when the visitor chat is disabled, 429 over the message limit. |
+| GET | `/skills` | All chat skills: `{ skills: [ { id, name, description, instructions, active, source, use_count, last_used_at, created_by, created_at, updated_at } ] }`, most used first. |
+| POST | `/skills` | Create a skill. Params `name` (normalized to a lowercase hyphenated slug, unique), `description`, `instructions`, `active` (default true), `source` (`user` or `agent`). 201 with the skill; 409 when the name is taken. |
+| GET | `/skills/<id>` | One skill; 404 when missing. |
+| PUT/PATCH | `/skills/<id>` | Update the fields sent (`name`, `description`, `instructions`, `active`). |
+| DELETE | `/skills/<id>` | `{ deleted: true }`. |
 | POST | `/chat/message` | Params `conversation_id` (0 = new), `message` (max 4000 chars), `context` (`{ screen, post_id }`). Returns `{ conversation_id, title, items, actions }`. AI failures are returned as an `error` item with status 200. |
 
 ## Data model
@@ -179,9 +185,10 @@ src/
     RateLimiter.php        Visitor chat message limit per IP
     ModelCatalog.php       Provider model list (cached)
     ConversationStore.php  MySQL conversation table
-  Rest/                    IndexController, ChatController, PublicChatController
+    SkillStore.php         MySQL chat skills table
+  Rest/                    IndexController, ChatController, PublicChatController, SkillController
   Cli/Command.php          WP-CLI commands
-  Admin/                   Menu, Settings page, Indexing page, Chat panel
+  Admin/                   Menu, Settings page, Indexing page, Skills page, Chat panel
   Frontend/FrontendChat.php  Admin or visitor chat on the front end
 assets/                  JS (no build step) and CSS for the admin, the chat panels and the visitor chat
 ```
@@ -192,6 +199,7 @@ None of the following is implemented yet.
 
 - **Visitor chat placement**: a block or shortcode to embed the visitor chat in a page instead of the floating button.
 - **MCP access for external agents** via the WordPress Abilities API and MCP Adapter: public tools use the public index; admin tools use the admin index and are capability-gated.
+- **Skill maintenance**: counting failed skill runs and deactivating skills that keep failing, picking relevant skills by embedding similarity when there are many, and detecting near-duplicate proposals.
 - **Optional sqlite-vec acceleration** for vector search.
 - **Media file contents**: extracting text from PDFs and other documents in the media library.
 

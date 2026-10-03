@@ -11,6 +11,7 @@ use WPCortex\Abilities\Abilities;
 use WPCortex\Admin\ChatPanel;
 use WPCortex\Admin\Menu;
 use WPCortex\Chat\ConversationStore;
+use WPCortex\Chat\SkillStore;
 use WPCortex\Cli\Command;
 use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
@@ -18,6 +19,7 @@ use WPCortex\Indexing\PostSync;
 use WPCortex\Rest\ChatController;
 use WPCortex\Rest\IndexController;
 use WPCortex\Rest\PublicChatController;
+use WPCortex\Rest\SkillController;
 use WPCortex\Storage\Storage;
 
 defined( 'ABSPATH' ) || exit;
@@ -35,9 +37,11 @@ final class Plugin {
 		( new IndexController() )->register();
 		( new ChatController() )->register();
 		( new PublicChatController() )->register();
+		( new SkillController() )->register();
 		( new Abilities() )->register();
 
 		ConversationStore::maybe_upgrade();
+		SkillStore::maybe_upgrade();
 
 		if ( is_admin() ) {
 			( new Menu() )->register();
@@ -70,6 +74,7 @@ final class Plugin {
 		add_option( Settings::OPTION, Settings::defaults(), '', false );
 		Storage::ensure_data_dir();
 		ConversationStore::install();
+		SkillStore::install();
 	}
 
 	/**

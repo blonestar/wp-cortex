@@ -94,6 +94,7 @@ final class ChatPanel {
 				'screen'      => '',
 				'postId'      => 0,
 				'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
+				'skillsUrl'   => admin_url( 'admin.php?page=' . Menu::SLUG_SKILLS ),
 				'adminPages'  => array(),
 				'frontend'    => false,
 			),
