@@ -46,9 +46,10 @@ final class SettingsPage {
 	/**
 	 * Tabs of the settings screen: ID => label, dashicon and the sections it holds.
 	 *
-	 * Each section is a heading, an optional intro and the method rendering its fields.
+	 * Each section (keyed by ID) is a heading, an intro and the method rendering its fields.
+	 * A tab with more than one section shows them as vertical sub-tabs.
 	 *
-	 * @return array<string, array{label: string, icon: string, sections: array<int, array{0: string, 1: string, 2: callable}>}>
+	 * @return array<string, array{label: string, icon: string, sections: array<string, array{0: string, 1: string, 2: callable}>}>
 	 */
 	private function tabs(): array {
 		return array(
@@ -56,32 +57,32 @@ final class SettingsPage {
 				'label'    => __( 'Content', 'wp-cortex' ),
 				'icon'     => 'dashicons-admin-page',
 				'sections' => array(
-					array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
-					array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
+					'indexed' => array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
+					'sources' => array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
 				),
 			),
 			'indexing'   => array(
 				'label'    => __( 'Indexing', 'wp-cortex' ),
 				'icon'     => 'dashicons-database',
 				'sections' => array(
-					array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
-					array( __( 'Embeddings', 'wp-cortex' ), __( 'Vector embeddings power semantic search. They are created with the OpenAI API.', 'wp-cortex' ), array( $this, 'fields_embeddings' ) ),
+					'chunking' => array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
+					'embeddings' => array( __( 'Embeddings', 'wp-cortex' ), __( 'Vector embeddings power semantic search. They are created with the OpenAI API.', 'wp-cortex' ), array( $this, 'fields_embeddings' ) ),
 				),
 			),
 			'chat'       => array(
 				'label'    => __( 'Admin chat', 'wp-cortex' ),
 				'icon'     => 'dashicons-format-chat',
 				'sections' => array(
-					array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
+					'assistant' => array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
 				),
 			),
 			'visitors'   => array(
 				'label'    => __( 'Visitor chat', 'wp-cortex' ),
 				'icon'     => 'dashicons-groups',
 				'sections' => array(
-					array( __( 'Visitor chat', 'wp-cortex' ), __( 'A chat assistant for site visitors that answers only from the public index.', 'wp-cortex' ), array( $this, 'fields_public_chat' ) ),
-					array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
-					array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
+					'general' => array( __( 'General', 'wp-cortex' ), __( 'A chat assistant for site visitors that answers only from the public index.', 'wp-cortex' ), array( $this, 'fields_public_chat' ) ),
+					'privacy' => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
+					'actions' => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
 				),
 			),
 		);
@@ -100,6 +101,7 @@ final class SettingsPage {
 		if ( ! isset( $tabs[ $active ] ) ) {
 			$active = (string) array_key_first( $tabs );
 		}
+		$section = isset( $_GET['section'] ) ? sanitize_key( wp_unslash( $_GET['section'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects the visible section.
 
 		echo '<div class="wrap wp-cortex-wrap wp-cortex-settings">';
 		echo '<h1>' . esc_html__( 'Cortex Settings', 'wp-cortex' ) . '</h1>';
@@ -135,13 +137,7 @@ final class SettingsPage {
 				$this->reindex_notice();
 			}
 
-			foreach ( $tab['sections'] as $section ) {
-				echo '<div class="wp-cortex-card wp-cortex-settings-card">';
-				echo '<h2>' . esc_html( $section[0] ) . '</h2>';
-				echo '<p class="wp-cortex-section-intro">' . esc_html( $section[1] ) . '</p>';
-				call_user_func( $section[2] );
-				echo '</div>';
-			}
+			$this->render_sections( $id, $tab['sections'], $active === $id ? $section : '' );
 
 			echo '</div>';
 		}
@@ -150,6 +146,59 @@ final class SettingsPage {
 		submit_button( __( 'Save settings', 'wp-cortex' ), 'primary', 'submit', false );
 		echo '</div>';
 		echo '</form></div>';
+	}
+
+	/**
+	 * Renders the sections of a tab: one card, or vertical sub-tabs when there are several.
+	 *
+	 * @param string $tab      Tab ID.
+	 * @param array  $sections Sections keyed by ID (heading, intro, fields callback).
+	 * @param string $active   Requested section ID; the first section when unknown.
+	 */
+	private function render_sections( string $tab, array $sections, string $active ): void {
+		if ( ! isset( $sections[ $active ] ) ) {
+			$active = (string) array_key_first( $sections );
+		}
+
+		$nested = count( $sections ) > 1;
+
+		if ( $nested ) {
+			echo '<div class="wp-cortex-subtabs-layout">';
+			echo '<nav class="wp-cortex-subtabs" role="tablist" aria-orientation="vertical">';
+			foreach ( $sections as $id => $section ) {
+				printf(
+					'<a href="%1$s" class="wp-cortex-subtab%2$s" id="wp-cortex-subtab-%3$s-%4$s" role="tab" aria-controls="wp-cortex-section-%3$s-%4$s" aria-selected="%5$s" data-section="%4$s">%6$s</a>',
+					esc_url( add_query_arg( array( 'tab' => $tab, 'section' => $id ), admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ) ),
+					$active === $id ? ' is-active' : '',
+					esc_attr( $tab ),
+					esc_attr( $id ),
+					$active === $id ? 'true' : 'false',
+					esc_html( $section[0] )
+				);
+			}
+			echo '</nav><div class="wp-cortex-subtab-panels">';
+		}
+
+		foreach ( $sections as $id => $section ) {
+			if ( $nested ) {
+				printf(
+					'<div class="wp-cortex-card wp-cortex-settings-card wp-cortex-subtab-panel" id="wp-cortex-section-%1$s-%2$s" role="tabpanel" aria-labelledby="wp-cortex-subtab-%1$s-%2$s" %3$s>',
+					esc_attr( $tab ),
+					esc_attr( $id ),
+					$active === $id ? '' : 'hidden'
+				);
+			} else {
+				echo '<div class="wp-cortex-card wp-cortex-settings-card">';
+			}
+			echo '<h2>' . esc_html( $section[0] ) . '</h2>';
+			echo '<p class="wp-cortex-section-intro">' . esc_html( $section[1] ) . '</p>';
+			call_user_func( $section[2] );
+			echo '</div>';
+		}
+
+		if ( $nested ) {
+			echo '</div></div>';
+		}
 	}
 
 	/**

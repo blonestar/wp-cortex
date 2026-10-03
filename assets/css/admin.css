@@ -229,6 +229,63 @@
 	border-bottom: 0;
 }
 
+.wp-cortex-subtabs-layout {
+	display: grid;
+	grid-template-columns: 200px minmax(0, 1fr);
+	gap: 20px;
+	align-items: start;
+	max-width: 1100px;
+	margin: 16px 0;
+}
+
+.wp-cortex-subtabs {
+	position: sticky;
+	top: 46px;
+	display: flex;
+	flex-direction: column;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-radius: 4px;
+	box-shadow: 0 1px 1px rgba(0, 0, 0, 0.04);
+	overflow: hidden;
+}
+
+.wp-cortex-subtab {
+	display: block;
+	padding: 10px 14px;
+	border-left: 3px solid transparent;
+	border-bottom: 1px solid #f0f0f1;
+	color: #1d2327;
+	text-decoration: none;
+	font-weight: 500;
+}
+
+.wp-cortex-subtab:last-child {
+	border-bottom: 0;
+}
+
+.wp-cortex-subtab:hover {
+	background: #f6f7f7;
+	color: #2271b1;
+}
+
+.wp-cortex-subtab:focus {
+	box-shadow: inset 0 0 0 2px #2271b1;
+	outline: 2px solid transparent;
+}
+
+.wp-cortex-subtab.is-active {
+	border-left-color: #2271b1;
+	background: #f0f6fc;
+	color: #2271b1;
+	font-weight: 600;
+}
+
+.wp-cortex-subtab-panels .wp-cortex-settings-card {
+	margin: 0;
+	max-width: none;
+}
+
 .wp-cortex-settings-submit {
 	position: sticky;
 	bottom: 0;
@@ -274,6 +331,32 @@
 
 	.wp-cortex-tabs .nav-tab .dashicons {
 		display: none;
+	}
+
+	.wp-cortex-subtabs-layout {
+		grid-template-columns: 1fr;
+		gap: 12px;
+	}
+
+	.wp-cortex-subtabs {
+		position: static;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.wp-cortex-subtab {
+		flex: 1 1 auto;
+		border-left: 0;
+		border-bottom: 3px solid transparent;
+		text-align: center;
+	}
+
+	.wp-cortex-subtab:last-child {
+		border-bottom: 3px solid transparent;
+	}
+
+	.wp-cortex-subtab.is-active {
+		border-bottom-color: #2271b1;
 	}
 }
 

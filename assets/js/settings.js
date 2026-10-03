@@ -244,92 +244,129 @@
 		load( false );
 	}
 
-	// Switches tabs without reloading; all panels share one form, so every value is saved.
-	function initTabs() {
-		var tabs = Array.prototype.slice.call( document.querySelectorAll( '.wp-cortex-tabs .nav-tab' ) );
-		var referer = document.querySelector( '.wp-cortex-settings-form input[name="_wp_http_referer"]' );
+	// Wires a list of tab links to their panels. Returns a function that selects a tab.
+	function tablist( items, activeClass, vertical, onSelect ) {
+		function select( item, focus ) {
+			items.forEach( function ( other ) {
+				var selected = other === item;
+				var panel = document.getElementById( other.getAttribute( 'aria-controls' ) );
 
-		if ( ! tabs.length ) {
-			return;
-		}
-
-		function activate( tab, focus ) {
-			var id = tab.getAttribute( 'data-tab' );
-
-			tabs.forEach( function ( item ) {
-				var selected = item === tab;
-				var panel = document.getElementById( 'wp-cortex-panel-' + item.getAttribute( 'data-tab' ) );
-
-				item.classList.toggle( 'nav-tab-active', selected );
-				item.setAttribute( 'aria-selected', selected ? 'true' : 'false' );
-				item.setAttribute( 'tabindex', selected ? '0' : '-1' );
+				other.classList.toggle( activeClass, selected );
+				other.setAttribute( 'aria-selected', selected ? 'true' : 'false' );
+				other.setAttribute( 'tabindex', selected ? '0' : '-1' );
 				if ( panel ) {
 					panel.hidden = ! selected;
 				}
 			} );
 
 			if ( focus ) {
-				tab.focus();
+				item.focus();
 			}
+			onSelect( item );
+		}
 
-			// Keep the tab in the URL and return to it after saving.
+		items.forEach( function ( item, index ) {
+			item.setAttribute( 'tabindex', item.classList.contains( activeClass ) ? '0' : '-1' );
+
+			item.addEventListener( 'click', function ( event ) {
+				event.preventDefault();
+				select( item, false );
+			} );
+
+			item.addEventListener( 'keydown', function ( event ) {
+				var next = null;
+
+				if ( event.key === ( vertical ? 'ArrowDown' : 'ArrowRight' ) ) {
+					next = items[ ( index + 1 ) % items.length ];
+				} else if ( event.key === ( vertical ? 'ArrowUp' : 'ArrowLeft' ) ) {
+					next = items[ ( index - 1 + items.length ) % items.length ];
+				} else if ( event.key === 'Home' ) {
+					next = items[ 0 ];
+				} else if ( event.key === 'End' ) {
+					next = items[ items.length - 1 ];
+				}
+
+				if ( next ) {
+					event.preventDefault();
+					select( next, true );
+				}
+			} );
+		} );
+
+		return select;
+	}
+
+	// Switches tabs and their vertical section tabs without reloading. All panels share
+	// one form, so every value is saved; the URL and the post-save redirect keep the view.
+	function initTabs() {
+		var tabs = Array.prototype.slice.call( document.querySelectorAll( '.wp-cortex-tabs .nav-tab' ) );
+		var referer = document.querySelector( '.wp-cortex-settings-form input[name="_wp_http_referer"]' );
+		var selectSection = {};
+
+		if ( ! tabs.length ) {
+			return;
+		}
+
+		function activeIn( root, selector, activeClass ) {
+			return Array.prototype.slice.call( root.querySelectorAll( selector ) ).filter( function ( item ) {
+				return item.classList.contains( activeClass );
+			} )[ 0 ];
+		}
+
+		function syncUrl() {
+			var tab = activeIn( document, '.wp-cortex-tabs .nav-tab', 'nav-tab-active' );
+			var panel = tab && document.getElementById( tab.getAttribute( 'aria-controls' ) );
+			var section = panel && activeIn( panel, '.wp-cortex-subtab', 'is-active' );
+			var target = section || tab;
+
+			if ( ! target ) {
+				return;
+			}
 			if ( window.history && window.history.replaceState ) {
-				window.history.replaceState( null, '', tab.href );
+				window.history.replaceState( null, '', target.href );
 			}
 			if ( referer ) {
 				var url = new URL( referer.value, window.location.origin );
-				url.searchParams.set( 'tab', id );
+				url.searchParams.set( 'tab', tab.getAttribute( 'data-tab' ) );
+				if ( section ) {
+					url.searchParams.set( 'section', section.getAttribute( 'data-section' ) );
+				} else {
+					url.searchParams.delete( 'section' );
+				}
 				url.searchParams.delete( 'settings-updated' );
 				referer.value = url.pathname + url.search;
 			}
 		}
 
-		tabs.forEach( function ( tab, index ) {
-			tab.setAttribute( 'tabindex', tab.classList.contains( 'nav-tab-active' ) ? '0' : '-1' );
+		var selectTab = tablist( tabs, 'nav-tab-active', false, syncUrl );
 
-			tab.addEventListener( 'click', function ( event ) {
-				event.preventDefault();
-				activate( tab, false );
-			} );
+		tabs.forEach( function ( tab ) {
+			var panel = document.getElementById( tab.getAttribute( 'aria-controls' ) );
+			var sections = panel ? Array.prototype.slice.call( panel.querySelectorAll( '.wp-cortex-subtab' ) ) : [];
 
-			tab.addEventListener( 'keydown', function ( event ) {
-				var next = null;
-
-				if ( event.key === 'ArrowRight' ) {
-					next = tabs[ ( index + 1 ) % tabs.length ];
-				} else if ( event.key === 'ArrowLeft' ) {
-					next = tabs[ ( index - 1 + tabs.length ) % tabs.length ];
-				} else if ( event.key === 'Home' ) {
-					next = tabs[ 0 ];
-				} else if ( event.key === 'End' ) {
-					next = tabs[ tabs.length - 1 ];
-				}
-
-				if ( next ) {
-					event.preventDefault();
-					activate( next, true );
-				}
-			} );
+			if ( sections.length ) {
+				selectSection[ tab.id ] = tablist( sections, 'is-active', true, syncUrl );
+			}
 		} );
 
-		// A field the browser rejects on submit may sit on a hidden tab: show that tab first.
+		// A field the browser rejects on submit may sit on a hidden tab or section: show it first.
 		document.querySelectorAll( '.wp-cortex-settings-form input, .wp-cortex-settings-form select, .wp-cortex-settings-form textarea' ).forEach( function ( field ) {
 			field.addEventListener( 'invalid', function () {
 				var panel = field.closest( '.wp-cortex-tab-panel' );
 				var tab = panel && document.getElementById( panel.getAttribute( 'aria-labelledby' ) );
+				var section = field.closest( '.wp-cortex-subtab-panel' );
+				var sectionTab = section && document.getElementById( section.getAttribute( 'aria-labelledby' ) );
 
 				if ( tab && panel.hidden ) {
-					activate( tab, false );
+					selectTab( tab, false );
+				}
+				if ( sectionTab && section.hidden && selectSection[ tab.id ] ) {
+					selectSection[ tab.id ]( sectionTab, false );
 				}
 			} );
 		} );
 
-		var current = tabs.filter( function ( tab ) {
-			return tab.classList.contains( 'nav-tab-active' );
-		} )[ 0 ];
-		if ( current && referer ) {
-			activate( current, false );
-		}
+		syncUrl();
 	}
 
 	initTabs();
