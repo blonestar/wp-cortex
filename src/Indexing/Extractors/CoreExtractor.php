@@ -9,6 +9,7 @@ namespace WPCortex\Indexing\Extractors;
 
 use WP_Post;
 use WPCortex\Indexing\Document;
+use WPCortex\Indexing\Indexer;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -25,9 +26,9 @@ final class CoreExtractor implements Extractor {
 		$doc->object_type  = 'post';
 		$doc->object_id    = $post->ID;
 		$doc->subtype      = $post->post_type;
-		$doc->status       = $post->post_status;
+		$doc->status       = Indexer::effective_status( $post );
 		$doc->title        = html_entity_decode( get_the_title( $post ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
-		$doc->url          = (string) get_permalink( $post );
+		$doc->url          = (string) ( 'attachment' === $post->post_type ? wp_get_attachment_url( $post->ID ) : get_permalink( $post ) );
 		$doc->excerpt      = has_excerpt( $post ) ? wp_strip_all_tags( $post->post_excerpt ) : '';
 		$doc->author_id    = (int) $post->post_author;
 		$doc->author_name  = $post->post_author ? (string) get_the_author_meta( 'display_name', (int) $post->post_author ) : '';
