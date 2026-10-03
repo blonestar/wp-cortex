@@ -32,6 +32,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 ### Fixed
 
 - Chat: "Conversation not found" when the conversation remembered in the browser session had been deleted; the panel now starts a new conversation instead.
+- Visitor chat navigation no longer treats indexed media attachments, such as SVG logos, as pages that can be opened.
 
 ## [0.2.0] - 2026-10-03
 
