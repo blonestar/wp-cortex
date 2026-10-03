@@ -24,6 +24,11 @@ final class PostSync {
 	private const BATCH = 50;
 
 	/**
+	 * Attachment meta keys that feed the media extractor.
+	 */
+	private const MEDIA_META_KEYS = array( '_wp_attachment_image_alt', '_wp_attachment_metadata', '_wp_attached_file' );
+
+	/**
 	 * Post IDs collected during this request.
 	 *
 	 * @var array<int, int>
@@ -49,6 +54,7 @@ final class PostSync {
 		add_action( 'added_post_meta', array( $this, 'on_meta_change' ), 10, 3 );
 		add_action( 'updated_post_meta', array( $this, 'on_meta_change' ), 10, 3 );
 		add_action( 'deleted_post_meta', array( $this, 'on_meta_change' ), 10, 3 );
+		add_action( 'wp_media_attach_action', array( $this, 'on_media_attach' ), 10, 2 );
 		add_action( 'shutdown', array( $this, 'flush' ) );
 	}
 
@@ -59,6 +65,7 @@ final class PostSync {
 	 */
 	public function on_save_post( $post_id ): void {
 		$this->queue( (int) $post_id );
+		$this->queue_attachments( (int) $post_id );
 	}
 
 	/**
@@ -80,19 +87,61 @@ final class PostSync {
 	public function on_transition( $new_status, $old_status, $post ): void {
 		if ( $new_status !== $old_status && $post instanceof \WP_Post ) {
 			$this->queue( $post->ID );
+			$this->queue_attachments( $post->ID );
 		}
 	}
 
 	/**
-	 * Post meta hook; only Yoast keys and configured meta keys matter.
+	 * Media library attach/detach hook.
+	 *
+	 * @param string $action        "attach" or "detach".
+	 * @param int    $attachment_id Attachment ID.
+	 */
+	public function on_media_attach( $action, $attachment_id ): void {
+		$this->queue( (int) $attachment_id );
+	}
+
+	/**
+	 * Post meta hook; only Yoast keys, configured meta keys and (with media indexing)
+	 * attachment meta keys matter.
 	 *
 	 * @param int|int[] $meta_id Meta ID(s).
 	 * @param int       $post_id Post ID.
 	 * @param string    $key     Meta key.
 	 */
 	public function on_meta_change( $meta_id, $post_id, $key ): void {
-		if ( str_starts_with( (string) $key, '_yoast_wpseo_' ) || in_array( $key, (array) Settings::get( 'meta_keys' ), true ) ) {
+		if ( str_starts_with( (string) $key, '_yoast_wpseo_' )
+			|| in_array( $key, (array) Settings::get( 'meta_keys' ), true )
+			|| ( Settings::get( 'index_media' ) && in_array( $key, self::MEDIA_META_KEYS, true ) )
+		) {
 			$this->queue( (int) $post_id );
+		}
+	}
+
+	/**
+	 * Queues the media attached to a post: their inherited status (and so their
+	 * eligibility) follows the post's status and password.
+	 *
+	 * @param int $post_id Parent post ID.
+	 */
+	private function queue_attachments( int $post_id ): void {
+		if ( ! Settings::get( 'index_media' ) || $post_id <= 0 || 'attachment' === get_post_type( $post_id ) ) {
+			return;
+		}
+
+		$ids = get_posts(
+			array(
+				'post_type'      => 'attachment',
+				'post_parent'    => $post_id,
+				'post_status'    => array( 'inherit', 'private' ),
+				'fields'         => 'ids',
+				'posts_per_page' => -1,
+				'no_found_rows'  => true,
+			)
+		);
+
+		foreach ( $ids as $id ) {
+			$this->queue( (int) $id );
 		}
 	}
 
