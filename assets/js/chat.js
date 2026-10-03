@@ -258,7 +258,13 @@
 			} );
 			select.value = String( state.conversationId );
 			if ( select.value !== String( state.conversationId ) ) {
+				// The stored conversation no longer exists (deleted, or another user); start fresh.
 				select.value = '0';
+				if ( state.conversationId && ! busy ) {
+					state.conversationId = 0;
+					saveState();
+					renderEmpty();
+				}
 			}
 		} ).catch( function () {} );
 	}
@@ -350,7 +356,10 @@
 		}
 		renderItem( { role: 'user', text: text } );
 		setBusy( true );
+		post( text, true );
+	}
 
+	function post( text, canRetry ) {
 		wp.apiFetch( {
 			path: '/wp-cortex/v1/chat/message',
 			method: 'POST',
@@ -379,6 +388,16 @@
 			}
 			handleActions( res.actions );
 		} ).catch( function ( err ) {
+			// The conversation was deleted meanwhile: continue as a new conversation.
+			if ( canRetry && err && 'wp_cortex_not_found' === err.code && state.conversationId ) {
+				state.conversationId = 0;
+				saveState();
+				if ( select ) {
+					select.value = '0';
+				}
+				post( text, false );
+				return;
+			}
 			setBusy( false );
 			renderItem( { role: 'error', text: ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' ) } );
 			scrollBottom();

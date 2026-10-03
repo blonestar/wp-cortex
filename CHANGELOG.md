@@ -8,6 +8,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - Assets are versioned with the plugin version plus the file modification time, so changed JS/CSS reloads between releases.
 
+### Fixed
+
+- Chat: "Conversation not found" when the conversation remembered in the browser session had been deleted; the panel now starts a new conversation instead.
+
 ## [0.2.0] - 2026-10-03
 
 ### Added
