@@ -22,7 +22,6 @@ defined( 'ABSPATH' ) || exit;
 final class SettingsPage {
 
 	private const GROUP = 'wp_cortex';
-	private const PAGE  = 'wp-cortex';
 
 	/**
 	 * Post types that never make sense to index.
@@ -42,22 +41,50 @@ final class SettingsPage {
 				'default'           => Settings::defaults(),
 			)
 		);
+	}
 
-		$page = new self();
-
-		$sections = array(
-			'content'   => array( __( 'Content', 'wp-cortex' ), array( $page, 'fields_content' ) ),
-			'sources'   => array( __( 'Data sources', 'wp-cortex' ), array( $page, 'fields_sources' ) ),
-			'chunking'  => array( __( 'Chunking & batching', 'wp-cortex' ), array( $page, 'fields_chunking' ) ),
-			'embedding' => array( __( 'Embeddings', 'wp-cortex' ), array( $page, 'fields_embeddings' ) ),
-			'chat'      => array( __( 'Chat', 'wp-cortex' ), array( $page, 'fields_chat' ) ),
-			'visitors'  => array( __( 'Visitor chat', 'wp-cortex' ), array( $page, 'fields_public_chat' ) ),
+	/**
+	 * Tabs of the settings screen: ID => label, dashicon and the sections it holds.
+	 *
+	 * Each section is a heading, an optional intro and the method rendering its fields.
+	 *
+	 * @return array<string, array{label: string, icon: string, sections: array<int, array{0: string, 1: string, 2: callable}>}>
+	 */
+	private function tabs(): array {
+		return array(
+			'content'    => array(
+				'label'    => __( 'Content', 'wp-cortex' ),
+				'icon'     => 'dashicons-admin-page',
+				'sections' => array(
+					array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
+					array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
+				),
+			),
+			'indexing'   => array(
+				'label'    => __( 'Indexing', 'wp-cortex' ),
+				'icon'     => 'dashicons-database',
+				'sections' => array(
+					array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
+					array( __( 'Embeddings', 'wp-cortex' ), __( 'Vector embeddings power semantic search. They are created with the OpenAI API.', 'wp-cortex' ), array( $this, 'fields_embeddings' ) ),
+				),
+			),
+			'chat'       => array(
+				'label'    => __( 'Admin chat', 'wp-cortex' ),
+				'icon'     => 'dashicons-format-chat',
+				'sections' => array(
+					array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
+				),
+			),
+			'visitors'   => array(
+				'label'    => __( 'Visitor chat', 'wp-cortex' ),
+				'icon'     => 'dashicons-groups',
+				'sections' => array(
+					array( __( 'Visitor chat', 'wp-cortex' ), __( 'A chat assistant for site visitors that answers only from the public index.', 'wp-cortex' ), array( $this, 'fields_public_chat' ) ),
+					array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
+					array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
+				),
+			),
 		);
-
-		foreach ( $sections as $id => $section ) {
-			add_settings_section( 'wp_cortex_' . $id, $section[0], '__return_empty_string', self::PAGE );
-			add_settings_field( 'wp_cortex_' . $id . '_fields', '', $section[1], self::PAGE, 'wp_cortex_' . $id, array( 'class' => 'wp-cortex-section-fields' ) );
-		}
 	}
 
 	/**
@@ -68,25 +95,76 @@ final class SettingsPage {
 			return;
 		}
 
-		$indexing_url = admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING );
+		$tabs   = $this->tabs();
+		$active = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only selects the visible tab.
+		if ( ! isset( $tabs[ $active ] ) ) {
+			$active = (string) array_key_first( $tabs );
+		}
 
-		echo '<div class="wrap wp-cortex-wrap">';
+		echo '<div class="wrap wp-cortex-wrap wp-cortex-settings">';
 		echo '<h1>' . esc_html__( 'Cortex Settings', 'wp-cortex' ) . '</h1>';
+		echo '<p class="wp-cortex-intro">' . esc_html__( 'Configure what Cortex indexes, how it builds embeddings and how the admin and visitor chat assistants behave.', 'wp-cortex' ) . '</p>';
 		settings_errors();
 
-		echo '<div class="notice notice-info inline"><p>';
+		echo '<nav class="nav-tab-wrapper wp-cortex-tabs" role="tablist" aria-label="' . esc_attr__( 'Settings sections', 'wp-cortex' ) . '">';
+		foreach ( $tabs as $id => $tab ) {
+			printf(
+				'<a href="%1$s" class="nav-tab%2$s" id="wp-cortex-tab-%3$s" role="tab" aria-controls="wp-cortex-panel-%3$s" aria-selected="%4$s" data-tab="%3$s"><span class="dashicons %5$s" aria-hidden="true"></span>%6$s</a>',
+				esc_url( add_query_arg( 'tab', $id, admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ) ),
+				$active === $id ? ' nav-tab-active' : '',
+				esc_attr( $id ),
+				$active === $id ? 'true' : 'false',
+				esc_attr( $tab['icon'] ),
+				esc_html( $tab['label'] )
+			);
+		}
+		echo '</nav>';
+
+		// All tabs live in one form so saving keeps the values of the hidden tabs.
+		echo '<form action="options.php" method="post" class="wp-cortex-settings-form">';
+		settings_fields( self::GROUP );
+
+		foreach ( $tabs as $id => $tab ) {
+			printf(
+				'<div class="wp-cortex-tab-panel" id="wp-cortex-panel-%1$s" role="tabpanel" aria-labelledby="wp-cortex-tab-%1$s" %2$s>',
+				esc_attr( $id ),
+				$active === $id ? '' : 'hidden'
+			);
+
+			if ( 'indexing' === $id ) {
+				$this->reindex_notice();
+			}
+
+			foreach ( $tab['sections'] as $section ) {
+				echo '<div class="wp-cortex-card wp-cortex-settings-card">';
+				echo '<h2>' . esc_html( $section[0] ) . '</h2>';
+				echo '<p class="wp-cortex-section-intro">' . esc_html( $section[1] ) . '</p>';
+				call_user_func( $section[2] );
+				echo '</div>';
+			}
+
+			echo '</div>';
+		}
+
+		echo '<div class="wp-cortex-settings-submit">';
+		submit_button( __( 'Save settings', 'wp-cortex' ), 'primary', 'submit', false );
+		echo '</div>';
+		echo '</form></div>';
+	}
+
+	/**
+	 * Notice that index-shaping settings need a rebuild.
+	 */
+	private function reindex_notice(): void {
+		$indexing_url = admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING );
+
+		echo '<div class="notice notice-info inline wp-cortex-settings-notice"><p>';
 		printf(
 			/* translators: %s: link to the Indexing screen. */
 			esc_html__( 'Changing the embedding model, dimensions or chunking settings requires re-indexing. Use %s and choose "Rebuild from scratch".', 'wp-cortex' ),
 			'<a href="' . esc_url( $indexing_url ) . '">' . esc_html__( 'the Indexing screen', 'wp-cortex' ) . '</a>'
 		);
 		echo '</p></div>';
-
-		echo '<form action="options.php" method="post">';
-		settings_fields( self::GROUP );
-		do_settings_sections( self::PAGE );
-		submit_button();
-		echo '</form></div>';
 	}
 
 	/**
@@ -255,7 +333,7 @@ final class SettingsPage {
 		$current_model = (string) Settings::get( 'embedding_model' );
 		$current_dims  = (int) Settings::get( 'embedding_dimensions' );
 
-		$this->row_start( __( 'Embeddings', 'wp-cortex' ) );
+		$this->row_start( __( 'Enabled', 'wp-cortex' ) );
 		$this->checkbox( 'embeddings_enabled', __( 'Generate vector embeddings for semantic search', 'wp-cortex' ), (bool) Settings::get( 'embeddings_enabled' ) );
 		$this->row_end();
 
@@ -319,7 +397,7 @@ final class SettingsPage {
 		$providers = ChatAgent::providers();
 		$selected  = (string) Settings::get( 'chat_provider' );
 
-		$this->row_start( __( 'Admin chat', 'wp-cortex' ) );
+		$this->row_start( __( 'Enabled', 'wp-cortex' ) );
 		$this->checkbox( 'chat_enabled', __( 'Show the Cortex chat assistant in the admin', 'wp-cortex' ), (bool) Settings::get( 'chat_enabled' ) );
 		echo '<br />';
 		$this->checkbox( 'chat_frontend', __( 'Also show it on the front end of the site to administrators', 'wp-cortex' ), (bool) Settings::get( 'chat_frontend' ) );
@@ -409,9 +487,9 @@ final class SettingsPage {
 	 * Visitor chat section.
 	 */
 	public function fields_public_chat(): void {
-		$this->row_start( __( 'Visitor chat', 'wp-cortex' ) );
+		$this->row_start( __( 'Enabled', 'wp-cortex' ) );
 		$this->checkbox( 'public_chat_enabled', __( 'Show a chat assistant to visitors on the front end of the site', 'wp-cortex' ), (bool) Settings::get( 'public_chat_enabled' ) );
-		$this->row_end( __( 'Visitors can ask questions about the site. Answers use only the public index (published, publicly viewable content and fields marked as public) and link to the pages they are based on. It uses the AI provider and model selected above and is billed to that account. Administrators see the admin chat instead while it is shown on the front end.', 'wp-cortex' ) );
+		$this->row_end( __( 'Visitors can ask questions about the site. Answers use only the public index (published, publicly viewable content and fields marked as public) and link to the pages they are based on. It uses the AI provider and model selected on the Admin chat tab and is billed to that account. Administrators see the admin chat instead while it is shown on the front end.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'Title', 'wp-cortex' ) );
 		printf(
@@ -454,6 +532,12 @@ final class SettingsPage {
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
 		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
 
+	}
+
+	/**
+	 * Visitor chat privacy section: conversation log, IP address and retention.
+	 */
+	public function fields_public_chat_privacy(): void {
 		$this->row_start( __( 'Conversation log', 'wp-cortex' ) );
 		$this->checkbox( 'public_chat_log', __( 'Save visitor conversations', 'wp-cortex' ), (bool) Settings::get( 'public_chat_log' ) );
 		$this->row_end(
@@ -485,6 +569,12 @@ final class SettingsPage {
 		echo ' ' . esc_html__( 'days', 'wp-cortex' );
 		$this->row_end( __( 'Conversations without visitor activity for this many days are deleted automatically (daily). 0 keeps them until you delete them.', 'wp-cortex' ) );
 
+	}
+
+	/**
+	 * Visitor chat actions section.
+	 */
+	public function fields_public_chat_actions(): void {
 		$this->row_start( __( 'Assistant actions', 'wp-cortex' ) );
 		$this->checkbox( 'public_chat_navigation', __( 'Take visitors to a page when they ask or confirm', 'wp-cortex' ), (bool) Settings::get( 'public_chat_navigation' ) );
 		echo '<br />';
