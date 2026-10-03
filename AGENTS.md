@@ -23,7 +23,7 @@ All code, comments, UI strings, docs and commit messages must be in English. (Co
 - The embedding signature (`Settings::embedding_signature()`, `model:dimensions`) must change whenever the model or dimensions change, so stale vectors are regenerated.
 - New data sources are new `Extractor` classes, registered in `Indexer::__construct()` or through the `wp_cortex_extractors` filter.
 - REST endpoints require `manage_options`.
-- Options used: `wp_cortex_settings`, `wp_cortex_data_dir_name`, `wp_cortex_index_run`, `wp_cortex_index_lock`, `wp_cortex_sync_queue`, `wp_cortex_last_sync`; transient `wp_cortex_storage_exposed`; cron hook `wp_cortex_process_queue`. Any new option must be cleaned up in uninstall.
+- Options used: `wp_cortex_settings`, `wp_cortex_data_dir_name`, `wp_cortex_index_run`, `wp_cortex_index_lock`, `wp_cortex_sync_queue`, `wp_cortex_last_sync`, `wp_cortex_db_version` (version of the MySQL conversations table `{prefix}wp_cortex_conversations`, dropped on uninstall); transients `wp_cortex_storage_exposed` and `wp_cortex_models_<provider>` (12 h cache of a provider's model list, `Chat\ModelCatalog`; removed on uninstall); cron hook `wp_cortex_process_queue`; filter `wp_cortex_chat_system_instruction`. Any new option must be cleaned up in uninstall.
 - Content is rendered as an anonymous visitor (`CoreExtractor::render_content()`). Keep extraction deterministic: anything that changes between renders (random IDs, honeypots, shuffled lists) changes the content hash and causes needless re-indexing and re-embedding.
 
 ## Adding an extractor
@@ -45,6 +45,16 @@ LD_LIBRARY_PATH=$HOME/.config/Local/lightning-services/php-8.4.18+1/bin/linux/sh
 
 Lint JS with `node --check <file>`. WP-CLI phar: `/opt/Local/resources/extraResources/bin/wp-cli/wp-cli.phar` (the site must be running in Local).
 
+## Versioning
+
+Semantic versioning `A.B.C`. Every commit bumps the version:
+
+- `C` (patch): bug fixes and small adjustments without new features.
+- `B` (minor, reset `C` to 0): new features, settings, abilities, endpoints or schema changes.
+- `A` (major, reset `B` and `C`): breaking changes (removed features or options, incompatible data or API changes).
+
+The version lives in three places that must stay in sync: the `Version:` header and the `WP_CORTEX_VERSION` constant in `wp-cortex.php`, and the `Version:` line in `README.md`. `WP_CORTEX_VERSION` is also the asset cache-busting version, so bumping it makes browsers load changed JS/CSS.
+
 ## Before finishing a task
 
 - [ ] `php -l` passes on every changed PHP file; `node --check` on changed JS.
@@ -54,4 +64,4 @@ Lint JS with `node --check <file>`. WP-CLI phar: `/opt/Local/resources/extraReso
 - [ ] New options/hooks documented here and cleaned up on uninstall.
 - [ ] If features changed, `README.md` updated (Current vs Roadmap kept separate).
 - [ ] Sanity check with `wp cortex index` / `wp cortex status` when indexing code changed.
-- [ ] Do not commit unless asked.
+- [ ] Do not commit unless asked. When committing, bump the version first (see Versioning).

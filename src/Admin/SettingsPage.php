@@ -7,6 +7,8 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Chat\ChatAgent;
+use WPCortex\Chat\ModelCatalog;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Settings;
 
@@ -46,6 +48,7 @@ final class SettingsPage {
 			'sources'   => array( __( 'Data sources', 'wp-cortex' ), array( $page, 'fields_sources' ) ),
 			'chunking'  => array( __( 'Chunking & batching', 'wp-cortex' ), array( $page, 'fields_chunking' ) ),
 			'embedding' => array( __( 'Embeddings', 'wp-cortex' ), array( $page, 'fields_embeddings' ) ),
+			'chat'      => array( __( 'Chat', 'wp-cortex' ), array( $page, 'fields_chat' ) ),
 		);
 
 		foreach ( $sections as $id => $section ) {
@@ -300,5 +303,79 @@ final class SettingsPage {
 			);
 		}
 		$this->row_end();
+	}
+
+	/**
+	 * Chat section.
+	 */
+	public function fields_chat(): void {
+		$providers = ChatAgent::providers();
+		$selected  = (string) Settings::get( 'chat_provider' );
+
+		$this->row_start( __( 'Admin chat', 'wp-cortex' ) );
+		$this->checkbox( 'chat_enabled', __( 'Show the Cortex chat assistant in the admin', 'wp-cortex' ), (bool) Settings::get( 'chat_enabled' ) );
+		$this->row_end();
+
+		$this->row_start( __( 'AI provider', 'wp-cortex' ) );
+		printf( '<select name="%s">', $this->name( 'chat_provider' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		printf( '<option value="" %s>%s</option>', selected( $selected, '', false ), esc_html__( 'Automatic', 'wp-cortex' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		foreach ( $providers as $id => $provider ) {
+			printf(
+				'<option value="%1$s" %2$s>%3$s</option>',
+				esc_attr( $id ),
+				selected( $selected, $id, false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				esc_html( $provider['name'] . ' (' . ( $provider['configured'] ? __( 'configured', 'wp-cortex' ) : __( 'no API key', 'wp-cortex' ) ) . ')' )
+			);
+		}
+		echo '</select> ';
+		printf(
+			'<a href="%s">%s</a>',
+			esc_url( admin_url( 'options-connectors.php' ) ),
+			esc_html__( 'Manage API keys under Settings > Connectors', 'wp-cortex' )
+		);
+		$this->row_end( __( 'Automatic uses any configured provider that supports text generation with tool calls.', 'wp-cortex' ) );
+
+		$saved     = (string) Settings::get( 'chat_model' );
+		$cached    = '' !== $selected ? ( new ModelCatalog() )->cached( $selected ) : null;
+		$has_tools = array_filter( (array) $cached, static fn( array $m ) => $m['tools'] );
+
+		$this->row_start( __( 'Model', 'wp-cortex' ) );
+		printf(
+			'<div class="wp-cortex-model-picker" id="wp-cortex-model-picker" data-saved="%s">',
+			esc_attr( $saved )
+		);
+		printf(
+			'<input type="search" class="wp-cortex-model-filter" id="wp-cortex-model-filter" placeholder="%s" aria-label="%s" hidden />',
+			esc_attr__( 'Filter models…', 'wp-cortex' ),
+			esc_attr__( 'Filter models', 'wp-cortex' )
+		);
+		printf( '<select name="%s" id="wp-cortex-chat-model" class="wp-cortex-model-select">', $this->name( 'chat_model' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		printf( '<option value="" %s>%s</option>', selected( $saved, '', false ), esc_html__( 'Provider default', 'wp-cortex' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		$listed = false;
+		foreach ( $has_tools as $model ) {
+			$listed = $listed || $model['id'] === $saved;
+			printf(
+				'<option value="%1$s" %2$s>%3$s</option>',
+				esc_attr( $model['id'] ),
+				selected( $saved, $model['id'], false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				esc_html( $model['name'] . ' (' . $model['id'] . ')' )
+			);
+		}
+		if ( '' !== $saved && ! $listed ) {
+			printf(
+				'<option value="%1$s" selected>%2$s</option>',
+				esc_attr( $saved ),
+				/* translators: %s: model ID. */
+				esc_html( sprintf( __( '%s (saved)', 'wp-cortex' ), $saved ) )
+			);
+		}
+		echo '</select> ';
+		printf(
+			'<button type="button" class="button wp-cortex-model-refresh" id="wp-cortex-model-refresh" hidden><span class="dashicons dashicons-update" aria-hidden="true"></span> %s</button>',
+			esc_html__( 'Refresh models', 'wp-cortex' )
+		);
+		echo ' <span class="wp-cortex-model-status" id="wp-cortex-model-status" role="status" aria-live="polite"></span>';
+		echo '</div>';
+		$this->row_end( __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose.', 'wp-cortex' ) );
 	}
 }

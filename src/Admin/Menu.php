@@ -91,7 +91,8 @@ final class Menu {
 		wp_enqueue_style( 'wp-cortex-admin', WP_CORTEX_URL . 'assets/css/admin.css', array(), WP_CORTEX_VERSION );
 
 		if ( $is_settings ) {
-			wp_enqueue_script( 'wp-cortex-settings', WP_CORTEX_URL . 'assets/js/settings.js', array(), WP_CORTEX_VERSION, true );
+			wp_enqueue_script( 'wp-cortex-settings', WP_CORTEX_URL . 'assets/js/settings.js', array( 'wp-api-fetch', 'wp-i18n' ), WP_CORTEX_VERSION, true );
+			wp_set_script_translations( 'wp-cortex-settings', 'wp-cortex' );
 		}
 
 		if ( $is_indexing ) {
