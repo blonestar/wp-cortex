@@ -326,7 +326,7 @@ final class PublicChatAgent {
 			$string         = array( 'type' => 'string' );
 			$declarations[] = new FunctionDeclaration(
 				self::SAVE_FUNCTION,
-				'Saves the contact details of a visitor who wants to be contacted, so the site team can get back to them. Call it only after the visitor has confirmed the details. At least an email address or a phone number is required. Calling it again updates the saved details.',
+				'Saves the contact details of a visitor who wants to be contacted, so the site team can get back to them. Call it only after the visitor has confirmed the details. A confirmed first or last name may be saved without an email address or phone number; those are optional. Calling it again updates the saved details.',
 				array(
 					'type'       => 'object',
 					'properties' => array(
@@ -336,6 +336,7 @@ final class PublicChatAgent {
 						'phone'      => array_merge( $string, array( 'description' => 'Phone number.' ) ),
 						'address'    => array_merge( $string, array( 'description' => 'Postal address, only if the visitor gave it.' ) ),
 						'company'    => array_merge( $string, array( 'description' => 'Company or organization, only if the visitor gave it.' ) ),
+						'website'    => array_merge( $string, array( 'description' => 'One or more website URLs, one per line, only if the visitor gave them.' ) ),
 						'request'    => array_merge( $string, array( 'description' => 'Short summary of what the visitor wants or asked about, in the visitor\'s language.' ) ),
 					),
 				)
@@ -428,8 +429,8 @@ final class PublicChatAgent {
 			return array( 'error' => 'The email address is not valid. Ask the visitor to check it.' );
 		}
 
-		if ( ! isset( $contact['email'] ) && ! isset( $contact['phone'] ) ) {
-			return array( 'error' => 'An email address or a phone number is required. Ask the visitor for one.' );
+		if ( ! array_intersect( array( 'first_name', 'last_name', 'email', 'phone', 'website' ), array_keys( $contact ) ) ) {
+			return array( 'error' => 'A name, email address, phone number, or website URL is required. Ask the visitor for one.' );
 		}
 
 		$saved = ( new VisitorChatStore() )->save_contact( $this->chat_id, $contact );
@@ -655,7 +656,7 @@ final class PublicChatAgent {
 		}
 
 		if ( $this->contact_enabled() ) {
-			$lines[] = 'If the visitor wants to be contacted, asks for an offer or a quote, wants to send an inquiry, or the content cannot answer their question, you may offer to take their contact details so the team can get back to them. Collect only: first and last name, an email address and/or a phone number, and only if relevant a postal address and company, plus a short summary of their request. Ask only for what is missing, a few items at a time, and never ask for sensitive data (passwords, payment cards, ID numbers, health data). Before saving, repeat the details in a short list and ask the visitor to confirm; after they confirm, call save_contact_details. Do not push the visitor to leave details.';
+			$lines[] = 'If the visitor wants to be contacted, asks for an offer or a quote, wants to send an inquiry, or the content cannot answer their question, you may offer to take their contact details so the team can get back to them. Collect only: a first and/or last name, an email address and/or a phone number if the visitor wants to provide them, a website URL or URLs if the visitor wants to provide them, and only if relevant a postal address and company, plus a short summary of their request. A confirmed name may be saved without an email address or phone number. Ask only for what is missing, a few items at a time, and never ask for sensitive data (passwords, payment cards, ID numbers, health data). Before saving, repeat the details in a short list and ask the visitor to confirm; after they confirm, call save_contact_details. Do not push the visitor to leave details.';
 		}
 
 		if ( $current ) {
