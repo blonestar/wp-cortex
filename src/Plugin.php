@@ -47,6 +47,18 @@ final class Plugin {
 	}
 
 	/**
+	 * Asset version for cache busting: the plugin version plus the file's modification
+	 * time, so changed JS/CSS is reloaded between releases.
+	 *
+	 * @param string $path Path relative to the plugin directory, e.g. 'assets/js/chat.js'.
+	 */
+	public static function asset_version( string $path ): string {
+		$mtime = @filemtime( WP_CORTEX_DIR . $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+		return false === $mtime ? WP_CORTEX_VERSION : WP_CORTEX_VERSION . '.' . $mtime;
+	}
+
+	/**
 	 * Activation: prepare the protected data directory and default settings.
 	 */
 	public static function activate(): void {

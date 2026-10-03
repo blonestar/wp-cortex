@@ -7,6 +7,8 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Plugin;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -50,8 +52,8 @@ final class ChatPanel {
 			return;
 		}
 
-		wp_enqueue_style( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/css/chat.css', array( 'dashicons' ), WP_CORTEX_VERSION );
-		wp_enqueue_script( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/js/chat.js', array( 'wp-api-fetch', 'wp-i18n', 'wp-dom-ready' ), WP_CORTEX_VERSION, true );
+		wp_enqueue_style( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/css/chat.css', array( 'dashicons' ), Plugin::asset_version( 'assets/css/chat.css' ) );
+		wp_enqueue_script( 'wp-cortex-chat', WP_CORTEX_URL . 'assets/js/chat.js', array( 'wp-api-fetch', 'wp-i18n', 'wp-dom-ready' ), Plugin::asset_version( 'assets/js/chat.js' ), true );
 		wp_set_script_translations( 'wp-cortex-chat', 'wp-cortex' );
 
 		$screen  = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
