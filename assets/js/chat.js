@@ -9,17 +9,22 @@
 	var STORE_KEY = 'wpCortexChat';
 	var TAB_KEY = 'wpCortexChatTab';
 	var MAX_TABS = 50;
+	var DRAG_THRESHOLD = 4;
+	var PANEL_GAP = 12;
 	var P = 'wp-cortex-chat-';
 	var root, toggle, panel, list, select, input, sendBtn, thinkingEl;
-	var state = { open: false, conversationId: 0 };
+	var state = { open: false, conversationId: 0, position: null };
 	var busy = false;
 	var listLoaded = false;
+	var dragState = null;
+	var ignoreNextToggle = false;
 
 	function loadState() {
 		try {
 			var s = JSON.parse( window.sessionStorage.getItem( STORE_KEY ) || '{}' );
 			state.open = !! s.open;
 			state.conversationId = parseInt( s.conversationId, 10 ) || 0;
+			state.position = normalizePosition( s.position );
 		} catch ( e ) {}
 	}
 
@@ -27,6 +32,177 @@
 		try {
 			window.sessionStorage.setItem( STORE_KEY, JSON.stringify( state ) );
 		} catch ( e ) {}
+	}
+
+	function normalizePosition( position ) {
+		if ( ! position ) {
+			return null;
+		}
+
+		var left = parseFloat( position.left );
+		var top = parseFloat( position.top );
+		if ( ! isFinite( left ) || ! isFinite( top ) ) {
+			return null;
+		}
+
+		return { left: left, top: top };
+	}
+
+	function viewportSize() {
+		return {
+			width: window.innerWidth || document.documentElement.clientWidth || 0,
+			height: window.innerHeight || document.documentElement.clientHeight || 0,
+		};
+	}
+
+	function toggleSize() {
+		return {
+			width: toggle ? toggle.offsetWidth : 52,
+			height: toggle ? toggle.offsetHeight : 52,
+		};
+	}
+
+	function clampPosition( position ) {
+		var viewport = viewportSize();
+		var size = toggleSize();
+		var maxLeft = Math.max( 0, viewport.width - size.width );
+		var maxTop = Math.max( 0, viewport.height - size.height );
+
+		return {
+			left: Math.round( Math.max( 0, Math.min( maxLeft, position.left ) ) ),
+			top: Math.round( Math.max( 0, Math.min( maxTop, position.top ) ) ),
+		};
+	}
+
+	function defaultPosition() {
+		var viewport = viewportSize();
+		var size = toggleSize();
+		var margin = viewport.width <= 600 ? 12 : 20;
+
+		return clampPosition( {
+			left: viewport.width - size.width - margin,
+			top: viewport.height - size.height - margin,
+		} );
+	}
+
+	function setTogglePosition( position ) {
+		toggle.style.left = position.left + 'px';
+		toggle.style.top = position.top + 'px';
+		toggle.style.right = 'auto';
+		toggle.style.bottom = 'auto';
+	}
+
+	function currentTogglePosition() {
+		var rect = toggle.getBoundingClientRect();
+
+		return clampPosition( { left: rect.left, top: rect.top } );
+	}
+
+	// Align the panel to the same horizontal side as the toggle and keep it visible.
+	function positionPanel() {
+		if ( ! panel || ! panel.classList.contains( 'is-open' ) ) {
+			return;
+		}
+
+		var viewport = viewportSize();
+		var toggleRect = toggle.getBoundingClientRect();
+		var panelRect = panel.getBoundingClientRect();
+		var margin = 10;
+		var left = toggleRect.left;
+		var top = toggleRect.top - panelRect.height - PANEL_GAP;
+		var maxLeft = Math.max( margin, viewport.width - panelRect.width - margin );
+		var maxTop = Math.max( margin, viewport.height - panelRect.height - margin );
+
+		if ( left + panelRect.width > viewport.width - margin ) {
+			left = toggleRect.right - panelRect.width;
+		}
+		left = Math.max( margin, Math.min( maxLeft, left ) );
+
+		if ( top < margin ) {
+			top = toggleRect.bottom + PANEL_GAP;
+		}
+		top = Math.max( margin, Math.min( maxTop, top ) );
+
+		panel.style.left = Math.round( left ) + 'px';
+		panel.style.top = Math.round( top ) + 'px';
+		panel.style.right = 'auto';
+		panel.style.bottom = 'auto';
+	}
+
+	function applyPosition() {
+		if ( ! toggle ) {
+			return;
+		}
+
+		setTogglePosition( state.position ? clampPosition( state.position ) : defaultPosition() );
+		positionPanel();
+	}
+
+	function bindToggleDrag() {
+		toggle.addEventListener( 'pointerdown', function ( event ) {
+			if ( false === event.isPrimary || ( 0 !== event.button && -1 !== event.button ) ) {
+				return;
+			}
+
+			var rect = toggle.getBoundingClientRect();
+			dragState = {
+				pointerId: event.pointerId,
+				startX: event.clientX,
+				startY: event.clientY,
+				left: rect.left,
+				top: rect.top,
+				moved: false,
+			};
+			toggle.classList.add( P + 'is-dragging' );
+			if ( toggle.setPointerCapture ) {
+				try {
+					toggle.setPointerCapture( event.pointerId );
+				} catch ( e ) {}
+			}
+		} );
+
+		toggle.addEventListener( 'pointermove', function ( event ) {
+			if ( ! dragState || event.pointerId !== dragState.pointerId ) {
+				return;
+			}
+
+			var deltaX = event.clientX - dragState.startX;
+			var deltaY = event.clientY - dragState.startY;
+			if ( ! dragState.moved && Math.abs( deltaX ) < DRAG_THRESHOLD && Math.abs( deltaY ) < DRAG_THRESHOLD ) {
+				return;
+			}
+
+			dragState.moved = true;
+			setTogglePosition( clampPosition( {
+				left: dragState.left + deltaX,
+				top: dragState.top + deltaY,
+			} ) );
+			positionPanel();
+			event.preventDefault();
+		} );
+
+		function endDrag( event ) {
+			if ( ! dragState || event.pointerId !== dragState.pointerId ) {
+				return;
+			}
+
+			var moved = dragState.moved;
+			dragState = null;
+			toggle.classList.remove( P + 'is-dragging' );
+
+			if ( moved ) {
+				state.position = currentTogglePosition();
+				saveState();
+				ignoreNextToggle = true;
+				window.setTimeout( function () {
+					ignoreNextToggle = false;
+				}, 0 );
+				event.preventDefault();
+			}
+		}
+
+		toggle.addEventListener( 'pointerup', endDrag );
+		toggle.addEventListener( 'pointercancel', endDrag );
 	}
 
 	function el( tag, cls, text ) {
@@ -525,6 +701,7 @@
 		saveState();
 		panel.classList.add( 'is-open' );
 		toggle.setAttribute( 'aria-expanded', 'true' );
+		positionPanel();
 		if ( ! listLoaded ) {
 			loadList();
 		}
@@ -550,11 +727,16 @@
 		toggle = el( 'button', P + 'toggle' );
 		toggle.type = 'button';
 		toggle.setAttribute( 'aria-label', __( 'Toggle Cortex chat', 'wp-cortex' ) );
+		toggle.setAttribute( 'title', __( 'Drag to move the chat', 'wp-cortex' ) );
 		toggle.setAttribute( 'aria-expanded', 'false' );
 		var ti = el( 'span', 'dashicons dashicons-format-chat' );
 		ti.setAttribute( 'aria-hidden', 'true' );
 		toggle.appendChild( ti );
 		toggle.addEventListener( 'click', function () {
+			if ( ignoreNextToggle ) {
+				ignoreNextToggle = false;
+				return;
+			}
 			if ( panel.classList.contains( 'is-open' ) ) {
 				closePanel();
 			} else {
@@ -631,6 +813,9 @@
 
 		renderEmpty();
 		loadState();
+		applyPosition();
+		bindToggleDrag();
+		window.addEventListener( 'resize', applyPosition );
 		if ( state.open ) {
 			openPanel();
 			if ( state.conversationId ) {
