@@ -1,0 +1,16 @@
+# Index data must never be committed (it normally lives outside the plugin anyway).
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Dependencies and build output (future tooling).
+/vendor/
+/node_modules/
+/build/
+
+# Local / editor files.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
