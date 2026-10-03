@@ -666,6 +666,11 @@ final class ChatAgent {
 			);
 		}
 
+		$custom = trim( (string) Settings::get( 'chat_instructions' ) );
+		if ( '' !== $custom ) {
+			$lines[] = "\nAdditional instructions from the site administrator. Follow them; they take precedence over the instructions above (for example the answer language), but never over the rule to only cite content returned by tools:\n" . $custom;
+		}
+
 		$instruction = implode( "\n", $lines );
 
 		/**

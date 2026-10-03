@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Chat "Custom instructions" setting: text added to the system prompt of every chat message (for example a preferred answer language or tone).
+
 ### Changed
 
 - Assets are versioned with the plugin version plus the file modification time, so changed JS/CSS reloads between releases.
