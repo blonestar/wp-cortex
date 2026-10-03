@@ -178,6 +178,108 @@ final class ConversationStore {
 	}
 
 	/**
+	 * Builds a stable key for proposal items written before proposals had IDs.
+	 *
+	 * @param array $skill Proposal fields.
+	 * @return string Stable hexadecimal key.
+	 */
+	public static function skill_proposal_id( array $skill ): string {
+		return md5(
+			implode(
+				"\0",
+				array(
+					(string) ( $skill['name'] ?? '' ),
+					(string) ( $skill['description'] ?? '' ),
+					(string) ( $skill['instructions'] ?? '' ),
+					(string) ( (int) ( $skill['existing_id'] ?? 0 ) ),
+				)
+			)
+		);
+	}
+
+	/**
+	 * Resolves one skill proposal in a conversation without rewriting the model history.
+	 *
+	 * @param int    $id           Conversation ID.
+	 * @param int    $user_id      Owner.
+	 * @param string $proposal_id  Stable proposal ID.
+	 * @param string $status       Resolution status: saved or dismissed.
+	 * @param array  $saved_skill  Current saved skill fields, when status is saved.
+	 * @return bool True when the proposal was found and updated.
+	 */
+	public function resolve_skill_proposal( int $id, int $user_id, string $proposal_id, string $status, array $saved_skill = array() ): bool {
+		$conversation = $this->get( $id, $user_id );
+
+		if ( null === $conversation ) {
+			return false;
+		}
+
+		$found = false;
+
+		foreach ( $conversation['transcript'] as &$item ) {
+			if ( 'skill_proposal' !== ( $item['role'] ?? '' ) || ! is_array( $item['skill'] ?? null ) ) {
+				continue;
+			}
+
+			$stored_id = (string) ( $item['skill']['proposal_id'] ?? '' );
+			$matches   = $proposal_id === $stored_id || ( '' === $stored_id && self::skill_proposal_id( $item['skill'] ) === $proposal_id );
+
+			if ( ! $matches ) {
+				continue;
+			}
+
+			$item['skill']['proposal_id'] = $proposal_id;
+			$item['skill']['status'] = $status;
+
+			if ( 'saved' === $status && $saved_skill ) {
+				$item['skill']['skill_id']    = (int) ( $saved_skill['id'] ?? 0 );
+				$item['skill']['name']       = (string) ( $saved_skill['name'] ?? $item['skill']['name'] ?? '' );
+				$item['skill']['description'] = (string) ( $saved_skill['description'] ?? $item['skill']['description'] ?? '' );
+				$item['skill']['instructions'] = (string) ( $saved_skill['instructions'] ?? $item['skill']['instructions'] ?? '' );
+				$item['skill']['existing_id'] = (int) ( $saved_skill['id'] ?? $item['skill']['existing_id'] ?? 0 );
+			}
+
+			$found = true;
+			break;
+		}
+		unset( $item );
+
+		if ( ! $found ) {
+			return false;
+		}
+
+		return $this->update_transcript( $id, $user_id, $conversation['transcript'] );
+	}
+
+	/**
+	 * Updates only the UI transcript of a conversation.
+	 *
+	 * @param int   $id         Conversation ID.
+	 * @param int   $user_id    Owner.
+	 * @param array $transcript Transcript items.
+	 * @return bool True when the row was updated.
+	 */
+	private function update_transcript( int $id, int $user_id, array $transcript ): bool {
+		global $wpdb;
+
+		$updated = $wpdb->update(
+			self::table(),
+			array(
+				'transcript' => wp_json_encode( array_values( $transcript ), JSON_PARTIAL_OUTPUT_ON_ERROR ),
+				'updated_at' => current_time( 'mysql', true ),
+			),
+			array(
+				'id'      => $id,
+				'user_id' => $user_id,
+			),
+			array( '%s', '%s' ),
+			array( '%d', '%d' )
+		);
+
+		return false !== $updated;
+	}
+
+	/**
 	 * Deletes a conversation owned by the user.
 	 *
 	 * @param int $id      Conversation ID.
