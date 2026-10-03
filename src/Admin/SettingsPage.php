@@ -176,6 +176,10 @@ final class SettingsPage {
 		echo '</fieldset>';
 		$this->row_end( __( 'Content of these post types is indexed.', 'wp-cortex' ) );
 
+		$this->row_start( __( 'Media', 'wp-cortex' ) );
+		$this->checkbox( 'index_media', __( 'Index media library files (title, caption, alt text, description and file details)', 'wp-cortex' ), (bool) Settings::get( 'index_media' ) );
+		$this->row_end( __( 'Media inherit the status of the post they are attached to; unattached media count as published. File contents (for example PDF text) are not extracted.', 'wp-cortex' ) );
+
 		$selected_statuses = Settings::admin_statuses();
 		$this->row_start( __( 'Admin index statuses', 'wp-cortex' ) );
 		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Admin index statuses', 'wp-cortex' ) . '</legend>';
