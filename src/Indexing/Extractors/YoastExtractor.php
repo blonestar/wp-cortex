@@ -46,6 +46,11 @@ final class YoastExtractor implements Extractor {
 	}
 
 	public function extract( WP_Post $post, Document $doc ): void {
+		// Yoast data is rarely set on media; empty rows for every file would only add noise.
+		if ( 'attachment' === $post->post_type ) {
+			return;
+		}
+
 		foreach ( self::FIELDS as $name => $suffix ) {
 			$value = get_post_meta( $post->ID, '_yoast_wpseo_' . $suffix, true );
 			$doc->add_field( 'yoast', $name, is_scalar( $value ) ? (string) $value : (string) wp_json_encode( $value ) );

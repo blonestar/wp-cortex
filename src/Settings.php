@@ -40,6 +40,7 @@ final class Settings {
 			'index_acf'            => true,
 			'acf_public'           => false,
 			'meta_keys'            => array(),
+			'index_media'          => false,
 			'chunk_size'           => 1200,
 			'chunk_overlap'        => 150,
 			'batch_size'           => 10,
@@ -74,12 +75,19 @@ final class Settings {
 	}
 
 	/**
-	 * Post types selected for indexing that still exist.
+	 * Post types selected for indexing that still exist, plus "attachment" when media
+	 * indexing is on.
 	 *
 	 * @return string[]
 	 */
 	public static function post_types(): array {
-		return array_values( array_filter( (array) self::get( 'post_types' ), 'post_type_exists' ) );
+		$types = array_filter( (array) self::get( 'post_types' ), 'post_type_exists' );
+
+		if ( self::get( 'index_media' ) ) {
+			$types[] = 'attachment';
+		}
+
+		return array_values( array_unique( $types ) );
 	}
 
 	/**
@@ -140,6 +148,7 @@ final class Settings {
 			'index_acf'            => ! empty( $input['index_acf'] ),
 			'acf_public'           => ! empty( $input['acf_public'] ),
 			'meta_keys'            => $meta_keys,
+			'index_media'          => ! empty( $input['index_media'] ),
 			'chunk_size'           => $chunk_size,
 			'chunk_overlap'        => self::clamp( $input['chunk_overlap'] ?? $defaults['chunk_overlap'], 0, (int) floor( $chunk_size / 2 ) ),
 			'batch_size'           => self::clamp( $input['batch_size'] ?? $defaults['batch_size'], 1, 100 ),
