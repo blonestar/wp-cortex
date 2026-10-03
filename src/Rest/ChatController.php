@@ -7,6 +7,7 @@
 
 namespace WPCortex\Rest;
 
+use WPCortex\Admin\AdminPages;
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\ModelCatalog;
@@ -109,8 +110,24 @@ final class ChatController {
 						'type'       => 'object',
 						'default'    => array(),
 						'properties' => array(
-							'screen'  => array( 'type' => 'string' ),
-							'post_id' => array( 'type' => 'integer' ),
+							'screen'      => array( 'type' => 'string' ),
+							'post_id'     => array( 'type' => 'integer' ),
+							'admin_pages' => array(
+								'type'     => 'array',
+								'maxItems' => AdminPages::MAX_PAGES,
+								'items'    => array(
+									'type'       => 'object',
+									'properties' => array(
+										'path'  => array( 'type' => 'string' ),
+										'label' => array( 'type' => 'string' ),
+									),
+								),
+							),
+							'tabs'        => array(
+								'type'     => 'array',
+								'maxItems' => AdminPages::MAX_TABS,
+								'items'    => array( 'type' => 'string' ),
+							),
 						),
 					),
 				),
@@ -212,8 +229,10 @@ final class ChatController {
 			(int) $request->get_param( 'conversation_id' ),
 			(string) $request->get_param( 'message' ),
 			array(
-				'screen'  => sanitize_text_field( (string) ( $context['screen'] ?? '' ) ),
-				'post_id' => absint( $context['post_id'] ?? 0 ),
+				'screen'      => sanitize_text_field( (string) ( $context['screen'] ?? '' ) ),
+				'post_id'     => absint( $context['post_id'] ?? 0 ),
+				'admin_pages' => AdminPages::sanitize( $context['admin_pages'] ?? array() ),
+				'tabs'        => AdminPages::sanitize_tabs( $context['tabs'] ?? array() ),
 			),
 			get_current_user_id()
 		);

@@ -77,6 +77,7 @@ final class ChatPanel {
 					'screen'      => $screen ? (string) $screen->id : '',
 					'postId'      => $post_id,
 					'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
+					'adminPages'  => AdminPages::from_menu(),
 				)
 			) . ';',
 			'before'

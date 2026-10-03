@@ -7,6 +7,8 @@
 	var cfg = window.wpCortexChat || {};
 	var __ = wp.i18n.__;
 	var STORE_KEY = 'wpCortexChat';
+	var TAB_KEY = 'wpCortexChatTab';
+	var MAX_TABS = 50;
 	var P = 'wp-cortex-chat-';
 	var root, toggle, panel, list, select, input, sendBtn, thinkingEl;
 	var state = { open: false, conversationId: 0 };
@@ -315,13 +317,123 @@
 		} );
 	}
 
+	/* ---------- Tabs ---------- */
+
+	function normalizeLabel( text ) {
+		return String( text || '' ).replace( /\s+/g, ' ' ).trim();
+	}
+
+	// Visible tab elements of the current screen (ACF, core nav tabs and ARIA tabs) with their labels.
+	function tabElements() {
+		var found = [];
+		var seen = {};
+		var nodes = document.querySelectorAll( '.acf-tab-wrap .acf-tab-button, .nav-tab-wrapper .nav-tab, [role="tab"]' );
+		Array.prototype.forEach.call( nodes, function ( node ) {
+			if ( root && root.contains( node ) ) {
+				return;
+			}
+			if ( ! ( node.offsetWidth || node.offsetHeight || node.getClientRects().length ) ) {
+				return;
+			}
+			var label = normalizeLabel( node.textContent );
+			if ( ! label || seen[ label ] || found.length >= MAX_TABS ) {
+				return;
+			}
+			seen[ label ] = true;
+			found.push( { label: label, node: node } );
+		} );
+		return found;
+	}
+
+	function collectTabs() {
+		return tabElements().map( function ( t ) {
+			return t.label;
+		} );
+	}
+
+	function findTab( label ) {
+		var wanted = normalizeLabel( label ).toLowerCase();
+		var tabs = tabElements();
+		for ( var i = 0; i < tabs.length; i++ ) {
+			if ( tabs[ i ].label.toLowerCase() === wanted ) {
+				return tabs[ i ];
+			}
+		}
+		return null;
+	}
+
+	function clickTab( label ) {
+		var tab = findTab( label );
+		if ( ! tab ) {
+			return false;
+		}
+		if ( tab.node.scrollIntoView ) {
+			tab.node.scrollIntoView( { block: 'center' } );
+		}
+		tab.node.click();
+		return true;
+	}
+
+	function reportTab( label, found ) {
+		var text = found
+			/* translators: %s: tab name */
+			? __( 'Switched to the “%s” tab.', 'wp-cortex' )
+			/* translators: %s: tab name */
+			: __( 'The “%s” tab was not found on this page.', 'wp-cortex' );
+		addMessage( 'assistant', text.replace( '%s', function () {
+			return label;
+		} ), false );
+		scrollBottom();
+	}
+
+	function setPendingTab( label ) {
+		try {
+			window.sessionStorage.setItem( TAB_KEY, label );
+		} catch ( e ) {}
+	}
+
+	// Reads and clears the tab to open after navigation, so it can never loop.
+	function takePendingTab() {
+		var label = '';
+		try {
+			label = window.sessionStorage.getItem( TAB_KEY ) || '';
+			window.sessionStorage.removeItem( TAB_KEY );
+		} catch ( e ) {}
+		return normalizeLabel( label );
+	}
+
+	// ACF initializes its tabs on ready, so retry for a few seconds.
+	function applyPendingTab() {
+		var label = takePendingTab();
+		if ( ! label ) {
+			return;
+		}
+		var tries = 0;
+		( function attempt() {
+			if ( clickTab( label ) ) {
+				reportTab( label, true );
+			} else if ( ++tries < 12 ) {
+				window.setTimeout( attempt, 250 );
+			} else {
+				reportTab( label, false );
+			}
+		}() );
+	}
+
 	/* ---------- Sending ---------- */
 
 	function handleActions( actions ) {
-		var nav = ( actions || [] ).filter( function ( a ) {
+		actions = actions || [];
+		var nav = actions.filter( function ( a ) {
 			return a && 'navigate' === a.type && a.url;
 		} )[ 0 ];
 		if ( ! nav ) {
+			// Without navigation, switch tabs on the current screen.
+			actions.forEach( function ( a ) {
+				if ( a && 'select_tab' === a.type && a.label ) {
+					reportTab( a.label, clickTab( a.label ) );
+				}
+			} );
 			return;
 		}
 		var target;
@@ -334,11 +446,16 @@
 			return;
 		}
 		var title = nav.title || target.pathname;
-		/* translators: %s: post title */
-		addMessage( 'assistant', __( 'Opening “%s”…', 'wp-cortex' ).replace( '%s', title ), false );
+		/* translators: %s: post title or admin screen name */
+		addMessage( 'assistant', __( 'Opening “%s”…', 'wp-cortex' ).replace( '%s', function () {
+			return title;
+		} ), false );
 		scrollBottom();
 		state.open = true;
 		saveState();
+		if ( nav.tab ) {
+			setPendingTab( String( nav.tab ) );
+		}
 		window.setTimeout( function () {
 			window.location.href = target.href;
 		}, 600 );
@@ -366,7 +483,7 @@
 			data: {
 				conversation_id: state.conversationId || 0,
 				message: text,
-				context: { screen: cfg.screen || '', post_id: cfg.postId || 0 }
+				context: { screen: cfg.screen || '', post_id: cfg.postId || 0, admin_pages: cfg.adminPages || [], tabs: collectTabs() }
 			}
 		} ).then( function ( res ) {
 			var isNew = res.conversation_id && res.conversation_id !== state.conversationId;
@@ -525,9 +642,12 @@
 						select.value = String( state.conversationId );
 					}
 					scrollBottom();
+					applyPendingTab();
 				} );
+				return;
 			}
 		}
+		applyPendingTab();
 	}
 
 	wp.domReady( build );
