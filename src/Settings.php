@@ -56,6 +56,7 @@ final class Settings {
 			'chat_provider'        => '',
 			'chat_model'           => '',
 			'chat_instructions'    => '',
+			'chat_reasoning'       => '',
 		);
 	}
 
@@ -168,6 +169,7 @@ final class Settings {
 			'chat_provider'        => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
 			'chat_model'           => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
 			'chat_instructions'    => $chat_instructions,
+			'chat_reasoning'       => sanitize_key( (string) ( $input['chat_reasoning'] ?? '' ) ),
 		);
 	}
 
