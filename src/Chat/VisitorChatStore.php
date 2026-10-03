@@ -47,6 +47,7 @@ final class VisitorChatStore {
 		'phone'      => 50,
 		'address'    => 300,
 		'company'    => 200,
+		'website'    => 2000,
 		'request'    => 1000,
 	);
 
@@ -183,7 +184,7 @@ final class VisitorChatStore {
 	}
 
 	/**
-	 * Cleans contact fields: known keys only, plain text, length limits, valid email.
+	 * Cleans contact fields: known keys only, plain text, length limits, valid email and URLs.
 	 *
 	 * @param array $data Raw fields.
 	 * @return array<string, string> Non-empty fields.
@@ -193,13 +194,25 @@ final class VisitorChatStore {
 
 		foreach ( self::CONTACT_FIELDS as $key => $max ) {
 			$value = (string) ( $data[ $key ] ?? '' );
-			$value = 'request' === $key || 'address' === $key ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
+			$value = in_array( $key, array( 'request', 'address', 'website' ), true ) ? sanitize_textarea_field( $value ) : sanitize_text_field( $value );
 			$value = trim( mb_substr( $value, 0, $max ) );
 
 			if ( 'email' === $key ) {
 				$value = is_email( $value ) ? sanitize_email( $value ) : '';
 			} elseif ( 'phone' === $key ) {
 				$value = trim( (string) preg_replace( '/[^0-9+()\/.\s-]/', '', $value ) );
+			} elseif ( 'website' === $key ) {
+				$urls = array();
+
+				foreach ( preg_split( '/\r\n|\r|\n/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
+					$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+
+					if ( '' !== $url && false !== wp_http_validate_url( $url ) ) {
+						$urls[ $url ] = $url;
+					}
+				}
+
+				$value = implode( "\n", array_values( $urls ) );
 			}
 
 			if ( '' !== $value ) {

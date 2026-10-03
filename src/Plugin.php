@@ -96,7 +96,7 @@ final class Plugin {
 		$text = '<p>' . esc_html__( 'This site offers a chat assistant that answers questions using an AI service. The messages you send in the chat are sent to that service to generate the answers.', 'wp-cortex' ) . '</p>';
 
 		if ( Settings::get( 'public_chat_log' ) ) {
-			$text .= '<p>' . esc_html__( 'Chat conversations are stored on this site so that the site team can read them. If you choose to leave contact details in the chat (such as your name, email address, phone number or address), they are stored with the conversation and used only to get back to you. No cookie is stored.', 'wp-cortex' ) . '</p>';
+			$text .= '<p>' . esc_html__( 'Chat conversations are stored on this site so that the site team can read them. If you choose to leave contact details in the chat (such as your name, email address, phone number, address or website URL(s)), they are stored with the conversation and used only to get back to you. No cookie is stored.', 'wp-cortex' ) . '</p>';
 
 			if ( Settings::get( 'public_chat_store_ip' ) ) {
 				$text .= '<p>' . esc_html__( 'Your IP address is stored with the conversation to protect the chat from abuse and to help the site team handle your request.', 'wp-cortex' ) . '</p>';
