@@ -41,12 +41,12 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 1. Copy the plugin into `wp-content/plugins/wp-cortex` and activate it.
 2. (Recommended) Define `WP_CORTEX_DATA_DIR` in `wp-config.php` with a path outside the web root.
 3. Add an OpenAI API key under Settings > Connectors (or via env/constant).
-4. Open **Cortex > Settings**, choose post types and sources, and save.
+4. Open **Cortex > Settings** (the last item of the Cortex menu), choose post types and sources on the Content tab, and save.
 5. Open **Cortex > Indexing** and click Sync (or run `wp cortex index`).
 
 ## Configuration
 
-Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**.
+Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Content, Indexing, Admin chat and Visitor chat tabs.
 
 | Setting | Default | Description |
 | --- | --- | --- |
