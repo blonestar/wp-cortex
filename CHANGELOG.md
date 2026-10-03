@@ -26,7 +26,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Changed
 
-- Redesigned Cortex > Settings: settings are grouped into tabs (Content, Indexing, Admin chat, Visitor chat) with a card per section and a sticky save bar. The active tab is kept in the URL (`&tab=`) and after saving. Settings is now the last item of the Cortex menu; the Cortex menu opens the Indexing screen.
+- Redesigned Cortex > Settings: settings are grouped into tabs (Content, Indexing, Admin chat, Visitor chat); a tab with several sections lists them as vertical tabs on the left (for example Visitor chat: General, Conversations & privacy, Assistant actions), with a sticky save bar. The active tab and section are kept in the URL (`&tab=`, `&section=`) and after saving. Settings is now the last item of the Cortex menu; the Cortex menu opens the Indexing screen.
 - Assets are versioned with the plugin version plus the file modification time, so changed JS/CSS reloads between releases.
 
 ### Fixed
