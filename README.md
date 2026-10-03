@@ -61,6 +61,7 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `chat_enabled` | on | Show the admin chat assistant. |
 | `chat_provider` | automatic | Registered AI provider ID (for example `openai`, `anthropic`), or empty to let the AI Client choose a configured one. |
 | `chat_model` | provider default | Model ID used with the selected provider (for example `gpt-5.4-mini` or `anthropic/claude-sonnet-4.5`). Chosen from a list loaded from the provider (cached 12 h in the `wp_cortex_models_<provider>` transient, "Refresh models" button reloads it); models without tool calling are listed but disabled. Ignored when the provider is automatic. An explicit model is used as is, without the AI Client's capability matching (some providers, such as OpenRouter, do not declare tool support in their metadata), so pick one that supports tool calling. With a provider but no model, the AI Client must find a tool-capable model in the provider metadata. |
+| `chat_reasoning` | model default | Reasoning (thinking) effort, chosen next to the model and only applied when a model is selected. Levels depend on the provider: OpenAI `none`–`xhigh` (sent as `reasoning.effort`), Anthropic `low`–`max` (`output_config.effort`; the thinking mode stays at the model default), OpenRouter `none`–`xhigh` (`reasoning.effort`). Other providers show no selector unless added through the reasoning filters. A level the model does not support makes the request fail. |
 
 ### Data directory
 
@@ -79,6 +80,8 @@ The directory must be writable by the web server user. Changing the location doe
 - `wp_cortex_extractors` (`Extractor[] $extractors`): add, remove or reorder extractors. Non-`Extractor` entries are discarded.
 - `wp_cortex_openai_api_key` (`string $key`): override the OpenAI API key.
 - `wp_cortex_chat_system_instruction` (`string $instruction`, `array $context`): modify the chat assistant's system instruction. `$context` holds `screen` and `post_id`.
+- `wp_cortex_chat_reasoning_levels` (`string[] $levels`, `string $provider`): reasoning levels offered for a provider (lowest first).
+- `wp_cortex_chat_reasoning_options` (`array $options`, `string $provider`, `string $level`): custom request options that apply a reasoning level, for providers without a built-in mapping.
 
 ## Indexing
 
