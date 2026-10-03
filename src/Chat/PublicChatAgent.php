@@ -24,8 +24,11 @@ defined( 'ABSPATH' ) || exit;
  *
  * The agent never touches the admin index and does not use the abilities (they are
  * capability-gated and read the admin index); its own tools read the public index.
- * Conversations are not stored: the browser sends the previous text turns with each
- * message, so they carry no tool results and cannot grant access to anything.
+ * The model context comes from the browser, which sends the previous text turns with each
+ * message, so they carry no tool results and cannot grant access to anything. When the
+ * conversation log is on, the controller stores the turn (VisitorChatStore); the agent
+ * may only save contact details to the visitor's own conversation and never reads
+ * stored conversations.
  */
 final class PublicChatAgent {
 
@@ -40,6 +43,8 @@ final class PublicChatAgent {
 	private const DOCUMENT_CHARS  = 5000;
 	private const SEARCH_FUNCTION = 'search_site';
 	private const PAGE_FUNCTION   = 'get_page';
+	private const GOTO_FUNCTION   = 'go_to_page';
+	private const SAVE_FUNCTION   = 'save_contact_details';
 
 	/**
 	 * Search service over the public index.
@@ -49,15 +54,38 @@ final class PublicChatAgent {
 	private ?SearchService $search = null;
 
 	/**
+	 * Stored conversation of this visitor, 0 when the log is off.
+	 *
+	 * @var int
+	 */
+	private int $chat_id = 0;
+
+	/**
+	 * Page the visitor is taken to after this turn.
+	 *
+	 * @var array{id: int, title: string, url: string}|null
+	 */
+	private ?array $navigate = null;
+
+	/**
+	 * Whether contact details were saved in this turn.
+	 *
+	 * @var bool
+	 */
+	private bool $contact_saved = false;
+
+	/**
 	 * Handles one visitor message.
 	 *
 	 * @param string $message Visitor message.
 	 * @param array  $history Previous turns: items with role ("user" or "assistant") and text.
 	 * @param int    $post_id Post the visitor is viewing, 0 for none.
+	 * @param int    $chat_id Stored conversation (VisitorChatStore), 0 when the log is off.
 	 * @return array{items: array}|WP_Error
 	 */
-	public function respond( string $message, array $history, int $post_id ) {
-		$message = trim( $message );
+	public function respond( string $message, array $history, int $post_id, int $chat_id = 0 ) {
+		$message       = trim( $message );
+		$this->chat_id = $chat_id;
 
 		if ( '' === $message ) {
 			return new WP_Error( 'wp_cortex_empty_message', __( 'The message is empty.', 'wp-cortex' ), array( 'status' => 400 ) );
@@ -134,6 +162,17 @@ final class PublicChatAgent {
 					);
 				}
 
+				if ( $this->contact_saved ) {
+					$items[] = array(
+						'role' => 'notice',
+						'text' => __( 'Contact details saved.', 'wp-cortex' ),
+					);
+				}
+
+				if ( $this->navigate ) {
+					$items[] = array_merge( array( 'role' => 'navigate' ), $this->navigate );
+				}
+
 				return true;
 			}
 
@@ -142,6 +181,10 @@ final class PublicChatAgent {
 					$payload = $this->search_site( (array) $call->getArgs(), $seen );
 				} elseif ( self::PAGE_FUNCTION === $call->getName() ) {
 					$payload = $this->get_page( (array) $call->getArgs(), $seen );
+				} elseif ( self::GOTO_FUNCTION === $call->getName() && $this->navigation_enabled() ) {
+					$payload = $this->go_to_page( (array) $call->getArgs() );
+				} elseif ( self::SAVE_FUNCTION === $call->getName() && $this->contact_enabled() ) {
+					$payload = $this->save_contact_details( (array) $call->getArgs() );
 				} else {
 					$payload = array( 'error' => 'Unknown function.' );
 				}
@@ -248,7 +291,7 @@ final class PublicChatAgent {
 			);
 		}
 
-		return array(
+		$declarations = array(
 			new FunctionDeclaration(
 				self::SEARCH_FUNCTION,
 				'Searches the published content of this website (keyword and semantic search). Returns pages with id, title, type, URL and a matching snippet. Use it for every question about the site, its offer or its content.',
@@ -268,6 +311,122 @@ final class PublicChatAgent {
 					'required'   => array( 'post_id' ),
 				)
 			),
+		);
+
+		if ( $this->navigation_enabled() ) {
+			$declarations[] = new FunctionDeclaration(
+				self::GOTO_FUNCTION,
+				'Opens a published page of this website in the visitor\'s browser (the chat stays open). Call it only when the visitor explicitly asks to be taken to a page or has just confirmed your offer to take them there.',
+				array(
+					'type'       => 'object',
+					'properties' => array(
+						'post_id' => array(
+							'type'        => 'integer',
+							'description' => 'ID of the page, taken from search_site results.',
+						),
+					),
+					'required'   => array( 'post_id' ),
+				)
+			);
+		}
+
+		if ( $this->contact_enabled() ) {
+			$string         = array( 'type' => 'string' );
+			$declarations[] = new FunctionDeclaration(
+				self::SAVE_FUNCTION,
+				'Saves the contact details of a visitor who wants to be contacted, so the site team can get back to them. Call it only after the visitor has confirmed the details. At least an email address or a phone number is required. Calling it again updates the saved details.',
+				array(
+					'type'       => 'object',
+					'properties' => array(
+						'first_name' => array_merge( $string, array( 'description' => 'First name.' ) ),
+						'last_name'  => array_merge( $string, array( 'description' => 'Last name.' ) ),
+						'email'      => array_merge( $string, array( 'description' => 'Email address.' ) ),
+						'phone'      => array_merge( $string, array( 'description' => 'Phone number.' ) ),
+						'address'    => array_merge( $string, array( 'description' => 'Postal address, only if the visitor gave it.' ) ),
+						'company'    => array_merge( $string, array( 'description' => 'Company or organization, only if the visitor gave it.' ) ),
+						'request'    => array_merge( $string, array( 'description' => 'Short summary of what the visitor wants or asked about, in the visitor\'s language.' ) ),
+					),
+				)
+			);
+		}
+
+		return $declarations;
+	}
+
+	/**
+	 * Whether the go_to_page tool is offered.
+	 */
+	private function navigation_enabled(): bool {
+		return (bool) Settings::get( 'public_chat_navigation' );
+	}
+
+	/**
+	 * Whether the save_contact_details tool is offered: needs a stored conversation.
+	 */
+	private function contact_enabled(): bool {
+		return $this->chat_id > 0 && (bool) Settings::get( 'public_chat_contact' );
+	}
+
+	/**
+	 * Tool: go_to_page. Only pages in the public index can be opened.
+	 *
+	 * @param array $args Function arguments.
+	 * @return array<string, mixed>
+	 */
+	private function go_to_page( array $args ): array {
+		$post_id = (int) ( $args['post_id'] ?? 0 );
+
+		try {
+			$doc = $post_id > 0 ? $this->search()->get_document( $post_id ) : null;
+		} catch ( \Throwable $e ) {
+			$doc = null;
+		}
+
+		if ( null === $doc || '' === (string) $doc['url'] ) {
+			return array( 'error' => 'No published page with this ID.' );
+		}
+
+		$this->navigate = array(
+			'id'    => $post_id,
+			'title' => wp_specialchars_decode( (string) $doc['title'], ENT_QUOTES ),
+			'url'   => esc_url_raw( (string) $doc['url'] ),
+		);
+
+		return array(
+			'opened' => true,
+			'title'  => $this->navigate['title'],
+			'note'   => 'The page opens right after your reply. In one short sentence, tell the visitor you are taking them to this page.',
+		);
+	}
+
+	/**
+	 * Tool: save_contact_details. Saves to the visitor's own conversation only.
+	 *
+	 * @param array $args Function arguments.
+	 * @return array<string, mixed>
+	 */
+	private function save_contact_details( array $args ): array {
+		$contact = VisitorChatStore::sanitize_contact( $args );
+
+		if ( '' !== trim( (string) ( $args['email'] ?? '' ) ) && ! isset( $contact['email'] ) ) {
+			return array( 'error' => 'The email address is not valid. Ask the visitor to check it.' );
+		}
+
+		if ( ! isset( $contact['email'] ) && ! isset( $contact['phone'] ) ) {
+			return array( 'error' => 'An email address or a phone number is required. Ask the visitor for one.' );
+		}
+
+		$saved = ( new VisitorChatStore() )->save_contact( $this->chat_id, $contact );
+
+		if ( null === $saved ) {
+			return array( 'error' => 'The details could not be saved.' );
+		}
+
+		$this->contact_saved = true;
+
+		return array(
+			'saved'   => true,
+			'contact' => $saved,
 		);
 	}
 
@@ -468,6 +627,14 @@ final class PublicChatAgent {
 			'Link the pages you mention as Markdown links with the page ID as the target, for example [Services](#123) or [read more](#123); the ID is replaced with the page URL. Use only IDs returned by your tools, never write URLs yourself and do not add the ID anywhere else.',
 			'Keep answers short, friendly and easy to scan.',
 		);
+
+		if ( $this->navigation_enabled() ) {
+			$lines[] = 'When a page would help the visitor (for example the contact page for someone who wants to get in touch), you may offer to take them there. Call go_to_page only when the visitor explicitly asks to be taken to a page or has confirmed your offer in their last message; never open a page on your own initiative. After calling it, reply with one short sentence.';
+		}
+
+		if ( $this->contact_enabled() ) {
+			$lines[] = 'If the visitor wants to be contacted, asks for an offer or a quote, wants to send an inquiry, or the content cannot answer their question, you may offer to take their contact details so the team can get back to them. Collect only: first and last name, an email address and/or a phone number, and only if relevant a postal address and company, plus a short summary of their request. Ask only for what is missing, a few items at a time, and never ask for sensitive data (passwords, payment cards, ID numbers, health data). Before saving, repeat the details in a short list and ask the visitor to confirm; after they confirm, call save_contact_details. Do not push the visitor to leave details.';
+		}
 
 		if ( $current ) {
 			$lines[] = sprintf(

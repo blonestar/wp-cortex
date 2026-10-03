@@ -10,7 +10,7 @@ namespace WPCortex\Chat;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Counts visitor chat messages per client IP in a fixed one-hour window (transients).
+ * Counts visitor chat messages per client IP (ClientIp) in a fixed one-hour window (transients).
  */
 final class RateLimiter {
 
@@ -25,7 +25,7 @@ final class RateLimiter {
 	 * @param int $limit Messages allowed per hour.
 	 */
 	public static function allow( int $limit ): bool {
-		$key   = self::TRANSIENT_PREFIX . substr( wp_hash( self::client_ip() ), 0, 32 );
+		$key   = self::TRANSIENT_PREFIX . substr( wp_hash( ClientIp::get() ), 0, 32 );
 		$entry = get_transient( $key );
 		$now   = time();
 
@@ -44,20 +44,5 @@ final class RateLimiter {
 		set_transient( $key, $entry, max( 1, (int) $entry['start'] + self::WINDOW - $now ) );
 
 		return true;
-	}
-
-	/**
-	 * Client IP. Only REMOTE_ADDR is trusted; sites behind a proxy or CDN can supply the
-	 * real address through the wp_cortex_public_chat_client_ip filter.
-	 */
-	private static function client_ip(): string {
-		$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
-
-		/**
-		 * Filters the client IP used to limit visitor chat messages.
-		 *
-		 * @param string $ip Client IP from REMOTE_ADDR.
-		 */
-		return (string) apply_filters( 'wp_cortex_public_chat_client_ip', $ip );
 	}
 }

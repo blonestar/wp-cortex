@@ -7,6 +7,7 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Plugin;
 
 defined( 'ABSPATH' ) || exit;
@@ -19,6 +20,7 @@ final class Menu {
 	public const SLUG_SETTINGS = 'wp-cortex';
 	public const SLUG_INDEXING = 'wp-cortex-indexing';
 	public const SLUG_SKILLS   = 'wp-cortex-skills';
+	public const SLUG_VISITORS = 'wp-cortex-visitor-chats';
 
 	/**
 	 * Hook suffix of the Settings screen.
@@ -40,6 +42,13 @@ final class Menu {
 	 * @var string
 	 */
 	private string $skills_hook = '';
+
+	/**
+	 * Hook suffix of the Visitor chats screen.
+	 *
+	 * @var string
+	 */
+	private string $visitors_hook = '';
 
 	/**
 	 * Registers admin hooks.
@@ -92,6 +101,22 @@ final class Menu {
 			self::SLUG_SKILLS,
 			array( new SkillsPage(), 'render' )
 		);
+
+		$unread = current_user_can( 'manage_options' ) ? ( new VisitorChatStore() )->unread_count() : 0;
+		$label  = __( 'Visitor chats', 'wp-cortex' );
+
+		if ( $unread > 0 ) {
+			$label .= sprintf( ' <span class="awaiting-mod count-%1$d"><span class="pending-count">%2$s</span></span>', $unread, number_format_i18n( $unread ) );
+		}
+
+		$this->visitors_hook = (string) add_submenu_page(
+			self::SLUG_SETTINGS,
+			__( 'Cortex Visitor Chats', 'wp-cortex' ),
+			$label,
+			'manage_options',
+			self::SLUG_VISITORS,
+			array( new VisitorChatsPage(), 'render' )
+		);
 	}
 
 	/**
@@ -103,8 +128,9 @@ final class Menu {
 		$is_settings = '' !== $this->settings_hook && $hook_suffix === $this->settings_hook;
 		$is_indexing = '' !== $this->indexing_hook && $hook_suffix === $this->indexing_hook;
 		$is_skills   = '' !== $this->skills_hook && $hook_suffix === $this->skills_hook;
+		$is_visitors = '' !== $this->visitors_hook && $hook_suffix === $this->visitors_hook;
 
-		if ( ! $is_settings && ! $is_indexing && ! $is_skills ) {
+		if ( ! $is_settings && ! $is_indexing && ! $is_skills && ! $is_visitors ) {
 			return;
 		}
 
@@ -133,6 +159,17 @@ final class Menu {
 		if ( $is_skills ) {
 			wp_enqueue_script( 'wp-cortex-skills', WP_CORTEX_URL . 'assets/js/skills.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/skills.js' ), true );
 			wp_set_script_translations( 'wp-cortex-skills', 'wp-cortex' );
+		}
+
+		if ( $is_visitors ) {
+			wp_enqueue_script( 'wp-cortex-markdown', WP_CORTEX_URL . 'assets/js/chat-markdown.js', array(), Plugin::asset_version( 'assets/js/chat-markdown.js' ), true );
+			wp_enqueue_script( 'wp-cortex-visitor-chats', WP_CORTEX_URL . 'assets/js/visitor-chats.js', array( 'wp-api-fetch', 'wp-i18n', 'wp-cortex-markdown' ), Plugin::asset_version( 'assets/js/visitor-chats.js' ), true );
+			wp_set_script_translations( 'wp-cortex-visitor-chats', 'wp-cortex' );
+			wp_add_inline_script(
+				'wp-cortex-visitor-chats',
+				'window.wpCortexVisitorChats = ' . wp_json_encode( array( 'forwardTo' => (string) get_option( 'admin_email' ) ) ) . ';',
+				'before'
+			);
 		}
 	}
 

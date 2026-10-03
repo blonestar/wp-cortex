@@ -8,6 +8,7 @@
 namespace WPCortex\Admin;
 
 use WPCortex\Chat\ChatAgent;
+use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\Reasoning;
 use WPCortex\Embeddings\OpenAIEmbeddings;
@@ -410,7 +411,7 @@ final class SettingsPage {
 	public function fields_public_chat(): void {
 		$this->row_start( __( 'Visitor chat', 'wp-cortex' ) );
 		$this->checkbox( 'public_chat_enabled', __( 'Show a chat assistant to visitors on the front end of the site', 'wp-cortex' ), (bool) Settings::get( 'public_chat_enabled' ) );
-		$this->row_end( __( 'Visitors can ask questions about the site. Answers use only the public index (published, publicly viewable content and fields marked as public) and link to the pages they are based on. It uses the AI provider and model selected above and is billed to that account. Conversations are not stored on the server. Administrators see the admin chat instead while it is shown on the front end.', 'wp-cortex' ) );
+		$this->row_end( __( 'Visitors can ask questions about the site. Answers use only the public index (published, publicly viewable content and fields marked as public) and link to the pages they are based on. It uses the AI provider and model selected above and is billed to that account. Administrators see the admin chat instead while it is shown on the front end.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'Title', 'wp-cortex' ) );
 		printf(
@@ -452,6 +453,43 @@ final class SettingsPage {
 		$this->number( 'public_chat_rate_limit', 1, 1000 );
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
 		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Conversation log', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_log', __( 'Save visitor conversations', 'wp-cortex' ), (bool) Settings::get( 'public_chat_log' ) );
+		$this->row_end(
+			sprintf(
+				/* translators: %s: name of the Visitor chats screen. */
+				__( 'Conversations and the contact details visitors leave are stored on the server and listed under %s. No cookie is stored. Mention it in your privacy policy. When off, nothing is stored and contact details cannot be collected.', 'wp-cortex' ),
+				__( 'Cortex > Visitor chats', 'wp-cortex' )
+			)
+		);
+
+		$this->row_start( __( 'IP address', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_store_ip', __( 'Store the visitor\'s IP address with the conversation', 'wp-cortex' ), (bool) Settings::get( 'public_chat_store_ip' ) );
+		echo '<br /><label>' . esc_html__( 'Behind a proxy or CDN, read the visitor IP from', 'wp-cortex' ) . ' ';
+		printf( '<select name="%s">', $this->name( 'public_chat_ip_header' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+		printf( '<option value="" %s>%s</option>', selected( (string) Settings::get( 'public_chat_ip_header' ), '', false ), esc_html__( 'the connection (REMOTE_ADDR, no proxy)', 'wp-cortex' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		foreach ( array_keys( ClientIp::HEADERS ) as $header ) {
+			printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( $header ), selected( (string) Settings::get( 'public_chat_ip_header' ), $header, false ), esc_html( ucwords( $header, '-' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+		}
+		echo '</select></label>';
+		$detected = array( 'REMOTE_ADDR: ' . ( '' !== ClientIp::remote_addr() ? ClientIp::remote_addr() : '–' ) );
+		foreach ( ClientIp::present_headers() as $header => $value ) {
+			$detected[] = ucwords( $header, '-' ) . ': ' . $value;
+		}
+		echo '<p class="description">' . esc_html__( 'Detected on this request:', 'wp-cortex' ) . ' <code>' . esc_html( implode( ' · ', $detected ) ) . '</code></p>';
+		$this->row_end( __( 'Choose a header only if your site is behind a proxy or CDN that sets it (for example CF-Connecting-IP for Cloudflare); otherwise visitors could fake their IP. The chosen address is also used for the message limit. Addresses reported by other proxy headers are stored separately as unverified.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Keep conversations', 'wp-cortex' ) );
+		$this->number( 'public_chat_retention', 0, 3650 );
+		echo ' ' . esc_html__( 'days', 'wp-cortex' );
+		$this->row_end( __( 'Conversations without visitor activity for this many days are deleted automatically (daily). 0 keeps them until you delete them.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Assistant actions', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_navigation', __( 'Take visitors to a page when they ask or confirm', 'wp-cortex' ), (bool) Settings::get( 'public_chat_navigation' ) );
+		echo '<br />';
+		$this->checkbox( 'public_chat_contact', __( 'Collect contact details from visitors who want to be contacted', 'wp-cortex' ), (bool) Settings::get( 'public_chat_contact' ) );
+		$this->row_end( __( 'The assistant may offer to open a published page (for example the contact page) and opens it only after the visitor agrees. Contact details (name, email, phone, address, company and the request) are collected only when the visitor wants to leave them and confirms them; they require the conversation log.', 'wp-cortex' ) );
 	}
 
 	/**
