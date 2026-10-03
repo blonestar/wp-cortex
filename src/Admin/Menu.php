@@ -7,6 +7,8 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Plugin;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -88,15 +90,15 @@ final class Menu {
 			return;
 		}
 
-		wp_enqueue_style( 'wp-cortex-admin', WP_CORTEX_URL . 'assets/css/admin.css', array(), WP_CORTEX_VERSION );
+		wp_enqueue_style( 'wp-cortex-admin', WP_CORTEX_URL . 'assets/css/admin.css', array(), Plugin::asset_version( 'assets/css/admin.css' ) );
 
 		if ( $is_settings ) {
-			wp_enqueue_script( 'wp-cortex-settings', WP_CORTEX_URL . 'assets/js/settings.js', array( 'wp-api-fetch', 'wp-i18n' ), WP_CORTEX_VERSION, true );
+			wp_enqueue_script( 'wp-cortex-settings', WP_CORTEX_URL . 'assets/js/settings.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/settings.js' ), true );
 			wp_set_script_translations( 'wp-cortex-settings', 'wp-cortex' );
 		}
 
 		if ( $is_indexing ) {
-			wp_enqueue_script( 'wp-cortex-indexing', WP_CORTEX_URL . 'assets/js/indexing.js', array( 'wp-api-fetch', 'wp-i18n' ), WP_CORTEX_VERSION, true );
+			wp_enqueue_script( 'wp-cortex-indexing', WP_CORTEX_URL . 'assets/js/indexing.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/indexing.js' ), true );
 			wp_set_script_translations( 'wp-cortex-indexing', 'wp-cortex' );
 			wp_add_inline_script(
 				'wp-cortex-indexing',

@@ -47,13 +47,15 @@ Lint JS with `node --check <file>`. WP-CLI phar: `/opt/Local/resources/extraReso
 
 ## Versioning
 
-Semantic versioning `A.B.C`. Every commit bumps the version:
+Semantic versioning `A.B.C`, bumped only when a release is made (not on every commit):
 
-- `C` (patch): bug fixes and small adjustments without new features.
+- `C` (patch): only bug fixes and small adjustments since the last release.
 - `B` (minor, reset `C` to 0): new features, settings, abilities, endpoints or schema changes.
 - `A` (major, reset `B` and `C`): breaking changes (removed features or options, incompatible data or API changes).
 
-The version lives in three places that must stay in sync: the `Version:` header and the `WP_CORTEX_VERSION` constant in `wp-cortex.php`, and the `Version:` line in `README.md`. `WP_CORTEX_VERSION` is also the asset cache-busting version, so bumping it makes browsers load changed JS/CSS.
+Between releases, record every user-visible change in `CHANGELOG.md` under `## [Unreleased]` (`### Added`, `### Changed`, `### Fixed`, `### Removed`). On release: pick the bump from the Unreleased entries, rename that section to `## [A.B.C] - YYYY-MM-DD`, update the version in all three places (the `Version:` header and the `WP_CORTEX_VERSION` constant in `wp-cortex.php`, the `Version:` line in `README.md`) and tag the commit `vA.B.C`.
+
+Assets are enqueued with `Plugin::asset_version( $path )` (plugin version plus file modification time), so changed JS/CSS reloads without a version bump. Use it for every new asset.
 
 ## Before finishing a task
 
@@ -64,4 +66,5 @@ The version lives in three places that must stay in sync: the `Version:` header 
 - [ ] New options/hooks documented here and cleaned up on uninstall.
 - [ ] If features changed, `README.md` updated (Current vs Roadmap kept separate).
 - [ ] Sanity check with `wp cortex index` / `wp cortex status` when indexing code changed.
-- [ ] Do not commit unless asked. When committing, bump the version first (see Versioning).
+- [ ] `CHANGELOG.md` Unreleased section updated for user-visible changes (no version bump outside a release).
+- [ ] Do not commit unless asked.
