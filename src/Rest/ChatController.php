@@ -11,6 +11,7 @@ use WPCortex\Admin\AdminPages;
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\ModelCatalog;
+use WPCortex\Chat\SkillStore;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -61,6 +62,29 @@ final class ChatController {
 					'methods'             => WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_conversation' ),
 					'permission_callback' => $permission,
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/chat/conversations/(?P<id>\d+)/skill-proposals/(?P<proposal>[a-fA-F0-9-]{32,36})',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'resolve_skill_proposal' ),
+				'permission_callback' => $permission,
+				'args'                => array(
+					'status'   => array(
+						'type'              => 'string',
+						'required'          => true,
+						'enum'              => array( 'saved', 'dismissed' ),
+						'sanitize_callback' => 'sanitize_key',
+					),
+					'skill_id' => array(
+						'type'    => 'integer',
+						'default' => 0,
+						'minimum' => 0,
+					),
 				),
 			)
 		);
@@ -170,9 +194,48 @@ final class ChatController {
 			array(
 				'id'         => $conversation['id'],
 				'title'      => $conversation['title'],
-				'transcript' => $conversation['transcript'],
+				'transcript' => $this->decorate_legacy_skill_proposals( $conversation['transcript'] ),
 			)
 		);
+	}
+
+	/**
+	 * POST /chat/conversations/<id>/skill-proposals/<proposal>: records the user's
+	 * decision so a resolved proposal is not rendered as an active form again.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function resolve_skill_proposal( WP_REST_Request $request ) {
+		$status   = (string) $request->get_param( 'status' );
+		$skill    = array();
+		$skill_id = absint( $request->get_param( 'skill_id' ) );
+
+		if ( ! in_array( $status, array( 'saved', 'dismissed' ), true ) ) {
+			return new WP_Error( 'wp_cortex_invalid_status', __( 'Invalid skill proposal status.', 'wp-cortex' ), array( 'status' => 400 ) );
+		}
+
+		if ( 'saved' === $status ) {
+			$skill = ( new SkillStore() )->get( $skill_id );
+
+			if ( null === $skill ) {
+				return new WP_Error( 'wp_cortex_not_found', __( 'Skill not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+			}
+		}
+
+		$updated = ( new ConversationStore() )->resolve_skill_proposal(
+			(int) $request['id'],
+			get_current_user_id(),
+			(string) $request['proposal'],
+			$status,
+			$skill
+		);
+
+		if ( ! $updated ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Skill proposal not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		return rest_ensure_response( array( 'resolved' => true, 'status' => $status ) );
 	}
 
 	/**
@@ -238,5 +301,58 @@ final class ChatController {
 		);
 
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
+	 * Gives old proposal items a safe read-only state when their skill is already
+	 * present. New proposals carry an explicit status and bypass this fallback.
+	 *
+	 * @param array $transcript Transcript items.
+	 * @return array Transcript items with legacy states decorated.
+	 */
+	private function decorate_legacy_skill_proposals( array $transcript ): array {
+		$skills = new SkillStore();
+
+		foreach ( $transcript as &$item ) {
+			if ( 'skill_proposal' !== ( $item['role'] ?? '' ) || ! is_array( $item['skill'] ?? null ) ) {
+				continue;
+			}
+
+			if ( ! array_key_exists( 'proposal_id', $item['skill'] ) ) {
+				$item['skill']['proposal_id'] = ConversationStore::skill_proposal_id( $item['skill'] );
+			}
+
+			if ( array_key_exists( 'status', $item['skill'] ) ) {
+				continue;
+			}
+
+			$current = $skills->get_by_name( (string) ( $item['skill']['name'] ?? '' ) );
+
+			if ( null === $current ) {
+				continue;
+			}
+
+			$existing_id = (int) ( $item['skill']['existing_id'] ?? 0 );
+			$same_value  = $current['name'] === (string) ( $item['skill']['name'] ?? '' )
+				&& $current['description'] === (string) ( $item['skill']['description'] ?? '' )
+				&& $current['instructions'] === (string) ( $item['skill']['instructions'] ?? '' );
+
+			// A new proposal could only have become an existing skill after the
+			// proposal was shown. For an update proposal, require an exact match so
+			// an unsaved change is still actionable.
+			if ( 0 !== $existing_id && ( $existing_id !== $current['id'] || ! $same_value ) ) {
+				continue;
+			}
+
+			$item['skill']['status']       = 'saved';
+			$item['skill']['skill_id']     = $current['id'];
+			$item['skill']['legacy']       = true;
+			$item['skill']['name']         = $current['name'];
+			$item['skill']['description']  = $current['description'];
+			$item['skill']['instructions'] = $current['instructions'];
+		}
+		unset( $item );
+
+		return $transcript;
 	}
 }
