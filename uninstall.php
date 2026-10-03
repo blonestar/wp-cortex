@@ -21,6 +21,6 @@ wp_clear_scheduled_hook( 'wp_cortex_process_queue' );
 global $wpdb;
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}wp_cortex_conversations" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-foreach ( array( '_transient_wp_cortex_models_', '_transient_timeout_wp_cortex_models_' ) as $prefix ) {
+foreach ( array( '_transient_wp_cortex_models_', '_transient_timeout_wp_cortex_models_', '_transient_wp_cortex_rate_', '_transient_timeout_wp_cortex_rate_' ) as $prefix ) {
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( $prefix ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 }

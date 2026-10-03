@@ -50,6 +50,7 @@ final class SettingsPage {
 			'chunking'  => array( __( 'Chunking & batching', 'wp-cortex' ), array( $page, 'fields_chunking' ) ),
 			'embedding' => array( __( 'Embeddings', 'wp-cortex' ), array( $page, 'fields_embeddings' ) ),
 			'chat'      => array( __( 'Chat', 'wp-cortex' ), array( $page, 'fields_chat' ) ),
+			'visitors'  => array( __( 'Visitor chat', 'wp-cortex' ), array( $page, 'fields_public_chat' ) ),
 		);
 
 		foreach ( $sections as $id => $section ) {
@@ -319,7 +320,9 @@ final class SettingsPage {
 
 		$this->row_start( __( 'Admin chat', 'wp-cortex' ) );
 		$this->checkbox( 'chat_enabled', __( 'Show the Cortex chat assistant in the admin', 'wp-cortex' ), (bool) Settings::get( 'chat_enabled' ) );
-		$this->row_end();
+		echo '<br />';
+		$this->checkbox( 'chat_frontend', __( 'Also show it on the front end of the site to administrators', 'wp-cortex' ), (bool) Settings::get( 'chat_frontend' ) );
+		$this->row_end( __( 'The admin chat is only available to administrators and searches the admin index (including drafts, private content and SEO or custom fields). On the front end it knows which post you are viewing; admin screens and tabs can only be opened from the admin.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'AI provider', 'wp-cortex' ) );
 		printf( '<select name="%s">', $this->name( 'chat_provider' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
@@ -399,6 +402,56 @@ final class SettingsPage {
 				Settings::CHAT_INSTRUCTIONS_MAX
 			)
 		);
+	}
+
+	/**
+	 * Visitor chat section.
+	 */
+	public function fields_public_chat(): void {
+		$this->row_start( __( 'Visitor chat', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_enabled', __( 'Show a chat assistant to visitors on the front end of the site', 'wp-cortex' ), (bool) Settings::get( 'public_chat_enabled' ) );
+		$this->row_end( __( 'Visitors can ask questions about the site. Answers use only the public index (published, publicly viewable content and fields marked as public) and link to the pages they are based on. It uses the AI provider and model selected above and is billed to that account. Conversations are not stored on the server. Administrators see the admin chat instead while it is shown on the front end.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Title', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" maxlength="%3$d" placeholder="%4$s" />',
+			$this->name( 'public_chat_title' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'public_chat_title' ) ),
+			(int) Settings::PUBLIC_CHAT_TITLE_MAX,
+			esc_attr__( 'Ask a question', 'wp-cortex' )
+		);
+		$this->row_end( __( 'Shown in the header of the chat window.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Welcome message', 'wp-cortex' ) );
+		printf(
+			'<textarea name="%1$s" rows="2" class="large-text" maxlength="%2$d" placeholder="%3$s">%4$s</textarea>',
+			$this->name( 'public_chat_welcome' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			(int) Settings::PUBLIC_CHAT_WELCOME_MAX,
+			esc_attr__( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
+			esc_textarea( (string) Settings::get( 'public_chat_welcome' ) )
+		);
+		$this->row_end( __( 'The first message visitors see when they open the chat.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Custom instructions', 'wp-cortex' ) );
+		printf(
+			'<textarea name="%1$s" rows="6" class="large-text" maxlength="%2$d" placeholder="%3$s">%4$s</textarea>',
+			$this->name( 'public_chat_instructions' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			(int) Settings::CHAT_INSTRUCTIONS_MAX,
+			esc_attr__( 'For example: Be friendly and concise. When visitors ask about prices, suggest the contact page.', 'wp-cortex' ),
+			esc_textarea( (string) Settings::get( 'public_chat_instructions' ) )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of characters. */
+				__( 'Optional. Added to the system prompt of every visitor message, for example tone, language or what to recommend. Separate from the admin chat instructions. Up to %d characters.', 'wp-cortex' ),
+				Settings::CHAT_INSTRUCTIONS_MAX
+			)
+		);
+
+		$this->row_start( __( 'Message limit', 'wp-cortex' ) );
+		$this->number( 'public_chat_rate_limit', 1, 1000 );
+		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
+		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
 	}
 
 	/**

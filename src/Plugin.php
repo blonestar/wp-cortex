@@ -12,10 +12,12 @@ use WPCortex\Admin\ChatPanel;
 use WPCortex\Admin\Menu;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Cli\Command;
+use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
 use WPCortex\Indexing\PostSync;
 use WPCortex\Rest\ChatController;
 use WPCortex\Rest\IndexController;
+use WPCortex\Rest\PublicChatController;
 use WPCortex\Storage\Storage;
 
 defined( 'ABSPATH' ) || exit;
@@ -32,6 +34,7 @@ final class Plugin {
 		( new PostSync() )->register();
 		( new IndexController() )->register();
 		( new ChatController() )->register();
+		( new PublicChatController() )->register();
 		( new Abilities() )->register();
 
 		ConversationStore::maybe_upgrade();
@@ -39,6 +42,8 @@ final class Plugin {
 		if ( is_admin() ) {
 			( new Menu() )->register();
 			( new ChatPanel() )->register();
+		} else {
+			( new FrontendChat() )->register();
 		}
 
 		if ( defined( 'WP_CLI' ) && WP_CLI ) {

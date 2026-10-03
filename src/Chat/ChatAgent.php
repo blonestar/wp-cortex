@@ -11,8 +11,6 @@ use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Messages\DTO\Message;
 use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\UserMessage;
-use WordPress\AiClient\Providers\Http\DTO\RequestOptions;
-use WordPress\AiClient\Providers\Models\DTO\ModelConfig;
 use WordPress\AiClient\Tools\DTO\FunctionCall;
 use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
 use WordPress\AiClient\Tools\DTO\FunctionResponse;
@@ -28,16 +26,20 @@ defined( 'ABSPATH' ) || exit;
  */
 final class ChatAgent {
 
-	private const MAX_ITERATIONS     = 8;
-	private const HISTORY_LIMIT      = 30;
-	private const MAX_PAYLOAD_CHARS  = 12000;
-	private const MAX_RESULT_ITEMS   = 12;
-	private const REQUEST_TIMEOUT    = 90.0;
-	private const OPEN_POST_FUNCTION = 'open_post';
-	private const OPEN_PAGE_FUNCTION = 'open_admin_page';
-
+	private const MAX_ITERATIONS      = 8;
+	private const HISTORY_LIMIT       = 30;
+	private const MAX_PAYLOAD_CHARS   = 12000;
+	private const MAX_RESULT_ITEMS    = 12;
+	private const OPEN_POST_FUNCTION  = 'open_post';
+	private const OPEN_PAGE_FUNCTION  = 'open_admin_page';
 	private const SELECT_TAB_FUNCTION = 'select_tab';
-	private const ABILITIES          = array( 'wp-cortex/search-content', 'wp-cortex/find-duplicates', 'wp-cortex/get-document', 'wp-cortex/list-fields' );
+
+	/**
+	 * Screen context value sent by the chat panel on the front end of the site.
+	 */
+	public const FRONTEND_SCREEN = 'frontend';
+
+	private const ABILITIES = array( 'wp-cortex/search-content', 'wp-cortex/find-duplicates', 'wp-cortex/get-document', 'wp-cortex/list-fields' );
 
 	/**
 	 * Conversation store.
@@ -90,17 +92,6 @@ final class ChatAgent {
 		}
 
 		return $providers;
-	}
-
-	/**
-	 * Whether a registered provider has credentials.
-	 *
-	 * @param string $provider Provider ID.
-	 */
-	private function is_provider_configured( string $provider ): bool {
-		$providers = self::providers();
-
-		return ! empty( $providers[ $provider ]['configured'] );
 	}
 
 	/**
@@ -185,14 +176,7 @@ final class ChatAgent {
 	 * @return Message[]|WP_Error Full history including the final model message.
 	 */
 	private function run_loop( array $history, array $context, array &$items, array &$actions ) {
-		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
-			return new WP_Error( 'wp_cortex_no_ai_client', __( 'The WordPress AI Client is not available. WordPress 7.0 or later is required.', 'wp-cortex' ) );
-		}
-
-		if ( function_exists( 'set_time_limit' ) ) {
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			@set_time_limit( 300 );
-		}
+		PromptFactory::extend_time_limit();
 
 		$resolver  = new WP_AI_Client_Ability_Function_Resolver( ...self::ABILITIES );
 		$system    = $this->system_instruction( $context );
@@ -203,40 +187,10 @@ final class ChatAgent {
 		$seen      = array();
 
 		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
-			// One call: using_abilities() and using_function_declarations() each replace the list.
-			$builder = wp_ai_client_prompt( $history )
-				->using_system_instruction( $system )
-				->using_function_declarations( ...$functions )
-				->using_request_options( RequestOptions::fromArray( array( 'timeout' => self::REQUEST_TIMEOUT ) ) );
+			$builder = PromptFactory::builder( $history, $system, $functions );
 
-			$provider = (string) Settings::get( 'chat_provider' );
-			$model    = (string) Settings::get( 'chat_model' );
-
-			if ( '' !== $provider ) {
-				$builder = $builder->using_provider( $provider );
-
-				if ( '' !== $model ) {
-					// An explicit model instance skips the SDK's metadata-based model matching.
-					// Some providers (e.g. OpenRouter) do not declare function calling in their
-					// model metadata although the API supports it, so the API decides instead.
-					try {
-						$builder = $builder->using_model( AiClient::defaultRegistry()->getProviderModel( $provider, $model ) );
-					} catch ( \Throwable $e ) {
-						/* translators: 1: model ID, 2: error message */
-						return new WP_Error( 'wp_cortex_model_unavailable', sprintf( __( 'The chat model "%1$s" is not available: %2$s', 'wp-cortex' ), $model, $e->getMessage() ) );
-					}
-
-					// Reasoning effort is model specific, so it only applies to an explicit model.
-					$reasoning = Reasoning::custom_options( $provider, (string) Settings::get( 'chat_reasoning' ) );
-
-					if ( $reasoning ) {
-						$builder = $builder->using_model_config( ModelConfig::fromArray( array( ModelConfig::KEY_CUSTOM_OPTIONS => $reasoning ) ) );
-					}
-				}
-			}
-
-			if ( '' !== $provider && '' !== $model ? ! $this->is_provider_configured( $provider ) : ! $builder->is_supported_for_text_generation() ) {
-				return new WP_Error( 'wp_cortex_no_provider', $this->unsupported_message( $provider ) );
+			if ( is_wp_error( $builder ) ) {
+				return $builder;
 			}
 
 			$result = $builder->generate_text_result();
@@ -247,27 +201,11 @@ final class ChatAgent {
 
 			$model_message = $result->toMessage();
 			$history[]     = $model_message;
-			$calls         = array();
-			$text_chunks   = array();
-
-			foreach ( $model_message->getParts() as $part ) {
-				if ( $part->getType()->isFunctionCall() ) {
-					$call = $part->getFunctionCall();
-
-					if ( $call ) {
-						$calls[] = $call;
-					}
-				} elseif ( $part->getType()->isText() ) {
-					$channel = $part->getChannel();
-
-					if ( ( null === $channel || $channel->isContent() ) && null !== $part->getText() ) {
-						$text_chunks[] = $part->getText();
-					}
-				}
-			}
+			$reply         = PromptFactory::parse( $model_message );
+			$calls         = $reply['calls'];
 
 			if ( ! $calls ) {
-				$text = trim( implode( '', $text_chunks ) );
+				$text = $reply['text'];
 
 				if ( '' === $text ) {
 					$text = __( 'I could not produce an answer. Please try rephrasing your question.', 'wp-cortex' );
@@ -317,27 +255,6 @@ final class ChatAgent {
 		}
 
 		return new WP_Error( 'wp_cortex_too_many_steps', __( 'The assistant needed too many steps to answer. Please try a more specific question.', 'wp-cortex' ) );
-	}
-
-	/**
-	 * Message explaining why generation is not possible.
-	 *
-	 * @param string $provider Selected provider ID, may be empty.
-	 */
-	private function unsupported_message( string $provider ): string {
-		$providers  = self::providers();
-		$configured = array_filter( $providers, static fn( array $p ) => $p['configured'] );
-
-		if ( ! $configured ) {
-			return __( 'No AI provider is configured. Add an API key under Settings > Connectors.', 'wp-cortex' );
-		}
-
-		if ( '' !== $provider && isset( $providers[ $provider ] ) && ! $providers[ $provider ]['configured'] ) {
-			/* translators: %s: provider name. */
-			return sprintf( __( 'The selected AI provider (%s) has no API key. Add one under Settings > Connectors or choose another provider in Cortex > Settings.', 'wp-cortex' ), $providers[ $provider ]['name'] );
-		}
-
-		return __( 'The selected AI provider or model does not support text generation with tool calls. Check the Chat settings under Cortex > Settings.', 'wp-cortex' );
 	}
 
 	/**
@@ -800,9 +717,12 @@ final class ChatAgent {
 	 * @param array $context Screen context.
 	 */
 	private function system_instruction( array $context ): string {
-		$lines = array(
+		$frontend = self::FRONTEND_SCREEN === ( $context['screen'] ?? '' );
+		$lines    = array(
 			sprintf(
-				'You are Cortex, an assistant inside the WordPress admin of the site "%1$s" (%2$s). Today is %3$s.',
+				$frontend
+					? 'You are Cortex, an assistant for the administrators of the WordPress site "%1$s" (%2$s). The user is browsing the front end of the site, so admin screens and tabs cannot be opened from here. Today is %3$s.'
+					: 'You are Cortex, an assistant inside the WordPress admin of the site "%1$s" (%2$s). Today is %3$s.',
 				wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ),
 				home_url(),
 				wp_date( 'Y-m-d' )
@@ -822,7 +742,8 @@ final class ChatAgent {
 
 		if ( $post && current_user_can( 'edit_post', $post_id ) ) {
 			$lines[] = sprintf(
-				'The user is currently editing post #%1$d «%2$s» (%3$s, %4$s). This is background context only: use it only when the user refers to this post (for example "this post"), never to narrow other questions.',
+				'The user is currently %1$s post #%2$d «%3$s» (%4$s, %5$s). This is background context only: use it only when the user refers to this post (for example "this post" or "this page"), never to narrow other questions.',
+				$frontend ? 'viewing' : 'editing',
 				$post_id,
 				get_the_title( $post ),
 				$post->post_type,
