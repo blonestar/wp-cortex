@@ -53,7 +53,7 @@ WP Cortex uses WordPress's native plugin updater with the GitHub `Update URI`. W
 
 ## Configuration
 
-Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Content, Indexing, Admin chat and Visitor chat tabs.
+Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Content, Indexing, Admin chat and Visitor chat tabs. The last tab, Changelog, shows `CHANGELOG.md` with one collapsible panel per version (pending changes and the latest release expanded, the installed version marked).
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -226,7 +226,7 @@ src/
     ClientIp.php           Visitor IP (REMOTE_ADDR or a trusted proxy header)
   Rest/                    IndexController, ChatController, PublicChatController, SkillController, VisitorChatController
   Cli/Command.php          WP-CLI commands
-  Admin/                   Menu, Settings page, Indexing page, Skills page, Visitor chats page, Chat panel, Dashboard widget
+  Admin/                   Menu, Settings page (with the Changelog tab), Indexing page, Skills page, Visitor chats page, Chat panel, Dashboard widget
   Frontend/FrontendChat.php  Admin or visitor chat on the front end
   Frontend/ChatAppearance.php  Visitor chat appearance settings as CSS custom properties and classes
 assets/                  JS (no build step) and CSS for the admin, the chat panels and the visitor chat
