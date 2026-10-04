@@ -81,7 +81,7 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `public_chat_welcome` | "Hi! Ask me anything about this website." | First message shown to visitors (up to 500 characters). |
 | `public_chat_instructions` | empty | Custom instructions for the visitor chat (up to 4000 characters), separate from `chat_instructions`. |
 | `public_chat_provider` | same as admin chat | AI provider of the visitor chat (Settings > Visitor chat > AI assistant). Empty follows `chat_provider`, `chat_model` and `chat_reasoning`; `auto` lets the AI Client choose a configured provider with its default model; a provider ID uses `public_chat_model` and `public_chat_reasoning`. |
-| `public_chat_model` / `public_chat_reasoning` | provider / model default | Model and reasoning level of the visitor chat, chosen like `chat_model` and `chat_reasoning`; only used when `public_chat_provider` is a provider ID. Visitor chat summaries keep using the admin chat model. |
+| `public_chat_model` / `public_chat_reasoning` | provider / model default | Model and reasoning level of the visitor chat, chosen like `chat_model` and `chat_reasoning`; only used when `public_chat_provider` is a provider ID. Visitor chat summaries have their own `summary_*` settings. |
 | `public_chat_rate_limit` | 20 | Visitor chat messages allowed per client IP per hour (1-1000). Administrators are not limited. Counted in `wp_cortex_rate_<hash>` transients. |
 | `public_chat_log` | on | Store visitor conversations and contact details (Cortex > Visitor chats). When off, nothing is stored and contact details are not collected. |
 | `public_chat_retention` | 0 | Delete visitor conversations without activity for this many days (0-3650, 0 keeps them). |
@@ -99,6 +99,10 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `public_chat_radius` | 14 | Corner radius of the visitor chat window and messages, in px (0-28); inputs and buttons use 70% of it. |
 | `public_chat_font` | system | Visitor chat font: `system` (system font stack) or `theme` (inherits the theme font). |
 | `public_chat_font_size` | 14 | Visitor chat base font size, in px (12-18). |
+| `summary_provider` | same as admin chat | AI provider of visitor chat summaries (Settings > Visitor chat > Conversation summaries). Empty follows `chat_provider`, `chat_model` and `chat_reasoning`; `auto` lets the AI Client choose a configured provider with its default model; a provider ID uses `summary_model` and `summary_reasoning`. |
+| `summary_model` / `summary_reasoning` | provider / model default | Model and reasoning level of summaries, chosen like `chat_model` and `chat_reasoning`, but any model can be picked (summaries make no tool calls); only used when `summary_provider` is a provider ID. |
+| `summary_language` | `site` | Language of summaries: `site` (the site language from Settings > General, whatever language the visitor wrote in) or `visitor` (the visitor's language). |
+| `summary_instructions` | empty | Custom instructions (up to 4000 characters) added to the summary prompt, for example what to highlight or extra sections. They take precedence over the default summary instructions. |
 | `chat_reasoning` | model default | Reasoning (thinking) effort, chosen next to the model and only applied when a model is selected. Levels depend on the provider: OpenAI `none`–`xhigh` (sent as `reasoning.effort`), Anthropic `low`–`max` (`output_config.effort`; the thinking mode stays at the model default), OpenRouter `none`–`xhigh` (`reasoning.effort`). Other providers show no selector unless added through the reasoning filters. A level the model does not support makes the request fail. |
 
 ### Data directory
@@ -120,6 +124,7 @@ The directory must be writable by the web server user. Changing the location doe
 - `wp_cortex_chat_system_instruction` (`string $instruction`, `array $context`): modify the chat assistant's system instruction. `$context` holds `screen` and `post_id`.
 - `wp_cortex_chat_reasoning_levels` (`string[] $levels`, `string $provider`): reasoning levels offered for a provider (lowest first).
 - `wp_cortex_public_chat_system_instruction` (`string $instruction`, `array $context`): modify the visitor chat's system instruction. `$context` holds `post_id` (the page being viewed, 0 for none).
+- `wp_cortex_visitor_chat_summary_system_instruction` (`string $instruction`, `array $chat`): modify the system instruction of visitor chat summaries (after `summary_language` and `summary_instructions` are applied). `$chat` is the conversation from `VisitorChatStore::get()`.
 - `wp_cortex_public_chat_client_ip` (`string $ip`): client IP used for the visitor chat message limit and stored with visitor conversations. Defaults to `REMOTE_ADDR`, or the address from the header chosen in `public_chat_ip_header`; use the filter for other proxy setups.
 - `wp_cortex_chat_reasoning_options` (`array $options`, `string $provider`, `string $level`): custom request options that apply a reasoning level, for providers without a built-in mapping.
 
