@@ -234,7 +234,7 @@
 		var td = el( 'td', 'wp-cortex-col-contact' );
 		var c = chat.contact || {};
 		if ( ! chat.has_contact ) {
-			td.appendChild( el( 'span', 'wp-cortex-muted', '–' ) );
+			td.appendChild( el( 'span', 'wp-cortex-muted', c.request ? c.request : '–' ) );
 			return td;
 		}
 		var name = contactName( c );

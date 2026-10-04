@@ -204,10 +204,10 @@ final class VisitorChatStore {
 			} elseif ( 'website' === $key ) {
 				$urls = array();
 
-				foreach ( preg_split( '/\r\n|\r|\n/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
-					$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+				foreach ( preg_split( '/[\r\n,]+/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
+					$url = self::sanitize_website( $url );
 
-					if ( '' !== $url && false !== wp_http_validate_url( $url ) ) {
+					if ( '' !== $url ) {
 						$urls[ $url ] = $url;
 					}
 				}
@@ -221,6 +221,39 @@ final class VisitorChatStore {
 		}
 
 		return $contact;
+	}
+
+	/**
+	 * Cleans a website URL the visitor gave: adds https:// when the scheme is missing and
+	 * checks the form only (a host name with a dot), since the URL is only shown, never fetched.
+	 *
+	 * @param string $url URL as given, for example "www.example.com".
+	 * @return string Clean URL, empty when it is not a valid web address.
+	 */
+	public static function sanitize_website( string $url ): string {
+		$url = trim( $url );
+
+		if ( '' !== $url && ! preg_match( '#^[a-z][a-z0-9+.-]*://#i', $url ) ) {
+			$url = 'https://' . $url;
+		}
+
+		$url  = esc_url_raw( $url, array( 'http', 'https' ) );
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+
+		if ( '' === $url || ! preg_match( '/^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i', $host ) ) {
+			return '';
+		}
+
+		return $url;
+	}
+
+	/**
+	 * Whether contact details identify the visitor: anything but the request alone.
+	 *
+	 * @param array $contact Contact fields.
+	 */
+	public static function has_contact_details( array $contact ): bool {
+		return (bool) array_diff( array_keys( array_filter( $contact ) ), array( 'request' ) );
 	}
 
 	/**
@@ -248,7 +281,7 @@ final class VisitorChatStore {
 			array(
 				'contact'     => wp_json_encode( $merged, self::JSON_FLAGS ),
 				'search_text' => self::search_text( (string) $stored['search_text'], $contact ),
-				'has_contact' => $merged ? 1 : 0,
+				'has_contact' => self::has_contact_details( $merged ) ? 1 : 0,
 				'is_read'     => 0,
 				'updated_at'  => current_time( 'mysql', true ),
 			),
