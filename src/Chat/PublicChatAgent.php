@@ -511,6 +511,10 @@ final class PublicChatAgent {
 			return array( 'error' => 'The email address is not valid. Ask the visitor to check it.' );
 		}
 
+		if ( '' !== trim( (string) ( $args['website'] ?? '' ) ) && ! isset( $contact['website'] ) ) {
+			return array( 'error' => 'The website URL is not valid. Ask the visitor to check it.' );
+		}
+
 		if ( ! array_intersect( array( 'first_name', 'last_name', 'email', 'phone', 'website' ), array_keys( $contact ) ) ) {
 			return array( 'error' => 'A name, email address, phone number, or website URL is required. Ask the visitor for one.' );
 		}

@@ -207,7 +207,7 @@ final class VisitorChatStore {
 				foreach ( preg_split( '/\r\n|\r|\n/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
 					$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
 
-					if ( '' !== $url && false !== wp_http_validate_url( $url ) ) {
+					if ( self::is_website_url( $url ) ) {
 						$urls[ $url ] = $url;
 					}
 				}
@@ -221,6 +221,19 @@ final class VisitorChatStore {
 		}
 
 		return $contact;
+	}
+
+	/**
+	 * Checks that a URL looks like a public website address (syntax only, no DNS lookup:
+	 * visitors may give domains that do not resolve yet or from this server).
+	 *
+	 * @param string $url URL from esc_url_raw().
+	 * @return bool
+	 */
+	private static function is_website_url( string $url ): bool {
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+
+		return '' !== $host && 1 === preg_match( '/^(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+\p{L}{2,}$/u', $host );
 	}
 
 	/**
