@@ -7,6 +7,12 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 ### Added
 
 - Visitor chat AI assistant settings (Settings > Visitor chat > AI assistant): the visitor chat can use its own AI provider, model and reasoning level (`public_chat_provider`, `public_chat_model`, `public_chat_reasoning`) instead of the admin chat's, for example a cheaper or faster model. By default it keeps following the admin chat. The visitor chat custom instructions moved to this section.
+- Visitor chat summary settings (Settings > Visitor chat > Conversation summaries): summaries can use their own AI provider, model and reasoning level (`summary_provider`, `summary_model`, `summary_reasoning`; any model, tool calling is not needed), by default the admin chat's; custom instructions added to every summary (`summary_instructions`); and the summary language (`summary_language`). New filter `wp_cortex_visitor_chat_summary_system_instruction`.
+
+### Changed
+
+- Visitor chat summaries are written in the site language (Settings > General > Site Language) by default, so the team gets them in one language whatever language the visitor used. The previous behavior (the visitor's language) can be chosen under Conversation summaries.
+
 ### Fixed
 
 - Visitor chat could not list the posts written by an author (for example "find all posts by Mark Davoli"): it only had a text search, which finds pages that mention the name, and its results did not show the author. `search_site` now has an `author` filter (the query may be empty to list everything by that author, up to 30 results), and search results and pages include the author and publication date. Author names match regardless of case, accents and short inflected endings ("Marka Davolija" finds "Mark Davoli"), also in the admin `search-content` author filter. `go_to_page` can open the author page (author archive) of an author with published content.
