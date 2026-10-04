@@ -140,6 +140,35 @@ final class SearchService {
 	}
 
 	/**
+	 * Authors in the index whose name matches, with their number of documents.
+	 *
+	 * @param string $author Author name as written by the user (see match_authors()).
+	 * @param array  $args   Optional: post_types, statuses.
+	 * @return array<int, array{id: int, name: string, count: int}> Most documents first.
+	 */
+	public function find_authors( string $author, array $args = array() ): array {
+		if ( '' === trim( $author ) ) {
+			return array();
+		}
+
+		$where = $this->build_where( array_intersect_key( $args, array_flip( array( 'post_types', 'statuses' ) ) ) + array( 'author' => $author ) );
+
+		$stmt = $this->db->pdo()->prepare( 'SELECT d.author_id, d.author_name, COUNT(*) AS total FROM documents d WHERE d.author_id > 0' . $where['sql'] . ' GROUP BY d.author_id, d.author_name ORDER BY total DESC' );
+		$stmt->execute( $where['params'] );
+
+		$authors = array();
+		foreach ( $stmt->fetchAll() as $row ) {
+			$authors[] = array(
+				'id'    => (int) $row['author_id'],
+				'name'  => (string) $row['author_name'],
+				'count' => (int) $row['total'],
+			);
+		}
+
+		return $authors;
+	}
+
+	/**
 	 * Groups of documents sharing the same title, field value or content.
 	 *
 	 * Values are compared case-insensitively with collapsed whitespace; empty values
@@ -605,6 +634,76 @@ final class SearchService {
 	}
 
 	/**
+	 * Author display names in the index that match the given name.
+	 *
+	 * A case- and accent-insensitive substring match wins. Otherwise every word of the
+	 * given name must match a word of the author name, allowing a short inflected ending
+	 * ("Marka Davolija" matches "Mark Davoli") or a prefix of at least four letters.
+	 *
+	 * @param string $author Author name as written by the user.
+	 * @return string[]
+	 */
+	private function match_authors( string $author ): array {
+		$names  = $this->db->pdo()->query( "SELECT DISTINCT author_name FROM documents WHERE author_name <> ''" )->fetchAll( \PDO::FETCH_COLUMN );
+		$needle = $this->normalize_name( $author );
+		$exact  = array_values( array_filter( $names, fn( $name ) => str_contains( $this->normalize_name( (string) $name ), $needle ) ) );
+
+		if ( $exact || '' === $needle ) {
+			return $exact;
+		}
+
+		$words = array_filter( explode( ' ', $needle ), static fn( $w ) => mb_strlen( $w ) >= 3 );
+
+		if ( ! $words ) {
+			return array();
+		}
+
+		$matches = array();
+
+		foreach ( $names as $name ) {
+			$name_words = explode( ' ', $this->normalize_name( (string) $name ) );
+			$all        = true;
+
+			foreach ( $words as $word ) {
+				$found = false;
+
+				foreach ( $name_words as $name_word ) {
+					$length      = mb_strlen( $name_word );
+					$word_length = mb_strlen( $word );
+
+					if ( ( $length >= 3 && str_starts_with( $word, $name_word ) && $word_length - $length <= 3 )
+						|| ( $word_length >= 4 && str_starts_with( $name_word, $word ) ) ) {
+						$found = true;
+						break;
+					}
+				}
+
+				if ( ! $found ) {
+					$all = false;
+					break;
+				}
+			}
+
+			if ( $all ) {
+				$matches[] = (string) $name;
+			}
+		}
+
+		return $matches;
+	}
+
+	/**
+	 * Lowercase, accent-free name with single spaces between words.
+	 *
+	 * @param string $name Name.
+	 */
+	private function normalize_name( string $name ): string {
+		$name = mb_strtolower( remove_accents( $name ) );
+
+		return trim( (string) preg_replace( '/[^\p{L}\p{N}]+/u', ' ', $name ) );
+	}
+
+	/**
 	 * Builds the structured filter clause on the documents alias `d`. All values are bound.
 	 *
 	 * @param array $args Search arguments.
@@ -627,9 +726,13 @@ final class SearchService {
 
 		$author = trim( (string) ( $args['author'] ?? '' ) );
 		if ( '' !== $author ) {
-			// Case-insensitive substring match on the author display name.
-			$sql     .= " AND d.author_name LIKE ? ESCAPE '\\'";
-			$params[] = '%' . addcslashes( $author, '\\%_' ) . '%';
+			$names = $this->match_authors( $author );
+			if ( $names ) {
+				$sql   .= ' AND d.author_name IN (' . implode( ',', array_fill( 0, count( $names ), '?' ) ) . ')';
+				$params = array_merge( $params, $names );
+			} else {
+				$sql .= ' AND 0';
+			}
 		}
 
 		$author_id = (int) ( $args['author_id'] ?? 0 );
