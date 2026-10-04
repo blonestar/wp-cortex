@@ -349,6 +349,20 @@ final class VisitorChatStore {
 	}
 
 	/**
+	 * Number of conversations started in the last given number of days.
+	 *
+	 * @param int $days Number of days.
+	 */
+	public function count_started_since( int $days ): int {
+		global $wpdb;
+
+		$table  = self::table();
+		$cutoff = gmdate( 'Y-m-d H:i:s', time() - max( 1, $days ) * DAY_IN_SECONDS );
+
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE created_at >= %s", $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
 	 * One conversation with its transcript.
 	 *
 	 * @param int $id Conversation ID.

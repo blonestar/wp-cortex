@@ -1,0 +1,267 @@
+/* Cortex dashboard widget. */
+
+#wp_cortex_dashboard .inside {
+	margin: 0;
+	padding: 0;
+}
+
+.wp-cortex-dash-section {
+	padding: 12px 12px 4px;
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.wp-cortex-dash-section h3 {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 10px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #1d2327;
+}
+
+.wp-cortex-dash-muted {
+	color: #646970;
+}
+
+.wp-cortex-dash a {
+	text-decoration: none;
+}
+
+/* Visitor chat counters. */
+
+.wp-cortex-dash-tiles {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: 8px;
+	margin: 0 0 12px;
+}
+
+.wp-cortex-dash-tiles li {
+	margin: 0;
+}
+
+.wp-cortex-dash-tiles a {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	box-sizing: border-box;
+	padding: 10px;
+	border: 1px solid #dcdcde;
+	border-radius: 6px;
+	background: #f6f7f7;
+	color: #1d2327;
+	transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.wp-cortex-dash-tiles a:hover,
+.wp-cortex-dash-tiles a:focus {
+	border-color: #2271b1;
+	background: #f0f6fc;
+}
+
+.wp-cortex-dash-tile-value {
+	font-size: 22px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+.wp-cortex-dash-tile-label {
+	margin-top: 2px;
+	font-size: 12px;
+	color: #646970;
+}
+
+.wp-cortex-dash-tiles .is-unread a {
+	border-color: #d63638;
+	background: #fcf0f1;
+}
+
+.wp-cortex-dash-tiles .is-unread .wp-cortex-dash-tile-value,
+.wp-cortex-dash-tiles .is-unread .wp-cortex-dash-tile-label {
+	color: #b32d2e;
+}
+
+.wp-cortex-dash-tiles .is-unread a:hover,
+.wp-cortex-dash-tiles .is-unread a:focus {
+	border-color: #b32d2e;
+	background: #facfd2;
+}
+
+@media screen and (max-width: 480px) {
+	.wp-cortex-dash-tiles {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+/* Latest unread conversations. */
+
+.wp-cortex-dash-unread {
+	margin: 0 0 12px;
+}
+
+.wp-cortex-dash-unread li {
+	margin: 0;
+	border-top: 1px solid #f0f0f1;
+}
+
+.wp-cortex-dash-unread li:first-child {
+	border-top: 0;
+}
+
+.wp-cortex-dash-unread a {
+	display: block;
+	padding: 6px 0 6px 12px;
+	position: relative;
+}
+
+.wp-cortex-dash-unread a::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 13px;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: #d63638;
+}
+
+.wp-cortex-dash-unread-title {
+	display: block;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.wp-cortex-dash-unread-meta {
+	display: block;
+	font-size: 12px;
+	color: #646970;
+}
+
+/* Chat availability. */
+
+.wp-cortex-dash-status {
+	margin: 0 0 8px;
+}
+
+.wp-cortex-dash-status li {
+	margin: 0;
+}
+
+.wp-cortex-dash-status a {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 5px 0;
+	color: #1d2327;
+}
+
+.wp-cortex-dash-status a:hover .wp-cortex-dash-status-label,
+.wp-cortex-dash-status a:focus .wp-cortex-dash-status-label {
+	color: #2271b1;
+}
+
+.wp-cortex-dash-status-label {
+	flex: 1;
+}
+
+.wp-cortex-dash-dot {
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #a7aaad;
+}
+
+.wp-cortex-dash-dot.is-on {
+	background: #00a32a;
+	box-shadow: 0 0 0 3px #edfaef;
+}
+
+.wp-cortex-dash-state {
+	font-size: 12px;
+	font-weight: 600;
+	color: #646970;
+}
+
+.wp-cortex-dash-dot.is-on ~ .wp-cortex-dash-state {
+	color: #00450c;
+}
+
+/* Index. */
+
+.wp-cortex-dash-index {
+	width: 100%;
+	border-collapse: collapse;
+	margin: 0 0 8px;
+}
+
+.wp-cortex-dash-index th,
+.wp-cortex-dash-index td {
+	padding: 4px 6px;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.wp-cortex-dash-index th:first-child {
+	padding-left: 0;
+	text-align: left;
+}
+
+.wp-cortex-dash-index thead th {
+	font-size: 12px;
+	font-weight: 400;
+	color: #646970;
+}
+
+.wp-cortex-dash-index tbody tr {
+	border-top: 1px solid #f0f0f1;
+}
+
+.wp-cortex-dash-index tbody th {
+	font-weight: 600;
+}
+
+.wp-cortex-dash-badge {
+	padding: 1px 8px;
+	border-radius: 10px;
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.6;
+}
+
+.wp-cortex-dash-badge.is-running {
+	background: #f0f6fc;
+	color: #043959;
+}
+
+.wp-cortex-dash-badge.is-warn {
+	background: #fcf9e8;
+	color: #614200;
+}
+
+.wp-cortex-dash-badge.is-failed {
+	background: #fcf0f1;
+	color: #8a2424;
+}
+
+.wp-cortex-dash-alert {
+	margin: 0 0 8px;
+	padding: 6px 10px;
+	border-left: 4px solid #d63638;
+	background: #fcf0f1;
+	font-weight: 600;
+}
+
+.wp-cortex-dash-footer {
+	margin: 0;
+	padding: 10px 12px;
+	background: #f6f7f7;
+	font-size: 12px;
+}
+
+.wp-cortex-dash-alert a {
+	color: #8a2424;
+}
