@@ -27,6 +27,12 @@ final class Settings {
 	public const CHAT_INSTRUCTIONS_MAX = 4000;
 
 	/**
+	 * Visitor chat provider value that uses whatever provider the admin chat would pick.
+	 * An empty visitor chat provider means "same provider, model and reasoning as the admin chat".
+	 */
+	public const PUBLIC_CHAT_PROVIDER_AUTO = 'auto';
+
+	/**
 	 * Maximum length of the visitor chat title and welcome message, in characters.
 	 */
 	public const PUBLIC_CHAT_TITLE_MAX   = 60;
@@ -94,6 +100,9 @@ final class Settings {
 			'public_chat_title'          => '',
 			'public_chat_welcome'        => '',
 			'public_chat_instructions'   => '',
+			'public_chat_provider'       => '',
+			'public_chat_model'          => '',
+			'public_chat_reasoning'      => '',
 			'public_chat_rate_limit'     => 20,
 			'public_chat_log'            => true,
 			'public_chat_retention'      => 0,
@@ -207,6 +216,9 @@ final class Settings {
 		$public_welcome      = trim( sanitize_textarea_field( (string) ( $input['public_chat_welcome'] ?? '' ) ) );
 		$public_title        = trim( sanitize_text_field( (string) ( $input['public_chat_title'] ?? '' ) ) );
 
+		$public_provider = sanitize_key( (string) ( $input['public_chat_provider'] ?? '' ) );
+		$public_custom   = '' !== $public_provider && self::PUBLIC_CHAT_PROVIDER_AUTO !== $public_provider;
+
 		$chunk_size = self::clamp( $input['chunk_size'] ?? $defaults['chunk_size'], 300, 6000 );
 
 		$accent     = sanitize_hex_color( (string) ( $input['public_chat_accent'] ?? '' ) );
@@ -239,7 +251,7 @@ final class Settings {
 			'embedding_dimensions'     => $dimensions,
 			'chat_enabled'             => ! empty( $input['chat_enabled'] ),
 			'chat_provider'            => sanitize_key( (string) ( $input['chat_provider'] ?? '' ) ),
-			'chat_model'               => trim( preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) ( $input['chat_model'] ?? '' ) ) ),
+			'chat_model'               => self::sanitize_model( $input['chat_model'] ?? '' ),
 			'chat_instructions'        => $chat_instructions,
 			'chat_reasoning'           => sanitize_key( (string) ( $input['chat_reasoning'] ?? '' ) ),
 			'chat_frontend'            => ! empty( $input['chat_frontend'] ),
@@ -247,6 +259,9 @@ final class Settings {
 			'public_chat_title'        => mb_substr( $public_title, 0, self::PUBLIC_CHAT_TITLE_MAX ),
 			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),
 			'public_chat_instructions' => mb_substr( $public_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
+			'public_chat_provider'     => $public_provider,
+			'public_chat_model'        => $public_custom ? self::sanitize_model( $input['public_chat_model'] ?? '' ) : '',
+			'public_chat_reasoning'    => $public_custom ? sanitize_key( (string) ( $input['public_chat_reasoning'] ?? '' ) ) : '',
 			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
 			'public_chat_log'          => ! empty( $input['public_chat_log'] ),
 			'public_chat_retention'    => self::clamp( $input['public_chat_retention'] ?? $defaults['public_chat_retention'], 0, 3650 ),
@@ -254,6 +269,43 @@ final class Settings {
 			'public_chat_contact'      => ! empty( $input['public_chat_contact'] ),
 			'public_chat_store_ip'     => ! empty( $input['public_chat_store_ip'] ),
 			'public_chat_ip_header'    => isset( Chat\ClientIp::HEADERS[ $input['public_chat_ip_header'] ?? '' ] ) ? (string) $input['public_chat_ip_header'] : '',
+		);
+	}
+
+	/**
+	 * Strips a model ID down to the characters provider model IDs use.
+	 *
+	 * @param mixed $value Raw model ID.
+	 */
+	private static function sanitize_model( $value ): string {
+		return trim( (string) preg_replace( '/[^A-Za-z0-9._:~\/-]/', '', (string) $value ) );
+	}
+
+	/**
+	 * Provider, model and reasoning level of a chat.
+	 *
+	 * The visitor chat uses its own choice, or the admin chat's when its provider is empty;
+	 * "auto" lets the AI Client pick any configured provider with its default model.
+	 *
+	 * @param bool $is_public Whether the configuration is for the visitor chat.
+	 * @return array{provider: string, model: string, reasoning: string}
+	 */
+	public static function chat_model_config( bool $is_public = false ): array {
+		$all    = self::all();
+		$prefix = $is_public && '' !== (string) $all['public_chat_provider'] ? 'public_chat_' : 'chat_';
+
+		if ( 'public_chat_' === $prefix && self::PUBLIC_CHAT_PROVIDER_AUTO === $all['public_chat_provider'] ) {
+			return array(
+				'provider'  => '',
+				'model'     => '',
+				'reasoning' => '',
+			);
+		}
+
+		return array(
+			'provider'  => (string) $all[ $prefix . 'provider' ],
+			'model'     => (string) $all[ $prefix . 'model' ],
+			'reasoning' => (string) $all[ $prefix . 'reasoning' ],
 		);
 	}
 

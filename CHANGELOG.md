@@ -4,6 +4,9 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Visitor chat AI assistant settings (Settings > Visitor chat > AI assistant): the visitor chat can use its own AI provider, model and reasoning level (`public_chat_provider`, `public_chat_model`, `public_chat_reasoning`) instead of the admin chat's, for example a cheaper or faster model. By default it keeps following the admin chat. The visitor chat custom instructions moved to this section.
 ### Fixed
 
 - Visitor chat could not list the posts written by an author (for example "find all posts by Mark Davoli"): it only had a text search, which finds pages that mention the name, and its results did not show the author. `search_site` now has an `author` filter (the query may be empty to list everything by that author, up to 30 results), and search results and pages include the author and publication date.
