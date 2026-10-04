@@ -16,6 +16,8 @@ foreach ( array( 'wp_cortex_settings', 'wp_cortex_index_run', 'wp_cortex_index_l
 	delete_option( $option );
 }
 
+delete_transient( 'wp_cortex_update_release' );
+
 wp_clear_scheduled_hook( 'wp_cortex_process_queue' );
 wp_clear_scheduled_hook( 'wp_cortex_purge_visitor_chats' );
 
