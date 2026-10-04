@@ -13,6 +13,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - Visitor chat summaries are written in the site language (Settings > General > Site Language) by default, so the team gets them in one language whatever language the visitor used. The previous behavior (the visitor's language) can be chosen under Conversation summaries.
 
+- Cortex dashboard widget for administrators: visitor chat counts (unread highlighted, total, last 7 days, with contact details) and the latest unread conversations, where each chat is turned on (admin chat in the admin and on the front end, visitor chat), and an overview of both indexes (documents, chunks, embedding coverage, size, last update, pending automatic sync, run status, public exposure warning).
+- The Visitor chats screen opens with a filter from the URL (`&filter=unread` or `&filter=contact`).
+- Visitor chat activity: the Visitor chats screen shows whether the visitor is still in a conversation (Active, Idle, ended). The visitor chat reports every minute that its window is open (while the tab is visible) and when it is closed, through the new public endpoint `POST /wp-cortex/v1/public-chat/presence` (only while the conversation log is on); new columns `seen_at` and `chat_open` in `{prefix}wp_cortex_visitor_chats`. The open conversation and the list refresh automatically.
+- Safer forwarding of visitor chats: the form warns, and asks for confirmation, while the conversation may not be finished. A conversation that continued after it was sent is flagged ("Changed since sent", with the number of new visitor messages) and **Send update** forwards it again to the same recipients, with "(update)" in the subject.
 ### Fixed
 
 - Visitor chat contact details silently dropped website URLs whose domain did not resolve from the server (for example `www.entity.rs` on a local site): URLs were checked with `wp_http_validate_url()`, which does a DNS lookup and rejects private addresses. They are now checked by syntax only, and `save_contact_details` returns an error (so the assistant asks again) instead of reporting success when the website URL is not valid.
