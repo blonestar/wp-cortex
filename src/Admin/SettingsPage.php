@@ -11,6 +11,7 @@ use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\Reasoning;
+use WPCortex\Chat\VisitorChatSummarizer;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Settings;
@@ -86,6 +87,7 @@ final class SettingsPage {
 					'appearance' => array( __( 'Appearance', 'wp-cortex' ), __( 'How the visitor chat looks on the site. The preview updates as you change the settings; the site after saving.', 'wp-cortex' ), array( $this, 'fields_public_chat_appearance' ) ),
 					'privacy'    => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
 					'actions'    => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
+					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
 				),
 			),
 		);
@@ -561,19 +563,55 @@ final class SettingsPage {
 	}
 
 	/**
+	 * Visitor chat summary section: provider, model, reasoning, language and custom instructions.
+	 */
+	public function fields_public_chat_summary(): void {
+		$this->model_fields( 'summary_', ChatAgent::providers(), (string) Settings::get( 'summary_provider' ) );
+
+		$this->row_start( __( 'Language', 'wp-cortex' ) );
+		$this->select(
+			'summary_language',
+			array(
+				/* translators: %s: site language, for example "English (United States), locale en_US". */
+				'site'    => sprintf( __( 'Site language: %s', 'wp-cortex' ), VisitorChatSummarizer::site_language() ),
+				'visitor' => __( 'The visitor\'s language', 'wp-cortex' ),
+			)
+		);
+		$this->row_end( __( 'The site language is set under Settings > General > Site Language, so the team gets every summary in the same language whatever language the visitor wrote in.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Custom instructions', 'wp-cortex' ) );
+		printf(
+			'<textarea name="%1$s" rows="6" class="large-text" maxlength="%2$d" placeholder="%3$s">%4$s</textarea>',
+			$this->name( 'summary_instructions' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			(int) Settings::CHAT_INSTRUCTIONS_MAX,
+			esc_attr__( 'For example: Start with a one-line lead rating (hot, warm or cold). Always mention the budget and deadline if the visitor gave them.', 'wp-cortex' ),
+			esc_textarea( (string) Settings::get( 'summary_instructions' ) )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of characters. */
+				__( 'Optional. Added to the prompt of every summary, for example what to highlight, extra sections or the tone. Takes precedence over the default instructions. Up to %d characters.', 'wp-cortex' ),
+				Settings::CHAT_INSTRUCTIONS_MAX
+			)
+		);
+	}
+
+	/**
 	 * Provider and model rows (with the reasoning level) of a chat.
 	 *
-	 * @param string $prefix    Setting key prefix: "chat_" or "public_chat_".
+	 * @param string $prefix    Setting key prefix: "chat_", "public_chat_" or "summary_".
 	 * @param array  $providers Registered providers from ChatAgent::providers().
 	 * @param string $selected  Saved provider ID.
 	 */
 	private function model_fields( string $prefix, array $providers, string $selected ): void {
-		$is_public = 'public_chat_' === $prefix;
-		$admin     = (string) Settings::get( 'chat_provider' );
+		// The visitor chat and the summary can follow the admin chat; the summary needs no tool calling.
+		$inherits    = 'chat_' !== $prefix;
+		$needs_tools = 'summary_' !== $prefix;
+		$admin       = (string) Settings::get( 'chat_provider' );
 
 		$this->row_start( __( 'AI provider', 'wp-cortex' ) );
 		printf( '<select name="%1$s" id="wp-cortex-%2$sprovider">', $this->name( $prefix . 'provider' ), esc_attr( str_replace( '_', '-', $prefix ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
-		if ( $is_public ) {
+		if ( $inherits ) {
 			printf(
 				'<option value="" data-no-model %1$s>%2$s</option>',
 				selected( $selected, '', false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
@@ -586,7 +624,7 @@ final class SettingsPage {
 				)
 			);
 		}
-		$auto = $is_public ? Settings::PUBLIC_CHAT_PROVIDER_AUTO : '';
+		$auto = $inherits ? Settings::PUBLIC_CHAT_PROVIDER_AUTO : '';
 		printf( '<option value="%1$s" data-no-model %2$s>%3$s</option>', esc_attr( $auto ), selected( $selected, $auto, false ), esc_html__( 'Automatic', 'wp-cortex' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 		foreach ( $providers as $id => $provider ) {
 			printf(
@@ -602,22 +640,24 @@ final class SettingsPage {
 			esc_url( admin_url( 'options-connectors.php' ) ),
 			esc_html__( 'Manage API keys under Settings > Connectors', 'wp-cortex' )
 		);
-		$this->row_end(
-			$is_public
-				? __( 'The visitor chat can use a different provider than the admin chat, for example a cheaper or faster one. "Same as the admin chat" follows the provider, model and reasoning of the Admin chat tab. Automatic uses any configured provider that supports text generation with tool calls.', 'wp-cortex' )
-				: __( 'Automatic uses any configured provider that supports text generation with tool calls.', 'wp-cortex' )
+		$help = array(
+			'chat_'        => __( 'Automatic uses any configured provider that supports text generation with tool calls.', 'wp-cortex' ),
+			'public_chat_' => __( 'The visitor chat can use a different provider than the admin chat, for example a cheaper or faster one. "Same as the admin chat" follows the provider, model and reasoning of the Admin chat tab. Automatic uses any configured provider that supports text generation with tool calls.', 'wp-cortex' ),
+			'summary_'     => __( 'Summaries can use a different provider than the admin chat, for example a cheaper one or one that writes better in your language. "Same as the admin chat" follows the provider, model and reasoning of the Admin chat tab. Automatic uses any configured provider that supports text generation.', 'wp-cortex' ),
 		);
+		$this->row_end( $help[ $prefix ] );
 
 		$provider_id = isset( $providers[ $selected ] ) ? $selected : '';
 		$saved       = (string) Settings::get( $prefix . 'model' );
 		$cached      = '' !== $provider_id ? ( new ModelCatalog() )->cached( $provider_id ) : null;
-		$has_tools   = array_filter( (array) $cached, static fn( array $m ) => $m['tools'] );
+		$has_tools   = $needs_tools ? array_filter( (array) $cached, static fn( array $m ) => $m['tools'] ) : (array) $cached;
 
 		$this->row_start( __( 'Model', 'wp-cortex' ) );
 		printf(
-			'<div class="wp-cortex-model-picker" data-provider="wp-cortex-%1$sprovider" data-saved="%2$s">',
+			'<div class="wp-cortex-model-picker" data-provider="wp-cortex-%1$sprovider" data-saved="%2$s"%3$s>',
 			esc_attr( str_replace( '_', '-', $prefix ) ),
-			esc_attr( $saved )
+			esc_attr( $saved ),
+			$needs_tools ? '' : ' data-any-model'
 		);
 		printf(
 			'<input type="search" class="wp-cortex-model-filter" placeholder="%s" aria-label="%s" hidden />',
@@ -652,7 +692,12 @@ final class SettingsPage {
 		);
 		echo ' <span class="wp-cortex-model-status" role="status" aria-live="polite"></span>';
 		echo '</div>';
-		$this->row_end( __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose. Reasoning sets how much the model thinks before answering (more is slower and costs more); it is shown once a model is chosen, and a level the model does not support makes the request fail.', 'wp-cortex' ) );
+		$this->row_end(
+			( $needs_tools
+				? __( 'Optional. Models are loaded from the selected provider; those without tool calling cannot be used by the chat. Leave on "Provider default" to let the provider choose.', 'wp-cortex' )
+				: __( 'Optional. Models are loaded from the selected provider. Leave on "Provider default" to let the provider choose.', 'wp-cortex' )
+			) . ' ' . __( 'Reasoning sets how much the model thinks before answering (more is slower and costs more); it is shown once a model is chosen, and a level the model does not support makes the request fail.', 'wp-cortex' )
+		);
 	}
 
 	/**

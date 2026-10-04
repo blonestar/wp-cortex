@@ -130,7 +130,7 @@ final class PublicChatAgent {
 		}
 
 		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
-			$builder = PromptFactory::builder( $messages, $system, $functions, true );
+			$builder = PromptFactory::builder( $messages, $system, $functions, 'public' );
 
 			if ( is_wp_error( $builder ) ) {
 				return $builder;
@@ -541,8 +541,8 @@ final class PublicChatAgent {
 			return array( 'error' => 'The website URL is not valid. Ask the visitor to check it.' );
 		}
 
-		if ( ! $contact ) {
-			return array( 'error' => 'There is nothing to save.' );
+		if ( ! array_intersect( array( 'first_name', 'last_name', 'email', 'phone', 'website' ), array_keys( $contact ) ) ) {
+			return array( 'error' => 'A name, email address, phone number, or website URL is required. Ask the visitor for one.' );
 		}
 
 		$saved = ( new VisitorChatStore() )->save_contact( $this->chat_id, $contact );
