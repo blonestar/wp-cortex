@@ -1,0 +1,149 @@
+name: Publish release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Prepared stable semantic version, for example 0.3.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Require main as the dispatch ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = main || {
+            echo "Run Publish release from the main branch." >&2
+            exit 1
+          }
+
+      - name: Validate prepared release
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/release.py --check --version "$RELEASE_VERSION"
+
+      - name: Run release checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find . -type f -name '*.php' -not -path './.git/*' -print0)
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find assets/js -type f -name '*.js' -print0)
+          git diff --check HEAD^ HEAD
+
+      - name: Build release artifacts
+        run: bash scripts/build-release.sh "$RELEASE_VERSION" "$RUNNER_TEMP/wp-cortex-release"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_tag="v${RELEASE_VERSION}"
+          zip_path="$RUNNER_TEMP/wp-cortex-release/wp-cortex-v${RELEASE_VERSION}.zip"
+          checksum_path="$RUNNER_TEMP/wp-cortex-release/wp-cortex-v${RELEASE_VERSION}.zip.sha256"
+          release_info="$RUNNER_TEMP/wp-cortex-release-info.json"
+          zip_digest="sha256:$(sha256sum "$zip_path" | awk '{print $1}')"
+          checksum_digest="sha256:$(sha256sum "$checksum_path" | awk '{print $1}')"
+
+          resolve_tag_commit() {
+            local object_sha
+            local object_type
+            read -r object_sha object_type < <(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release_tag}" --jq '[.object.sha, .object.type] | @tsv')
+            if [[ "$object_type" = tag ]]; then
+              read -r object_sha object_type < <(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${object_sha}" --jq '[.object.sha, .object.type] | @tsv')
+            fi
+            if [[ "$object_type" != commit ]]; then
+              echo "The tag $release_tag does not resolve to a commit." >&2
+              exit 1
+            fi
+            printf '%s\n' "$object_sha"
+          }
+
+          verify_or_upload_asset() {
+            local asset_name="$1"
+            local asset_path="$2"
+            local expected_digest="$3"
+            local asset_count
+            local remote_digest
+            asset_count="$(jq --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length' "$release_info")"
+            if [[ "$asset_count" = 0 ]]; then
+              gh release upload "$release_tag" "$asset_path"
+              return
+            fi
+            remote_digest="$(jq -r --arg name "$asset_name" '.assets[] | select(.name == $name) | .digest // empty' "$release_info")"
+            if [[ -z "$remote_digest" ]]; then
+              echo "Existing asset $asset_name has no SHA-256 digest; refusing to replace it." >&2
+              exit 1
+            fi
+            if [[ "$remote_digest" != "$expected_digest" ]]; then
+              echo "Existing asset $asset_name does not match the commit being published." >&2
+              exit 1
+            fi
+          }
+
+          python3 scripts/release.py --notes --version "$RELEASE_VERSION" > "$RUNNER_TEMP/wp-cortex-release-notes.md"
+          if gh release view "$release_tag" --json assets > "$release_info" 2>/dev/null; then
+            tag_commit="$(resolve_tag_commit)"
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Release $release_tag points to $tag_commit, not $GITHUB_SHA; refusing to mutate it." >&2
+              exit 1
+            fi
+            verify_or_upload_asset "wp-cortex-v${RELEASE_VERSION}.zip" "$zip_path" "$zip_digest"
+            verify_or_upload_asset "wp-cortex-v${RELEASE_VERSION}.zip.sha256" "$checksum_path" "$checksum_digest"
+          elif git ls-remote --exit-code --tags origin "refs/tags/$release_tag" >/dev/null 2>&1; then
+            tag_commit="$(resolve_tag_commit)"
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Tag $release_tag points to $tag_commit, not $GITHUB_SHA; refusing to create a release from it." >&2
+              exit 1
+            fi
+            gh release create "$release_tag" \
+              "$zip_path" \
+              "$checksum_path" \
+              --verify-tag \
+              --title "WP Cortex v${RELEASE_VERSION}" \
+              --notes-file "$RUNNER_TEMP/wp-cortex-release-notes.md"
+          else
+            gh release create "$release_tag" \
+              "$zip_path" \
+              "$checksum_path" \
+              --target "$GITHUB_SHA" \
+              --title "WP Cortex v${RELEASE_VERSION}" \
+              --notes-file "$RUNNER_TEMP/wp-cortex-release-notes.md"
+          fi
+
+      - name: Verify published assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets="$(gh release view "v${RELEASE_VERSION}" --json assets --jq '.assets[].name')"
+          grep -Fx "wp-cortex-v${RELEASE_VERSION}.zip" <<<"$assets"
+          grep -Fx "wp-cortex-v${RELEASE_VERSION}.zip.sha256" <<<"$assets"

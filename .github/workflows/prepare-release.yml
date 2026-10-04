@@ -1,0 +1,78 @@
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Stable semantic version to prepare, for example 0.3.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: prepare-release-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare release PR
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Require main as the dispatch ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = main || {
+            echo "Run Prepare release from the main branch." >&2
+            exit 1
+          }
+
+      - name: Prepare version and changelog
+        run: python3 scripts/release.py --version "$RELEASE_VERSION" --date "$(date -u +%F)"
+
+      - name: Run release checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l wp-cortex.php
+          php -l src/Update/PluginUpdater.php
+          python3 scripts/release.py --check --version "$RELEASE_VERSION"
+          git diff --check
+
+      - name: Create and push release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="release/v${RELEASE_VERSION}"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            echo "The branch $branch already exists." >&2
+            exit 1
+          fi
+          git switch -c "$branch"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wp-cortex.php README.md CHANGELOG.md
+          git commit -m "Prepare release v${RELEASE_VERSION}"
+          git push --set-upstream origin "$branch"
+
+      - name: Open release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >-
+          gh pr create
+          --base main
+          --head "release/v${RELEASE_VERSION}"
+          --title "Prepare release v${RELEASE_VERSION}"
+          --body "This PR bumps the plugin metadata and moves the Unreleased changelog entries into the v${RELEASE_VERSION} release. Merge it before running Publish release."

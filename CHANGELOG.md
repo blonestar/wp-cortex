@@ -6,6 +6,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Native WordPress update support from stable GitHub Releases, with the standard plugin update row and button backed by the release ZIP asset.
+- A PR-first GitHub Actions release process: `Prepare release` validates and bumps metadata, while `Publish release` builds the plugin ZIP, checksum and GitHub Release.
 - Chat skills: saved procedures the admin chat follows when a request matches them (`use_skill` tool). After a multi-step task the assistant can propose a skill (`propose_skill` tool), shown as a card in the chat to edit, save or dismiss; nothing is saved without the user's confirmation. New Cortex > Skills screen to add, edit, activate, deactivate and delete skills, with source and usage stats. New table `{prefix}wp_cortex_skills` and REST routes under `/wp-cortex/v1/skills`.
 - Visitor chat (`public_chat_enabled`, off by default): a floating chat on the front end that answers visitor questions only from the public index, links the pages it used and lists them as sources. Configurable title, welcome message, custom instructions and a per-visitor hourly message limit. Conversations are kept in the browser session, not on the server. New public endpoint `POST /wp-cortex/v1/public-chat/message`.
 - Admin chat on the front end (`chat_frontend`, off by default): administrators can use the admin chat (admin index) while browsing the site; it knows which post is being viewed.
