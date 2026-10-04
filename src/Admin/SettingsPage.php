@@ -856,7 +856,7 @@ final class SettingsPage {
 		$this->checkbox( 'public_chat_navigation', __( 'Take visitors to a page when they ask or confirm', 'wp-cortex' ), (bool) Settings::get( 'public_chat_navigation' ) );
 		echo '<br />';
 		$this->checkbox( 'public_chat_contact', __( 'Collect contact details from visitors who want to be contacted', 'wp-cortex' ), (bool) Settings::get( 'public_chat_contact' ) );
-		$this->row_end( __( 'The assistant may offer to open a published page (for example the contact page) and opens it only after the visitor agrees. Contact details (name, email, phone, website URL(s), address, company and the request) are collected only when the visitor wants to leave them and confirms them; they require the conversation log.', 'wp-cortex' ) );
+		$this->row_end( __( 'The assistant may offer to open a published page (for example the contact page) and opens it only after the visitor agrees. Contact details (name, email, phone, website URL(s), address, company and the request) are saved as soon as the visitor gives them, and the assistant repeats an email or phone number so the visitor can correct it; they require the conversation log.', 'wp-cortex' ) );
 	}
 
 	/**

@@ -253,8 +253,8 @@ final class VisitorChatStore {
 			} elseif ( 'website' === $key ) {
 				$urls = array();
 
-				foreach ( preg_split( '/\r\n|\r|\n/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
-					$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+				foreach ( preg_split( '/[\r\n,]+/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
+					$url = self::sanitize_website( $url );
 
 					if ( self::is_website_url( $url ) ) {
 						$urls[ $url ] = $url;
@@ -310,7 +310,7 @@ final class VisitorChatStore {
 			array(
 				'contact'     => wp_json_encode( $merged, self::JSON_FLAGS ),
 				'search_text' => self::search_text( (string) $stored['search_text'], $contact ),
-				'has_contact' => $merged ? 1 : 0,
+				'has_contact' => self::has_contact_details( $merged ) ? 1 : 0,
 				'is_read'     => 0,
 				'updated_at'  => current_time( 'mysql', true ),
 			),
