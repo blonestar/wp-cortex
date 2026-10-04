@@ -65,7 +65,7 @@ final class SearchService {
 	 *
 	 * @param string $query Free-text query (may be empty for a structured-only query).
 	 * @param array  $args  Optional: limit, mode, post_types, statuses, author, author_id, filters, modified_after, modified_before.
-	 * @return array<int, array{id: int, object_type: string, post_type: string, status: string, title: string, url: string, author: string, modified_at: string, score: float, heading: string, snippet: string}>
+	 * @return array<int, array{id: int, object_type: string, post_type: string, status: string, title: string, url: string, author: string, published_at: string, modified_at: string, score: float, heading: string, snippet: string}>
 	 */
 	public function search( string $query, array $args = array() ): array {
 		$limit = max( 1, min( 50, (int) ( $args['limit'] ?? 10 ) ) );
@@ -528,17 +528,18 @@ final class SearchService {
 	 */
 	private function result( array $doc, float $score, string $heading, string $snippet ): array {
 		return array(
-			'id'          => (int) $doc['object_id'],
-			'object_type' => (string) $doc['object_type'],
-			'post_type'   => (string) $doc['subtype'],
-			'status'      => (string) $doc['status'],
-			'title'       => (string) $doc['title'],
-			'url'         => (string) $doc['url'],
-			'author'      => (string) $doc['author_name'],
-			'modified_at' => (string) $doc['modified_at'],
-			'score'       => $score,
-			'heading'     => $heading,
-			'snippet'     => $snippet,
+			'id'           => (int) $doc['object_id'],
+			'object_type'  => (string) $doc['object_type'],
+			'post_type'    => (string) $doc['subtype'],
+			'status'       => (string) $doc['status'],
+			'title'        => (string) $doc['title'],
+			'url'          => (string) $doc['url'],
+			'author'       => (string) $doc['author_name'],
+			'published_at' => (string) $doc['published_at'],
+			'modified_at'  => (string) $doc['modified_at'],
+			'score'        => $score,
+			'heading'      => $heading,
+			'snippet'      => $snippet,
 		);
 	}
 
