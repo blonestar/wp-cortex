@@ -89,7 +89,7 @@ final class Abilities {
 						),
 						'author'          => array(
 							'type'        => 'string',
-							'description' => 'Only content whose author display name contains this text (case-insensitive), for example "Smith".',
+							'description' => 'Only content whose author display name contains this text (case- and accent-insensitive; inflected forms such as "Johna Smitha" also match), for example "Smith".',
 						),
 						'author_id'       => array(
 							'type'        => 'integer',
