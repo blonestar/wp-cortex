@@ -2,11 +2,13 @@
 /**
  * Plugin Name:       WP Cortex
  * Description:       Memory layer for WordPress: indexes site content into a local SQLite store (structured fields, full-text and vector embeddings) for AI search and chat.
+ * Plugin URI:        https://github.com/blonestar/wp-cortex/
  * Version:           0.2.0
  * Requires at least: 7.0
  * Requires PHP:      8.1
  * Author:            Bojan
  * License:           GPL-2.0-or-later
+ * Update URI:        https://github.com/blonestar/wp-cortex/
  * Text Domain:       wp-cortex
  *
  * @package WPCortex
@@ -37,6 +39,8 @@ spl_autoload_register(
 		}
 	}
 );
+
+WPCortex\Update\PluginUpdater::register();
 
 /**
  * The SQLite store requires pdo_sqlite with FTS5. Bail out with a notice instead of fataling.
