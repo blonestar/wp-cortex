@@ -130,7 +130,7 @@ final class PublicChatAgent {
 		}
 
 		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
-			$builder = PromptFactory::builder( $messages, $system, $functions, true );
+			$builder = PromptFactory::builder( $messages, $system, $functions, 'public' );
 
 			if ( is_wp_error( $builder ) ) {
 				return $builder;
@@ -509,6 +509,10 @@ final class PublicChatAgent {
 
 		if ( '' !== trim( (string) ( $args['email'] ?? '' ) ) && ! isset( $contact['email'] ) ) {
 			return array( 'error' => 'The email address is not valid. Ask the visitor to check it.' );
+		}
+
+		if ( '' !== trim( (string) ( $args['website'] ?? '' ) ) && ! isset( $contact['website'] ) ) {
+			return array( 'error' => 'The website URL is not valid. Ask the visitor to check it.' );
 		}
 
 		if ( ! array_intersect( array( 'first_name', 'last_name', 'email', 'phone', 'website' ), array_keys( $contact ) ) ) {

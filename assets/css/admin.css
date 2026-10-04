@@ -733,8 +733,45 @@
 }
 
 .wp-cortex-vchat-meta {
-	margin: 0 0 12px;
+	margin: 0 0 4px;
 	color: #646970;
+}
+
+.wp-cortex-vchat-activity {
+	margin: 0 0 12px;
+}
+
+.wp-cortex-vchat-activity:empty {
+	display: none;
+}
+
+.wp-cortex-vchats-table .wp-cortex-col-status .wp-cortex-badge {
+	margin: 0 4px 4px 0;
+}
+
+/* Pulsing dot in front of an active conversation's badge. */
+.wp-cortex-vchat-live::before {
+	content: "";
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-right: 5px;
+	border-radius: 50%;
+	background: #00a32a;
+	vertical-align: 1px;
+	animation: wp-cortex-vchat-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes wp-cortex-vchat-pulse {
+	50% {
+		opacity: 0.35;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.wp-cortex-vchat-live::before {
+		animation: none;
+	}
 }
 
 .wp-cortex-vchat-transcript {
