@@ -3,8 +3,10 @@
  *
  * Conversations are kept in the browser session; the previous text turns are sent with
  * every message. A random session token identifies the conversation in the server log
- * (when the site keeps one). Requests carry no cookies or nonce, so they are always
- * anonymous and work on cached pages.
+ * (when the site keeps one). While the window is open and the tab visible, the widget
+ * pings the presence endpoint every minute (and once when the window is closed), so the
+ * site can tell whether the visitor is still in the conversation. Requests carry no
+ * cookies or nonce, so they are always anonymous and work on cached pages.
  */
 ( function () {
 	'use strict';
@@ -15,6 +17,7 @@
 	var MAX_STORED = 40;
 	var MAX_HISTORY = 12;
 	var NAVIGATE_DELAY = 1200;
+	var PRESENCE_INTERVAL = 60000;
 	var P = 'wp-cortex-pchat-';
 	var SVG_NS = 'http://www.w3.org/2000/svg';
 	var ICONS = {
@@ -25,6 +28,7 @@
 	var root, toggle, panel, list, input, sendBtn, thinkingEl;
 	var state = { open: false, items: [], session: '' };
 	var busy = false;
+	var presenceTimer = null;
 
 	function loadState() {
 		try {
@@ -283,6 +287,39 @@
 		}, NAVIGATE_DELAY );
 	}
 
+	/* ---------- Presence ---------- */
+
+	// Tells the server whether the chat window is open. Only conversations with a visitor
+	// message are stored, so there is nothing to report before the first one.
+	function ping( open, session ) {
+		if ( ! cfg.presence || ! state.items.some( function ( item ) {
+			return item && 'user' === item.role;
+		} ) ) {
+			return;
+		}
+		window.fetch( cfg.presence, {
+			method: 'POST',
+			credentials: 'omit',
+			keepalive: true,
+			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+			body: JSON.stringify( { session: session || state.session, open: open } )
+		} ).catch( function () {} );
+	}
+
+	// Pings while the window is open and the tab is visible; a hidden tab simply stops.
+	function updatePresence() {
+		var active = state.open && 'hidden' !== document.visibilityState;
+		if ( active && ! presenceTimer ) {
+			ping( true );
+			presenceTimer = window.setInterval( function () {
+				ping( true );
+			}, PRESENCE_INTERVAL );
+		} else if ( ! active && presenceTimer ) {
+			window.clearInterval( presenceTimer );
+			presenceTimer = null;
+		}
+	}
+
 	/* ---------- Open / close ---------- */
 
 	function openPanel( focus ) {
@@ -290,6 +327,7 @@
 		saveState();
 		panel.classList.add( 'is-open' );
 		toggle.setAttribute( 'aria-expanded', 'true' );
+		updatePresence();
 		scrollBottom();
 		if ( focus ) {
 			input.focus();
@@ -301,6 +339,8 @@
 		saveState();
 		panel.classList.remove( 'is-open' );
 		toggle.setAttribute( 'aria-expanded', 'false' );
+		updatePresence();
+		ping( false );
 		toggle.focus();
 	}
 
@@ -308,6 +348,8 @@
 		if ( busy ) {
 			return;
 		}
+		// The previous conversation is over: report its window as closed.
+		ping( false );
 		state.items = [];
 		state.session = newSession();
 		saveState();
@@ -391,6 +433,7 @@
 			// Restored after navigation: do not move the focus away from the page.
 			openPanel( false );
 		}
+		document.addEventListener( 'visibilitychange', updatePresence );
 	}
 
 	if ( 'loading' === document.readyState ) {
