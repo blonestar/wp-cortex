@@ -31,10 +31,10 @@ final class PromptFactory {
 	 * @param Message[]             $history   Conversation messages.
 	 * @param string                $system    System instruction.
 	 * @param FunctionDeclaration[] $functions Function declarations.
-	 * @param bool                  $is_public Whether to use the visitor chat's provider and model.
+	 * @param string                $chat      Whose provider and model to use: "admin", "public" (visitor chat) or "summary" (visitor chat summary).
 	 * @return \WP_AI_Client_Prompt_Builder|WP_Error
 	 */
-	public static function builder( array $history, string $system, array $functions, bool $is_public = false ) {
+	public static function builder( array $history, string $system, array $functions, string $chat = 'admin' ) {
 		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
 			return new WP_Error( 'wp_cortex_no_ai_client', __( 'The WordPress AI Client is not available. WordPress 7.0 or later is required.', 'wp-cortex' ) );
 		}
@@ -45,7 +45,7 @@ final class PromptFactory {
 			->using_function_declarations( ...$functions )
 			->using_request_options( RequestOptions::fromArray( array( 'timeout' => self::REQUEST_TIMEOUT ) ) );
 
-		$config   = Settings::chat_model_config( $is_public );
+		$config   = Settings::chat_model_config( $chat );
 		$provider = $config['provider'];
 		$model    = $config['model'];
 
