@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-04
+
 ### Added
 
 - Native WordPress update support from stable GitHub Releases, with the standard plugin update row and button backed by the release ZIP asset.
