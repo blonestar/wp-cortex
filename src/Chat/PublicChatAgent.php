@@ -130,7 +130,7 @@ final class PublicChatAgent {
 		}
 
 		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
-			$builder = PromptFactory::builder( $messages, $system, $functions, true );
+			$builder = PromptFactory::builder( $messages, $system, $functions, 'public' );
 
 			if ( is_wp_error( $builder ) ) {
 				return $builder;
