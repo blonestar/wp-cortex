@@ -392,6 +392,7 @@
 	function initTabs() {
 		var tabs = Array.prototype.slice.call( document.querySelectorAll( '.wp-cortex-tabs .nav-tab' ) );
 		var referer = document.querySelector( '.wp-cortex-settings-form input[name="_wp_http_referer"]' );
+		var saveBar = document.querySelector( '.wp-cortex-settings-submit' );
 		var selectSection = {};
 
 		if ( ! tabs.length ) {
@@ -412,6 +413,10 @@
 
 			if ( ! target ) {
 				return;
+			}
+			if ( saveBar ) {
+				// Read-only tabs (Changelog) have nothing to save.
+				saveBar.hidden = tab.hasAttribute( 'data-read-only' );
 			}
 			if ( window.history && window.history.replaceState ) {
 				window.history.replaceState( null, '', target.href );
@@ -460,7 +465,21 @@
 		syncUrl();
 	}
 
+	// Expands or collapses every release on the Changelog tab.
+	function initChangelog() {
+		document.querySelectorAll( '[data-changelog-toggle]' ).forEach( function ( button ) {
+			button.addEventListener( 'click', function () {
+				var open = button.getAttribute( 'data-changelog-toggle' ) === 'open';
+
+				document.querySelectorAll( '.wp-cortex-changelog-release' ).forEach( function ( release ) {
+					release.open = open;
+				} );
+			} );
+		} );
+	}
+
 	initTabs();
+	initChangelog();
 	initEmbeddings();
 	initModelPickers();
 	initChatPreview();
