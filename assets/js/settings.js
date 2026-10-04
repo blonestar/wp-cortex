@@ -40,28 +40,39 @@
 		filter();
 	}
 
-	function initModelPicker() {
-		var picker = document.getElementById( 'wp-cortex-model-picker' );
-		var provider = document.querySelector( 'select[name$="[chat_provider]"]' );
+	function initModelPickers() {
+		document.querySelectorAll( '.wp-cortex-model-picker' ).forEach( initModelPicker );
+	}
 
-		if ( ! picker || ! provider || ! window.wp || ! wp.apiFetch ) {
+	// Wires one model picker (admin or visitor chat) to its provider select.
+	function initModelPicker( picker ) {
+		var provider = document.getElementById( picker.getAttribute( 'data-provider' ) || '' );
+
+		if ( ! provider || ! window.wp || ! wp.apiFetch ) {
 			return;
 		}
 
 		var __ = wp.i18n.__;
 		var sprintf = wp.i18n.sprintf;
-		var select = document.getElementById( 'wp-cortex-chat-model' );
-		var filterInput = document.getElementById( 'wp-cortex-model-filter' );
-		var refresh = document.getElementById( 'wp-cortex-model-refresh' );
-		var status = document.getElementById( 'wp-cortex-model-status' );
-		var reasoning = document.getElementById( 'wp-cortex-reasoning' );
-		var reasoningSelect = document.getElementById( 'wp-cortex-chat-reasoning' );
+		var select = picker.querySelector( '.wp-cortex-model-select' );
+		var filterInput = picker.querySelector( '.wp-cortex-model-filter' );
+		var refresh = picker.querySelector( '.wp-cortex-model-refresh' );
+		var status = picker.querySelector( '.wp-cortex-model-status' );
+		var reasoning = picker.querySelector( '.wp-cortex-reasoning' );
+		var reasoningSelect = picker.querySelector( '.wp-cortex-reasoning-select' );
 		var chosen = picker.getAttribute( 'data-saved' ) || '';
 		var models = [];
 		var requestId = 0;
 
 		filterInput.hidden = false;
 		refresh.hidden = false;
+
+		// Whether the selected provider option has no model choice ("Automatic", "Same as the admin chat").
+		function noProvider() {
+			var current = provider.options[ provider.selectedIndex ];
+
+			return ! current || current.hasAttribute( 'data-no-model' );
+		}
 
 		function option( value, label, disabled ) {
 			var el = document.createElement( 'option' );
@@ -156,18 +167,18 @@
 				reasoningSelect.value = '';
 			}
 
-			available = available && provider.value !== '' && chosen !== '';
+			available = available && ! noProvider() && chosen !== '';
 			reasoning.hidden = ! available;
 			reasoningSelect.disabled = ! available;
 		}
 
 		function setBusy( busy ) {
-			refresh.disabled = busy || provider.value === '';
+			refresh.disabled = busy || noProvider();
 			refresh.classList.toggle( 'is-loading', busy );
 		}
 
 		function sync() {
-			var none = provider.value === '';
+			var none = noProvider();
 
 			select.disabled = none;
 			filterInput.disabled = none;
@@ -451,6 +462,6 @@
 
 	initTabs();
 	initEmbeddings();
-	initModelPicker();
+	initModelPickers();
 	initChatPreview();
 }() );

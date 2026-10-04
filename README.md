@@ -79,6 +79,8 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 | `public_chat_title` | "Ask a question" | Visitor chat window title (up to 60 characters). |
 | `public_chat_welcome` | "Hi! Ask me anything about this website." | First message shown to visitors (up to 500 characters). |
 | `public_chat_instructions` | empty | Custom instructions for the visitor chat (up to 4000 characters), separate from `chat_instructions`. |
+| `public_chat_provider` | same as admin chat | AI provider of the visitor chat (Settings > Visitor chat > AI assistant). Empty follows `chat_provider`, `chat_model` and `chat_reasoning`; `auto` lets the AI Client choose a configured provider with its default model; a provider ID uses `public_chat_model` and `public_chat_reasoning`. |
+| `public_chat_model` / `public_chat_reasoning` | provider / model default | Model and reasoning level of the visitor chat, chosen like `chat_model` and `chat_reasoning`; only used when `public_chat_provider` is a provider ID. Visitor chat summaries keep using the admin chat model. |
 | `public_chat_rate_limit` | 20 | Visitor chat messages allowed per client IP per hour (1-1000). Administrators are not limited. Counted in `wp_cortex_rate_<hash>` transients. |
 | `public_chat_log` | on | Store visitor conversations and contact details (Cortex > Visitor chats). When off, nothing is stored and contact details are not collected. |
 | `public_chat_retention` | 0 | Delete visitor conversations without activity for this many days (0-3650, 0 keeps them). |

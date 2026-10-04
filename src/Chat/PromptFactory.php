@@ -31,9 +31,10 @@ final class PromptFactory {
 	 * @param Message[]             $history   Conversation messages.
 	 * @param string                $system    System instruction.
 	 * @param FunctionDeclaration[] $functions Function declarations.
+	 * @param bool                  $is_public Whether to use the visitor chat's provider and model.
 	 * @return \WP_AI_Client_Prompt_Builder|WP_Error
 	 */
-	public static function builder( array $history, string $system, array $functions ) {
+	public static function builder( array $history, string $system, array $functions, bool $is_public = false ) {
 		if ( ! function_exists( 'wp_ai_client_prompt' ) ) {
 			return new WP_Error( 'wp_cortex_no_ai_client', __( 'The WordPress AI Client is not available. WordPress 7.0 or later is required.', 'wp-cortex' ) );
 		}
@@ -44,8 +45,9 @@ final class PromptFactory {
 			->using_function_declarations( ...$functions )
 			->using_request_options( RequestOptions::fromArray( array( 'timeout' => self::REQUEST_TIMEOUT ) ) );
 
-		$provider = (string) Settings::get( 'chat_provider' );
-		$model    = (string) Settings::get( 'chat_model' );
+		$config   = Settings::chat_model_config( $is_public );
+		$provider = $config['provider'];
+		$model    = $config['model'];
 
 		if ( '' !== $provider ) {
 			$builder = $builder->using_provider( $provider );
@@ -62,7 +64,7 @@ final class PromptFactory {
 				}
 
 				// Reasoning effort is model specific, so it only applies to an explicit model.
-				$reasoning = Reasoning::custom_options( $provider, (string) Settings::get( 'chat_reasoning' ) );
+				$reasoning = Reasoning::custom_options( $provider, $config['reasoning'] );
 
 				if ( $reasoning ) {
 					$builder = $builder->using_model_config( ModelConfig::fromArray( array( ModelConfig::KEY_CUSTOM_OPTIONS => $reasoning ) ) );
