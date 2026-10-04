@@ -20,11 +20,13 @@ use WP_REST_Server;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * The only endpoint open to visitors: POST /wp-cortex/v1/public-chat/message.
+ * The endpoints open to visitors: POST /wp-cortex/v1/public-chat/message and
+ * POST /wp-cortex/v1/public-chat/presence.
  *
- * It answers from the public index only, is available only while the visitor chat is
- * enabled and is limited per client IP. While the conversation log is on, each turn is
- * appended to the conversation of the browser's session token.
+ * The message endpoint answers from the public index only, is available only while the
+ * visitor chat is enabled and is limited per client IP. While the conversation log is
+ * on, each turn is appended to the conversation of the browser's session token, and the
+ * presence endpoint records whether that conversation's chat window is still open.
  */
 final class PublicChatController {
 
@@ -38,7 +40,7 @@ final class PublicChatController {
 	}
 
 	/**
-	 * Registers the route.
+	 * Registers the routes.
 	 */
 	public function register_routes(): void {
 		register_rest_route(
@@ -79,6 +81,27 @@ final class PublicChatController {
 						'type'    => 'string',
 						'default' => '',
 						'pattern' => '^([a-f0-9]{32})?$',
+					),
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
+			'/public-chat/presence',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'presence' ),
+				'permission_callback' => array( $this, 'permission' ),
+				'args'                => array(
+					'session' => array(
+						'type'     => 'string',
+						'required' => true,
+						'pattern'  => '^[a-f0-9]{32}$',
+					),
+					'open'    => array(
+						'type'    => 'boolean',
+						'default' => true,
 					),
 				),
 			)
@@ -147,6 +170,26 @@ final class PublicChatController {
 		$result['items'] = array_values( array_filter( $result['items'], static fn( $item ) => 'notice' !== ( $item['role'] ?? '' ) ) );
 
 		$response = rest_ensure_response( $result );
+		$response->header( 'Cache-Control', 'no-store' );
+
+		return $response;
+	}
+
+	/**
+	 * POST /public-chat/presence: the widget reports that its chat window is open (every
+	 * minute while visible) or was closed, so the Visitor chats screen can tell whether
+	 * the visitor is still there. Only touches the existing conversation of the session
+	 * token; the response is the same whether or not it exists.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response
+	 */
+	public function presence( WP_REST_Request $request ) {
+		if ( Settings::get( 'public_chat_log' ) ) {
+			( new VisitorChatStore() )->touch( (string) $request->get_param( 'session' ), (bool) $request->get_param( 'open' ) );
+		}
+
+		$response = rest_ensure_response( array( 'ok' => true ) );
 		$response->header( 'Cache-Control', 'no-store' );
 
 		return $response;

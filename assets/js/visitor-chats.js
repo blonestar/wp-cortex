@@ -3,6 +3,12 @@
  * transcript and contact details, generates the AI summary, forwards it by email, saves
  * the administrator note, marks conversations as read or unread and deletes them. The open conversation is kept in the URL hash
  * (#chat=ID), so the browser's back button returns to the list.
+ *
+ * Each conversation shows whether the visitor is still in it (active, idle or ended,
+ * computed by the server from the last message and the widget's presence pings). The
+ * open conversation and the list refresh periodically while the tab is visible, and
+ * forwarding warns when the conversation may not be finished or has continued since it
+ * was last sent.
  */
 ( function () {
 	'use strict';
@@ -15,6 +21,8 @@
 	var PATH = '/wp-cortex/v1/visitor-chats';
 	var PER_PAGE = 20;
 	var FORWARD_KEY = 'wpCortexForwardTo';
+	var REFRESH_INTERVAL = 15000;
+	var LIST_REFRESH_INTERVAL = 30000;
 	var CONTACT_LABELS = {
 		first_name: __( 'First name', 'wp-cortex' ),
 		last_name: __( 'Last name', 'wp-cortex' ),
@@ -50,6 +58,7 @@
 		back: byId( 'wp-cortex-vchat-back' ),
 		title: byId( 'wp-cortex-vchat-title' ),
 		meta: byId( 'wp-cortex-vchat-meta' ),
+		activity: byId( 'wp-cortex-vchat-activity' ),
 		transcript: byId( 'wp-cortex-vchat-transcript' ),
 		contact: byId( 'wp-cortex-vchat-contact' ),
 		noteForm: byId( 'wp-cortex-vchat-note-form' ),
@@ -63,6 +72,7 @@
 		forwardMessage: byId( 'wp-cortex-vchat-forward-message' ),
 		forwardSummarize: byId( 'wp-cortex-vchat-forward-summarize' ),
 		forwardHint: byId( 'wp-cortex-vchat-forward-hint' ),
+		forwardWarning: byId( 'wp-cortex-vchat-forward-warning' ),
 		forwardSend: byId( 'wp-cortex-vchat-forward-send' ),
 		forwarded: byId( 'wp-cortex-vchat-forwarded' ),
 		toggleRead: byId( 'wp-cortex-vchat-toggle-read' ),
@@ -73,6 +83,10 @@
 	var initialFilter = new URLSearchParams( window.location.search ).get( 'filter' );
 	var state = { filter: -1 !== [ 'unread', 'contact' ].indexOf( initialFilter ) ? initialFilter : '', search: '', page: 1, pages: 1, total: 0, chats: [], counts: null };
 	var current = null;
+	// Requests that re-render the open conversation themselves; refreshing waits for them.
+	var pending = 0;
+	var sending = false;
+	var listLoadedAt = 0;
 
 	/* ---------- Helpers ---------- */
 
@@ -107,6 +121,57 @@
 		}
 		var d = new Date( value.replace( ' ', 'T' ) + 'Z' );
 		return isNaN( d.getTime() ) ? value : d.toLocaleString();
+	}
+
+	function toTime( value ) {
+		var t = value ? new Date( value.replace( ' ', 'T' ) + 'Z' ).getTime() : 0;
+		return isNaN( t ) ? 0 : t;
+	}
+
+	// "just now", "5 min ago" or, after an hour, the date.
+	function fmtAgo( value ) {
+		var minutes = Math.floor( ( Date.now() - toTime( value ) ) / 60000 );
+		if ( minutes < 1 ) {
+			return __( 'just now', 'wp-cortex' );
+		}
+		if ( minutes < 60 ) {
+			return sprintf( _n( '%d minute ago', '%d minutes ago', minutes, 'wp-cortex' ), minutes );
+		}
+		return fmtDate( value );
+	}
+
+	// Latest visitor message, contact change or presence ping.
+	function lastActivity( chat ) {
+		return toTime( chat.seen_at ) > toTime( chat.updated_at ) ? chat.seen_at : chat.updated_at;
+	}
+
+	// The visitor closed the chat window after their last message.
+	function closedChat( chat ) {
+		return chat.seen_at && ! chat.chat_open && toTime( chat.seen_at ) >= toTime( chat.updated_at );
+	}
+
+	function activityBadge( chat ) {
+		if ( 'active' === chat.activity ) {
+			return el( 'span', 'wp-cortex-badge wp-cortex-badge-ok wp-cortex-vchat-live', __( 'Active', 'wp-cortex' ) );
+		}
+		if ( 'idle' === chat.activity ) {
+			return el( 'span', 'wp-cortex-badge wp-cortex-badge-warn', __( 'Idle', 'wp-cortex' ) );
+		}
+		return null;
+	}
+
+	function activityText( chat ) {
+		if ( 'active' === chat.activity ) {
+			return chat.chat_open ?
+				__( 'The visitor has the chat open right now: the conversation may still be in progress.', 'wp-cortex' ) :
+				sprintf( __( 'The visitor wrote %s: the conversation may still be in progress.', 'wp-cortex' ), fmtAgo( chat.updated_at ) );
+		}
+		if ( 'idle' === chat.activity ) {
+			return closedChat( chat ) ?
+				sprintf( __( 'The visitor closed the chat %s and may come back.', 'wp-cortex' ), fmtAgo( chat.seen_at ) ) :
+				sprintf( __( 'No activity since %s: the visitor may come back.', 'wp-cortex' ), fmtAgo( lastActivity( chat ) ) );
+		}
+		return sprintf( __( 'Conversation ended: no activity since %s.', 'wp-cortex' ), fmtDate( lastActivity( chat ) ) );
 	}
 
 	function isHttpUrl( url ) {
@@ -286,8 +351,16 @@
 		tr.appendChild( renderContactCell( chat ) );
 		tr.appendChild( el( 'td', '', String( chat.message_count || 0 ) ) );
 		tr.appendChild( el( 'td', '', fmtDate( chat.updated_at ) ) );
-		var status = el( 'td' );
+		var status = el( 'td', 'wp-cortex-col-status' );
+		var live = activityBadge( chat );
+		if ( live ) {
+			live.title = activityText( chat );
+			status.appendChild( live );
+		}
 		status.appendChild( badge( chat ) );
+		if ( chat.forward_stale ) {
+			status.appendChild( el( 'span', 'wp-cortex-badge wp-cortex-badge-warn', __( 'Changed since sent', 'wp-cortex' ) ) );
+		}
 		tr.appendChild( status );
 
 		return tr;
@@ -319,6 +392,7 @@
 		if ( state.search ) {
 			query += '&search=' + encodeURIComponent( state.search );
 		}
+		listLoadedAt = Date.now();
 		return apiFetch( { path: PATH + query } ).then( function ( res ) {
 			state.chats = res.chats || [];
 			state.total = res.total || 0;
@@ -545,6 +619,7 @@
 		var id = current.id;
 		els.summarize.disabled = true;
 		els.summarize.textContent = __( 'Summarizing…', 'wp-cortex' );
+		pending++;
 		apiFetch( { path: PATH + '/' + id + '/summary', method: 'POST' } ).then( function ( chat ) {
 			if ( current && current.id === id ) {
 				current = chat;
@@ -555,6 +630,8 @@
 			if ( current && current.id === id ) {
 				renderSummary( current );
 			}
+		} ).then( function () {
+			pending--;
 		} );
 	}
 
@@ -562,6 +639,12 @@
 		var id = current.id;
 		var to = els.forwardTo.value.trim();
 		var withSummary = els.forwardSummarize.checked;
+		// eslint-disable-next-line no-alert
+		if ( 'active' === current.activity && ! window.confirm( __( 'The visitor is still in the chat, so the conversation may not be finished. Send it anyway? You can send an update later.', 'wp-cortex' ) ) ) {
+			return;
+		}
+		sending = true;
+		pending++;
 		els.forwardSend.disabled = true;
 		els.forwardSend.textContent = withSummary && ( ! current.summary || current.summary_stale ) ? __( 'Summarizing and sending…', 'wp-cortex' ) : __( 'Sending…', 'wp-cortex' );
 		apiFetch( { path: PATH + '/' + id + '/forward', method: 'POST', data: { to: to, message: els.forwardMessage.value, summarize: withSummary } } ).then( function ( chat ) {
@@ -576,9 +659,17 @@
 			}
 			notify( sprintf( __( 'Conversation sent to %s.', 'wp-cortex' ), to ), false );
 		} ).catch( fail ).then( function () {
+			sending = false;
+			pending--;
 			els.forwardSend.disabled = false;
-			els.forwardSend.textContent = __( 'Send', 'wp-cortex' );
+			renderSendLabel();
 		} );
+	}
+
+	function renderSendLabel() {
+		if ( ! sending ) {
+			els.forwardSend.textContent = current && current.forward_stale ? __( 'Send update', 'wp-cortex' ) : __( 'Send', 'wp-cortex' );
+		}
 	}
 
 	function defaultForwardTo() {
@@ -590,8 +681,39 @@
 	}
 
 	function renderForwarded( chat ) {
-		els.forwarded.textContent = chat.forwarded_at ? sprintf( __( 'Last sent to %1$s on %2$s.', 'wp-cortex' ), chat.forwarded_to, fmtDate( chat.forwarded_at ) ) : '';
+		var text = chat.forwarded_at ? sprintf( __( 'Last sent to %1$s on %2$s.', 'wp-cortex' ), chat.forwarded_to, fmtDate( chat.forwarded_at ) ) : '';
+		if ( chat.forward_stale ) {
+			text += ' ' + ( chat.new_messages ?
+				sprintf( _n( 'The conversation has continued since then: %d new visitor message. Send an update so the recipients have the whole conversation.', 'The conversation has continued since then: %d new visitor messages. Send an update so the recipients have the whole conversation.', chat.new_messages, 'wp-cortex' ), chat.new_messages ) :
+				__( 'The conversation has changed since then. Send an update so the recipients have the latest version.', 'wp-cortex' ) );
+		}
+		els.forwarded.textContent = text;
+		els.forwarded.className = chat.forward_stale ? 'wp-cortex-vchat-forward-hint is-stale' : 'description';
+		renderForwardWarning( chat );
 		renderForwardHint();
+		renderSendLabel();
+	}
+
+	// Warns before forwarding a conversation the visitor may still continue.
+	function renderForwardWarning( chat ) {
+		var text = '';
+		if ( 'active' === chat.activity ) {
+			text = __( 'The visitor is still in the chat: the conversation may not be finished yet. If you send it now, send an update when it ends.', 'wp-cortex' );
+		} else if ( 'idle' === chat.activity ) {
+			text = sprintf( __( 'Last activity %s: the visitor may still come back to the conversation.', 'wp-cortex' ), fmtAgo( lastActivity( chat ) ) );
+		}
+		els.forwardWarning.textContent = text;
+		els.forwardWarning.hidden = ! text;
+	}
+
+	function renderActivity( chat ) {
+		els.activity.innerHTML = '';
+		var live = activityBadge( chat );
+		if ( live ) {
+			els.activity.appendChild( live );
+			els.activity.appendChild( document.createTextNode( ' ' ) );
+		}
+		els.activity.appendChild( el( 'span', live ? '' : 'wp-cortex-muted', activityText( chat ) ) );
 	}
 
 	// What happens to the summary when sending: generated, refreshed or sent as outdated.
@@ -628,6 +750,7 @@
 			els.meta.appendChild( document.createTextNode( ' · ' + __( 'started on', 'wp-cortex' ) + ' ' ) );
 			els.meta.appendChild( link( chat.page.title || chat.page.url, chat.page.url ) );
 		}
+		renderActivity( chat );
 
 		els.transcript.innerHTML = '';
 		( chat.transcript || [] ).forEach( renderItem );
@@ -669,8 +792,11 @@
 		els.transcript.innerHTML = '';
 		els.title.textContent = __( 'Loading…', 'wp-cortex' );
 		els.meta.textContent = '';
+		els.activity.textContent = '';
 		apiFetch( { path: PATH + '/' + id } ).then( function ( chat ) {
 			current = chat;
+			// An update goes to the same recipients by default.
+			els.forwardTo.value = chat.forwarded_to || defaultForwardTo();
 			renderDetail();
 			// Set only here and after saving, so other updates keep an unsaved note.
 			els.note.value = chat.admin_note || '';
@@ -707,6 +833,49 @@
 			window.location.hash = '';
 		} else {
 			showList();
+		}
+	}
+
+	/* ---------- Refresh ---------- */
+
+	// What a refresh must re-render for; everything else only updates the relative times.
+	function signature( chat ) {
+		return [ chat.updated_at, chat.seen_at, chat.chat_open, chat.activity, chat.is_read, chat.forwarded_at, chat.summary_at ].join( '|' );
+	}
+
+	function refreshDetail() {
+		var id = current.id;
+		apiFetch( { path: PATH + '/' + id } ).then( function ( chat ) {
+			if ( ! current || current.id !== id || pending ) {
+				return;
+			}
+			var changed = signature( chat ) !== signature( current );
+			current = chat;
+			if ( ! changed ) {
+				renderActivity( chat );
+				renderForwardWarning( chat );
+				return;
+			}
+			var y = window.scrollY;
+			renderDetail();
+			window.scrollTo( 0, y );
+			// New visitor messages while the conversation is open on screen are read.
+			if ( ! chat.is_read ) {
+				update( { is_read: true } );
+			}
+		} ).catch( function () {} );
+	}
+
+	// Keeps the open conversation and the list current while the tab is visible. The list
+	// is not reloaded while rows are selected, so a bulk action keeps its selection.
+	function refresh() {
+		if ( 'hidden' === document.visibilityState || pending ) {
+			return;
+		}
+		if ( current && ! els.detail.hidden ) {
+			refreshDetail();
+		} else if ( ! els.listView.hidden && Date.now() - listLoadedAt >= LIST_REFRESH_INTERVAL && ! selectedIds().length ) {
+			load();
 		}
 	}
 
@@ -752,6 +921,8 @@
 		} ).catch( fail );
 	} );
 	window.addEventListener( 'hashchange', route );
+	window.setInterval( refresh, REFRESH_INTERVAL );
+	document.addEventListener( 'visibilitychange', refresh );
 
 	route();
 }() );
