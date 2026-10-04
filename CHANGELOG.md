@@ -6,7 +6,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Fixed
 
-- Visitor chat could not list the posts written by an author (for example "find all posts by Mark Davoli"): it only had a text search, which finds pages that mention the name, and its results did not show the author. `search_site` now has an `author` filter (the query may be empty to list everything by that author, up to 30 results), and search results and pages include the author and publication date.
+- Visitor chat could not list the posts written by an author (for example "find all posts by Mark Davoli"): it only had a text search, which finds pages that mention the name, and its results did not show the author. `search_site` now has an `author` filter (the query may be empty to list everything by that author, up to 30 results), and search results and pages include the author and publication date. Author names match regardless of case, accents and short inflected endings ("Marka Davolija" finds "Mark Davoli"), also in the admin `search-content` author filter. `go_to_page` can open the author page (author archive) of an author with published content.
 
 ## [0.3.0] - 2026-10-04
 
