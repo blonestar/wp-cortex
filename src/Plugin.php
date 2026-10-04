@@ -9,6 +9,7 @@ namespace WPCortex;
 
 use WPCortex\Abilities\Abilities;
 use WPCortex\Admin\ChatPanel;
+use WPCortex\Admin\DashboardWidget;
 use WPCortex\Admin\Menu;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\SkillStore;
@@ -57,6 +58,7 @@ final class Plugin {
 		if ( is_admin() ) {
 			( new Menu() )->register();
 			( new ChatPanel() )->register();
+			( new DashboardWidget() )->register();
 		} else {
 			( new FrontendChat() )->register();
 		}

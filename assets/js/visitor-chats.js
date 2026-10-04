@@ -69,7 +69,9 @@
 		del: byId( 'wp-cortex-vchat-delete' )
 	};
 
-	var state = { filter: '', search: '', page: 1, pages: 1, total: 0, chats: [], counts: null };
+	// The initial filter can come from the URL (&filter=unread), e.g. from the dashboard widget.
+	var initialFilter = new URLSearchParams( window.location.search ).get( 'filter' );
+	var state = { filter: -1 !== [ 'unread', 'contact' ].indexOf( initialFilter ) ? initialFilter : '', search: '', page: 1, pages: 1, total: 0, chats: [], counts: null };
 	var current = null;
 
 	/* ---------- Helpers ---------- */
