@@ -44,6 +44,12 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 4. Open **Cortex > Settings** (the last item of the Cortex menu), choose post types and sources on the Content tab, and save.
 5. Open **Cortex > Indexing** and click Sync (or run `wp cortex index`).
 
+## Releases and updates
+
+Releases are prepared and published through the GitHub Actions workflows described in [RELEASE.md](RELEASE.md). `Prepare release` creates a reviewed version-bump pull request from `main`; after it is merged, `Publish release` creates the version tag, the release ZIP and the GitHub release.
+
+WP Cortex uses WordPress's native plugin updater with the GitHub `Update URI`. When a newer stable release contains the expected `wp-cortex-vX.Y.Z.zip` asset, it appears in the normal **Dashboard > Updates** and **Plugins** screens. The standard WordPress Update button installs that release; no GitHub credentials are needed. The release metadata is normally cached for 12 hours, while **Dashboard > Updates > Check Again** forces a fresh release check.
+
 ## Configuration
 
 Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Content, Indexing, Admin chat and Visitor chat tabs.
