@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+
+- The data directory in uploads is now hidden (`.wp-cortex-<random>` instead of `wp-cortex-<random>`), so Nginx servers that refuse paths starting with a dot (common in WordPress setups, Local for example) no longer serve the index databases or visitor images, even though they ignore the `.htaccess` deny rules. Existing directories are renamed automatically; no re-indexing is needed. When the database is still downloadable, the Indexing screen shows the Nginx rule that blocks it.
+
 ## [0.4.1] - 2026-10-05
 
 ### Fixed
