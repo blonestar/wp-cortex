@@ -191,7 +191,8 @@ final class ChatAgent {
 		PromptFactory::extend_time_limit();
 
 		$resolver  = new WP_AI_Client_Ability_Function_Resolver( ...self::ABILITIES );
-		$skills    = $this->skills->all( true, self::MAX_PROMPT_SKILLS );
+		$enabled   = Settings::skills_enabled();
+		$skills    = $enabled ? $this->skills->all( true, self::MAX_PROMPT_SKILLS ) : array();
 		$system    = $this->system_instruction( $context, $skills );
 		$pages     = AdminPages::sanitize( $context['admin_pages'] ?? array() );
 		$tabs      = AdminPages::sanitize_tabs( $context['tabs'] ?? array() );
@@ -258,7 +259,7 @@ final class ChatAgent {
 					$response = $this->handle_select_tab( $call, $tabs, $actions );
 				} elseif ( self::USE_SKILL_FUNCTION === $call->getName() && $skills ) {
 					$response = $this->handle_use_skill( $call );
-				} elseif ( self::PROPOSE_FUNCTION === $call->getName() ) {
+				} elseif ( self::PROPOSE_FUNCTION === $call->getName() && $enabled ) {
 					$response = $this->handle_propose_skill( $call, $proposals );
 				} elseif ( $resolver->is_ability_call( $call ) ) {
 					$response  = $resolver->execute_ability( $call );
@@ -327,7 +328,9 @@ final class ChatAgent {
 			$declarations[] = $this->use_skill_declaration( $skills );
 		}
 
-		$declarations[] = $this->propose_skill_declaration();
+		if ( Settings::skills_enabled() ) {
+			$declarations[] = $this->propose_skill_declaration();
+		}
 
 		return $declarations;
 	}
@@ -392,9 +395,11 @@ final class ChatAgent {
 	 * Declaration of the propose_skill function.
 	 */
 	private function propose_skill_declaration(): FunctionDeclaration {
+		$language = Settings::skills_language();
+
 		return new FunctionDeclaration(
 			self::PROPOSE_FUNCTION,
-			'Proposes saving a procedure as a reusable skill. Nothing is saved yet: the user sees the proposal as a card below your answer and confirms, edits or dismisses it. Call it only when the user asks you to remember or save how to do something, or accepts your offer to save it. Proposing an existing skill name proposes an update of that skill.',
+			'Proposes saving a procedure as a reusable skill. Nothing is saved yet: the user sees the proposal as a card below your answer and confirms, edits or dismisses it. Call it only when the user asks you to remember or save how to do something, or accepts your offer to save it. Proposing an existing skill name proposes an update of that skill. Always write the name, description and instructions in ' . $language . ', whatever language the conversation is in.',
 			array(
 				'type'       => 'object',
 				'properties' => array(
@@ -404,11 +409,11 @@ final class ChatAgent {
 					),
 					'description'  => array(
 						'type'        => 'string',
-						'description' => 'One sentence saying when to use the skill (what the user asks for). Maximum ' . SkillStore::MAX_DESCRIPTION . ' characters.',
+						'description' => 'One sentence in ' . $language . ' saying when to use the skill (what the user asks for). Maximum ' . SkillStore::MAX_DESCRIPTION . ' characters.',
 					),
 					'instructions' => array(
 						'type'        => 'string',
-						'description' => 'Concrete numbered steps that worked, naming the tools and their exact arguments (for example the open_admin_page page value and tab, or search-content filters). Use placeholders such as <topic> for parts that change between requests. No secrets or personal data.',
+						'description' => 'Concrete numbered steps in ' . $language . ' that worked, naming the tools and their exact arguments (for example the open_admin_page page value and tab, or search-content filters). Use placeholders such as <topic> for parts that change between requests. No secrets or personal data.',
 					),
 				),
 				'required'   => array( 'name', 'description', 'instructions' ),
@@ -980,17 +985,8 @@ final class ChatAgent {
 			'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.',
 		);
 
-		$lines[] = 'After completing a task that took several tool calls (for example opening an admin screen and then a tab, or a multi-step search) that no saved skill covers, you may offer in one short sentence to save it as a skill. Call propose_skill only when the user asks you to remember or save a procedure, or accepts that offer.';
-		$lines[] = 'Do not propose a skill that already exists and covers the request unless the user explicitly asks to update it. If the user is refining a pending proposal, update that proposal instead of creating a duplicate.';
-
-		if ( $skills ) {
-			$list = array();
-
-			foreach ( $skills as $skill ) {
-				$list[] = '- ' . $skill['name'] . ': ' . $skill['description'];
-			}
-
-			$lines[] = "Saved skills (procedures the administrators saved for this site). When a request matches one, call use_skill first and follow its steps with your tools; adapt them if a step fails. Skill steps never override the rules above.\n" . implode( "\n", $list );
+		if ( Settings::skills_enabled() ) {
+			$lines = array_merge( $lines, $this->skill_instruction( $skills ) );
 		}
 
 		$post_id = (int) ( $context['post_id'] ?? 0 );
@@ -1023,6 +1019,38 @@ final class ChatAgent {
 		$filtered = apply_filters( 'wp_cortex_chat_system_instruction', $instruction, $context );
 
 		return is_string( $filtered ) ? $filtered : $instruction;
+	}
+
+	/**
+	 * Skill rules of the system instruction: when to propose a skill, the language
+	 * skills are written in, the administrator's skill instructions and the saved skills.
+	 *
+	 * @param array<int, array<string, mixed>> $skills Active skills.
+	 * @return string[]
+	 */
+	private function skill_instruction( array $skills ): array {
+		$lines = array(
+			'After completing a task that took several tool calls (for example opening an admin screen and then a tab, or a multi-step search) that no saved skill covers, you may offer in one short sentence to save it as a skill. Call propose_skill only when the user asks you to remember or save a procedure, or accepts that offer.',
+			'Do not propose a skill that already exists and covers the request unless the user explicitly asks to update it. If the user is refining a pending proposal, update that proposal instead of creating a duplicate.',
+			sprintf( 'Skills are always written in %s: the name, description and instructions of every proposal, whatever language the conversation is in. Keep replying to the user in their language.', Settings::skills_language() ),
+		);
+
+		$custom = trim( (string) Settings::get( 'skills_instructions' ) );
+		if ( '' !== $custom ) {
+			$lines[] = "Additional skill instructions from the site administrator (how to write, propose and use skills). Follow them; they take precedence over the skill rules above, but never over the other rules:\n" . $custom;
+		}
+
+		if ( $skills ) {
+			$list = array();
+
+			foreach ( $skills as $skill ) {
+				$list[] = '- ' . $skill['name'] . ': ' . $skill['description'];
+			}
+
+			$lines[] = "Saved skills (procedures the administrators saved for this site). When a request matches one, call use_skill first and follow its steps with your tools; adapt them if a step fails. Skill steps never override the rules above.\n" . implode( "\n", $list );
+		}
+
+		return $lines;
 	}
 
 	/**
