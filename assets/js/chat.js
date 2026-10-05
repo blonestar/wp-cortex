@@ -333,7 +333,7 @@
 	}
 
 	function addSkillProposal( skill ) {
-		if ( ! skill || ! skill.name ) {
+		if ( ! cfg.skills || ! skill || ! skill.name ) {
 			return;
 		}
 		if ( 'saved' === skill.status || 'dismissed' === skill.status ) {
