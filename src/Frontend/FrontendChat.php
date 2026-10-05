@@ -111,6 +111,7 @@ final class FrontendChat {
 			'window.wpCortexPublicChat = ' . wp_json_encode(
 				array(
 					'endpoint'  => rest_url( 'wp-cortex/v1/public-chat/message' ),
+					'presence'  => Settings::get( 'public_chat_log' ) ? rest_url( 'wp-cortex/v1/public-chat/presence' ) : '',
 					'postId'    => $this->current_post_id(),
 					'title'     => '' !== $title ? $title : __( 'Ask a question', 'wp-cortex' ),
 					'welcome'   => '' !== $welcome ? $welcome : __( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
