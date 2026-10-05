@@ -13,8 +13,10 @@ defined( 'ABSPATH' ) || exit;
  * Resolves where the index databases live.
  *
  * Preferred: a directory outside the web root, set via the WP_CORTEX_DATA_DIR constant.
- * Fallback: a randomly named directory in uploads, protected with deny rules. Deny rules
- * are ignored by Nginx, so the fallback relies on the unguessable directory name there.
+ * Fallback: a randomly named hidden directory in uploads (".wp-cortex-<random>"), protected
+ * with deny rules. Nginx ignores the deny rules, but most Nginx configurations refuse paths
+ * with a segment starting with a dot; where neither applies, the fallback relies on the
+ * unguessable directory name.
  */
 final class Storage {
 
@@ -26,6 +28,14 @@ final class Storage {
 	private const DIR_OPTION         = 'wp_cortex_data_dir_name';
 	private const IMAGES_DIR         = 'visitor-images';
 	private const EXPOSURE_TRANSIENT = 'wp_cortex_storage_exposed';
+	private const DIR_PREFIX         = '.wp-cortex-';
+
+	/**
+	 * Directory name resolved in this request.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $dir_name = null;
 
 	/**
 	 * Absolute path of the data directory (no trailing slash).
@@ -128,6 +138,7 @@ final class Storage {
 
 		delete_option( self::DIR_OPTION );
 		delete_transient( self::EXPOSURE_TRANSIENT );
+		self::$dir_name = null;
 	}
 
 	/**
@@ -194,16 +205,55 @@ final class Storage {
 	}
 
 	/**
-	 * Random, persistent directory name inside uploads.
+	 * Random, persistent, hidden directory name inside uploads.
 	 */
 	private static function dir_name(): string {
+		if ( null !== self::$dir_name ) {
+			return self::$dir_name;
+		}
+
 		$name = get_option( self::DIR_OPTION );
 
 		if ( ! is_string( $name ) || '' === $name ) {
-			$name = 'wp-cortex-' . strtolower( wp_generate_password( 16, false ) );
+			$name = self::DIR_PREFIX . strtolower( wp_generate_password( 16, false ) );
 			update_option( self::DIR_OPTION, $name, false );
+		} elseif ( '.' !== $name[0] ) {
+			$name = self::hide_dir( $name );
 		}
 
+		self::$dir_name = $name;
+
 		return $name;
+	}
+
+	/**
+	 * Renames a directory created before hidden names were used ("wp-cortex-<random>") to
+	 * its hidden name (".wp-cortex-<random>"), so web servers that refuse dot paths stop
+	 * serving it. Keeps the old name when the rename fails; it is retried on a later request.
+	 *
+	 * @param string $name Current directory name.
+	 * @return string Directory name to use.
+	 */
+	private static function hide_dir( string $name ): string {
+		$base   = untrailingslashit( wp_upload_dir( null, false )['basedir'] );
+		$hidden = '.' . $name;
+
+		if ( is_dir( "$base/$name" ) && ! file_exists( "$base/$hidden" ) ) {
+			foreach ( self::SCOPES as $scope ) {
+				Database::close( $scope );
+			}
+
+			if ( ! @rename( "$base/$name", "$base/$hidden" ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+				return $name;
+			}
+		} elseif ( is_dir( "$base/$name" ) ) {
+			// Both exist: never overwrite or merge, keep using the directory with the data.
+			return $name;
+		}
+
+		update_option( self::DIR_OPTION, $hidden, false );
+		delete_transient( self::EXPOSURE_TRANSIENT );
+
+		return $hidden;
 	}
 }
