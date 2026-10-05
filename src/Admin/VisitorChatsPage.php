@@ -83,6 +83,7 @@ final class VisitorChatsPage {
 								<label class="screen-reader-text" for="wp-cortex-vchats-select-all"><?php esc_html_e( 'Select all', 'wp-cortex' ); ?></label>
 								<input type="checkbox" id="wp-cortex-vchats-select-all">
 							</td>
+							<th scope="col" class="wp-cortex-col-live"><span class="screen-reader-text"><?php esc_html_e( 'Activity', 'wp-cortex' ); ?></span></th>
 							<th scope="col" class="column-primary"><?php esc_html_e( 'Conversation', 'wp-cortex' ); ?></th>
 							<th scope="col" class="wp-cortex-col-contact"><?php esc_html_e( 'Contact', 'wp-cortex' ); ?></th>
 							<th scope="col" class="wp-cortex-col-uses"><?php esc_html_e( 'Messages', 'wp-cortex' ); ?></th>
@@ -91,7 +92,7 @@ final class VisitorChatsPage {
 						</tr>
 					</thead>
 					<tbody id="wp-cortex-vchats-list">
-						<tr><td colspan="6"><?php esc_html_e( 'Loading…', 'wp-cortex' ); ?></td></tr>
+						<tr><td colspan="7"><?php esc_html_e( 'Loading…', 'wp-cortex' ); ?></td></tr>
 					</tbody>
 				</table>
 			</div>
