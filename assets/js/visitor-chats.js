@@ -87,7 +87,7 @@
 	var pending = 0;
 	var sending = false;
 	var listLoadedAt = 0;
-	// Blob URLs of the loaded images of the open conversation, by file name.
+	// Data and blob URLs of the loaded images of the open conversation, by file name.
 	var imageUrls = {};
 
 	/* ---------- Helpers ---------- */
@@ -452,7 +452,7 @@
 
 	function clearImages() {
 		Object.keys( imageUrls ).forEach( function ( name ) {
-			URL.revokeObjectURL( imageUrls[ name ] );
+			URL.revokeObjectURL( imageUrls[ name ].href );
 		} );
 		imageUrls = {};
 	}
@@ -467,23 +467,28 @@
 			for ( var i = 0; i < bin.length; i++ ) {
 				bytes[ i ] = bin.charCodeAt( i );
 			}
-			imageUrls[ name ] = URL.createObjectURL( new Blob( [ bytes ], { type: res.mime } ) );
+			imageUrls[ name ] = {
+				src: 'data:' + res.mime + ';base64,' + res.data,
+				href: URL.createObjectURL( new Blob( [ bytes ], { type: res.mime } ) )
+			};
 			return imageUrls[ name ];
 		} );
 	}
 
-	// Images are loaded through the REST API (they are not publicly reachable) and shown
-	// as blob URLs; a click opens the full image in a new tab.
+	// Images are loaded through the REST API (they are not publicly reachable). They are
+	// shown from a data: URL (a Content-Security-Policy often blocks blob: images) and a
+	// click opens the full image in a new tab from a blob: URL (browsers block opening
+	// data: URLs).
 	function renderImage( name ) {
 		var wrap = el( 'a', 'wp-cortex-vchat-image', __( 'Loading image…', 'wp-cortex' ) );
 		wrap.target = '_blank';
 		wrap.rel = 'noopener';
-		loadImage( name ).then( function ( url ) {
+		loadImage( name ).then( function ( urls ) {
 			var img = el( 'img' );
-			img.src = url;
+			img.src = urls.src;
 			img.alt = __( 'Image attached by the visitor', 'wp-cortex' );
 			wrap.textContent = '';
-			wrap.href = url;
+			wrap.href = urls.href;
 			wrap.title = __( 'Open the full image', 'wp-cortex' );
 			wrap.appendChild( img );
 		} ).catch( function () {
