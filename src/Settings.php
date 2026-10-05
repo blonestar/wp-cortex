@@ -27,6 +27,12 @@ final class Settings {
 	public const CHAT_INSTRUCTIONS_MAX = 4000;
 
 	/**
+	 * Default language of chat skills and the maximum length of the setting, in characters.
+	 */
+	public const SKILLS_LANGUAGE_DEFAULT = 'English';
+	public const SKILLS_LANGUAGE_MAX     = 60;
+
+	/**
 	 * Visitor chat (and summary) provider value that uses whatever provider the admin chat would pick.
 	 * An empty visitor chat or summary provider means "same provider, model and reasoning as the admin chat".
 	 */
@@ -101,6 +107,9 @@ final class Settings {
 			'chat_instructions'          => '',
 			'chat_reasoning'             => '',
 			'chat_frontend'              => false,
+			'skills_enabled'             => true,
+			'skills_language'            => self::SKILLS_LANGUAGE_DEFAULT,
+			'skills_instructions'        => '',
 			'public_chat_enabled'        => false,
 			'public_chat_title'          => '',
 			'public_chat_welcome'        => '',
@@ -187,6 +196,23 @@ final class Settings {
 	}
 
 	/**
+	 * Whether chat skills are on: the Skills screen, the skills REST routes and the
+	 * use_skill and propose_skill tools of the admin chat.
+	 */
+	public static function skills_enabled(): bool {
+		return (bool) self::get( 'skills_enabled' );
+	}
+
+	/**
+	 * Language the admin chat writes skills in.
+	 */
+	public static function skills_language(): string {
+		$language = trim( (string) self::get( 'skills_language' ) );
+
+		return '' !== $language ? $language : self::SKILLS_LANGUAGE_DEFAULT;
+	}
+
+	/**
 	 * Identifier of the embedding configuration, stored next to every vector so a
 	 * model or dimension change marks existing vectors as stale.
 	 */
@@ -225,6 +251,9 @@ final class Settings {
 
 		$chat_instructions = trim( sanitize_textarea_field( (string) ( $input['chat_instructions'] ?? '' ) ) );
 		$chat_instructions = mb_substr( $chat_instructions, 0, self::CHAT_INSTRUCTIONS_MAX );
+
+		$skills_language     = trim( sanitize_text_field( (string) ( $input['skills_language'] ?? '' ) ) );
+		$skills_instructions = trim( sanitize_textarea_field( (string) ( $input['skills_instructions'] ?? '' ) ) );
 
 		$public_instructions = trim( sanitize_textarea_field( (string) ( $input['public_chat_instructions'] ?? '' ) ) );
 		$public_welcome      = trim( sanitize_textarea_field( (string) ( $input['public_chat_welcome'] ?? '' ) ) );
@@ -274,6 +303,9 @@ final class Settings {
 			'chat_instructions'        => $chat_instructions,
 			'chat_reasoning'           => sanitize_key( (string) ( $input['chat_reasoning'] ?? '' ) ),
 			'chat_frontend'            => ! empty( $input['chat_frontend'] ),
+			'skills_enabled'           => ! empty( $input['skills_enabled'] ),
+			'skills_language'          => '' !== $skills_language ? mb_substr( $skills_language, 0, self::SKILLS_LANGUAGE_MAX ) : self::SKILLS_LANGUAGE_DEFAULT,
+			'skills_instructions'      => mb_substr( $skills_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
 			'public_chat_enabled'      => ! empty( $input['public_chat_enabled'] ),
 			'public_chat_title'        => mb_substr( $public_title, 0, self::PUBLIC_CHAT_TITLE_MAX ),
 			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),

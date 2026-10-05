@@ -333,7 +333,7 @@
 	}
 
 	function addSkillProposal( skill ) {
-		if ( ! skill || ! skill.name ) {
+		if ( ! cfg.skills || ! skill || ! skill.name ) {
 			return;
 		}
 		if ( 'saved' === skill.status || 'dismissed' === skill.status ) {
@@ -684,9 +684,10 @@
 
 	function handleActions( actions ) {
 		actions = actions || [];
+		// Only one page can be opened: the last navigation wins, as on the server.
 		var nav = actions.filter( function ( a ) {
 			return a && 'navigate' === a.type && a.url;
-		} )[ 0 ];
+		} ).pop();
 		if ( ! nav ) {
 			// Without navigation, switch tabs on the current screen.
 			actions.forEach( function ( a ) {

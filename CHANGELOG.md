@@ -4,16 +4,21 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Skills settings (Settings > Admin chat > Skills): a switch that turns chat skills on or off (`skills_enabled`, on by default; when off, Cortex > Skills is hidden, the skills REST routes are refused and the admin chat neither uses nor proposes skills, while saved skills are kept), the language skills are written in (`skills_language`, English by default) and custom skill instructions added to the admin chat prompt (`skills_instructions`).
+
 ### Changed
 
+- Admin chat: skills proposed by the assistant (`propose_skill`) are written in the skill language (English by default: name, description and instructions), whatever language the conversation is in. The assistant still replies in the user's language.
 - The data directory in uploads is now hidden (`.wp-cortex-<random>` instead of `wp-cortex-<random>`), so Nginx servers that refuse paths starting with a dot (common in WordPress setups, Local for example) no longer serve the index databases or visitor images, even though they ignore the `.htaccess` deny rules. Existing directories are renamed automatically; no re-indexing is needed. When the database is still downloadable, the Indexing screen shows the Nginx rule that blocks it.
 
 ## [0.4.1] - 2026-10-05
 
 ### Fixed
 
-- Admin chat: asking to open a sub-tab, for example the Appearance section of Settings > Visitor chat, opened only the outer tab and the assistant said it could not go further. Every tab and section of Cortex > Settings is now an admin screen the assistant can open directly, and the tab of `open_admin_page` accepts a nested path such as "Visitor chat › Appearance", opened level by level on any screen.
-
+- Admin chat: asking to open a sub-tab, for example the Appearance section of Settings > Visitor chat, opened only the outer tab and the assistant said it could not go further. Every tab and section of Cortex > Settings is now an admin screen the assistant can open directly, and the tab of `open_admin_page` accepts a nested path such as "Visitor chat › Appearance", opened level by level on any screen. A `select_tab` call after `open_admin_page` in the same reply (as in skills saved before this fix) is opened on the new screen instead of being lost.
+- Admin chat: when the assistant opened two screens in one reply (for example Cortex > Settings, then the exact Visitor chat > Appearance section), the browser went to the first one. The last screen now wins.
 - Visitor chat: saving contact details (`save_contact_details`) failed with a fatal error, so the visitor got "Sorry, the assistant is not available right now" or a generic error after giving their name, email address or website. Two helper methods lost in a merge are restored.
 
 ## [0.4.0] - 2026-10-05
