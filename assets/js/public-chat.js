@@ -287,10 +287,9 @@
 			return;
 		}
 		var maxLength = Math.floor( ( cfg.imageMax || 4194304 ) * 4 / 3 );
-		var url = URL.createObjectURL( file );
+		var reader = new FileReader();
 		var img = new Image();
 		img.onload = function () {
-			URL.revokeObjectURL( url );
 			var side = cfg.imageSide || 1600;
 			var png = 'image/png' === file.type;
 			var data = encode( img, side, png, 0.85 );
@@ -304,11 +303,15 @@
 			setPending( { data: data, thumb: encode( img, THUMB_SIDE, false, 0.7 ) } );
 			input.focus();
 		};
-		img.onerror = function () {
-			URL.revokeObjectURL( url );
+		img.onerror = reader.onerror = function () {
 			showError( __( 'The image could not be read. Please use a PNG, JPEG, WebP or GIF image.', 'wp-cortex' ) );
 		};
-		img.src = url;
+		// Read as a data URL, not a blob: URL: a site's Content-Security-Policy often allows
+		// data: images but not blob: ones, and the image would then fail to load.
+		reader.onload = function () {
+			img.src = reader.result;
+		};
+		reader.readAsDataURL( file );
 	}
 
 	function setPending( image ) {
@@ -632,7 +635,7 @@
 		panel.appendChild( header );
 		panel.appendChild( list );
 		panel.appendChild( form );
-		if ( cfg.images && window.URL && URL.createObjectURL ) {
+		if ( cfg.images && window.FileReader ) {
 			enableImages( form );
 		}
 		panel.addEventListener( 'keydown', function ( e ) {
