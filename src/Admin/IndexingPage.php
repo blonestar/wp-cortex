@@ -43,7 +43,12 @@ final class IndexingPage {
 	 */
 	private function render_storage(): void {
 		echo '<div class="wp-cortex-card"><h2>' . esc_html__( 'Storage', 'wp-cortex' ) . '</h2>';
-		echo '<p>' . esc_html__( 'Data directory:', 'wp-cortex' ) . ' <code>' . esc_html( Storage::data_dir() ) . '</code></p>';
+		echo '<p class="wp-cortex-data-dir">' . esc_html__( 'Data directory:', 'wp-cortex' ) . ' ';
+		echo '<code class="wp-cortex-data-dir-mask" aria-hidden="true">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>';
+		echo '<code id="wp-cortex-data-dir-path" hidden>' . esc_html( Storage::data_dir() ) . '</code> ';
+		echo '<button type="button" class="button-link wp-cortex-data-dir-toggle" id="wp-cortex-data-dir-toggle" aria-controls="wp-cortex-data-dir-path" aria-expanded="false" aria-label="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '" title="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '">';
+		echo '<span class="dashicons dashicons-visibility" aria-hidden="true"></span>';
+		echo '</button></p>';
 
 		if ( Storage::is_in_uploads() ) {
 			echo '<div class="notice notice-warning inline"><p>';

@@ -18,6 +18,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Changed
 
+- Cortex > Indexing: the data directory path in the Storage card is hidden by default; the eye button shows or hides it. Storage warnings stay visible.
 - Visitor chat summaries are written in the site language (Settings > General > Site Language) by default, so the team gets them in one language whatever language the visitor used. The previous behavior (the visitor's language) can be chosen under Conversation summaries.
 
 ### Fixed
