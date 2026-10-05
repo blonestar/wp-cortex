@@ -14,6 +14,7 @@ use WPCortex\Admin\Menu;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\SkillStore;
 use WPCortex\Chat\VisitorChatStore;
+use WPCortex\Chat\VisitorImages;
 use WPCortex\Cli\Command;
 use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
@@ -96,6 +97,10 @@ final class Plugin {
 		}
 
 		$text = '<p>' . esc_html__( 'This site offers a chat assistant that answers questions using an AI service. The messages you send in the chat are sent to that service to generate the answers.', 'wp-cortex' ) . '</p>';
+
+		if ( VisitorImages::enabled() ) {
+			$text .= '<p>' . esc_html__( 'You can attach images to your chat messages, for example screenshots. They are sent to the AI service together with your message; if conversations are stored, they are stored with the conversation and deleted with it. Avoid sending images that show personal data you do not want to share.', 'wp-cortex' ) . '</p>';
+		}
 
 		if ( Settings::get( 'public_chat_log' ) ) {
 			$text .= '<p>' . esc_html__( 'Chat conversations are stored on this site so that the site team can read them. If you choose to leave contact details in the chat (such as your name, email address, phone number, address or website URL(s)), they are stored with the conversation and used only to get back to you. No cookie is stored.', 'wp-cortex' ) . '</p>';

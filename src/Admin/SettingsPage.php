@@ -11,6 +11,7 @@ use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\Reasoning;
+use WPCortex\Chat\VisitorImages;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Settings;
@@ -506,6 +507,16 @@ final class SettingsPage {
 		$this->number( 'public_chat_rate_limit', 1, 1000 );
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
 		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Images', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_images', __( 'Let visitors attach images, for example a screenshot of a problem', 'wp-cortex' ), (bool) Settings::get( 'public_chat_images' ) );
+		echo '<br /><label>' . esc_html__( 'At most', 'wp-cortex' ) . ' ';
+		$this->number( 'public_chat_image_limit', 1, 1000 );
+		echo ' ' . esc_html__( 'images per visitor per hour', 'wp-cortex' ) . '</label>';
+		if ( ! VisitorImages::is_supported() ) {
+			echo '<p class="description"><strong>' . esc_html__( 'Images are not available: the PHP GD extension with PNG and JPEG support is required.', 'wp-cortex' ) . '</strong></p>';
+		}
+		$this->row_end( __( 'Visitors can paste a screenshot, drop an image on the chat or pick one with the attach button. Images are scaled down to 1600 pixels, stripped of metadata and sent to the AI model, which must support image input (for example current OpenAI, Anthropic and Google models). While the conversation log is on, they are stored with the conversation in the protected data directory, shown under Cortex > Visitor chats, attached to forwarded emails and deleted with the conversation.', 'wp-cortex' ) );
 
 	}
 
