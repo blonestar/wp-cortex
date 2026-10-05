@@ -1,12 +1,13 @@
 <?php
 /**
- * Dashboard widget: visitor chats, chat availability and index overview.
+ * Dashboard widget: visitor chats, issue reports, chat availability and index overview.
  *
  * @package WPCortex
  */
 
 namespace WPCortex\Admin;
 
+use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Indexing\IndexRun;
 use WPCortex\Indexing\PostSync;
@@ -73,17 +74,20 @@ final class DashboardWidget {
 		echo '<div class="wp-cortex-dash">';
 
 		$this->render_visitor_chats();
+		$this->render_issue_reports();
 		$this->render_availability();
 		$this->render_index();
 
 		printf(
-			'<p class="wp-cortex-dash-footer"><a href="%1$s">%2$s</a> | <a href="%3$s">%4$s</a> | <a href="%5$s">%6$s</a></p>',
+			'<p class="wp-cortex-dash-footer"><a href="%1$s">%2$s</a> | <a href="%7$s">%8$s</a> | <a href="%3$s">%4$s</a> | <a href="%5$s">%6$s</a></p>',
 			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_VISITORS ) ),
 			esc_html__( 'Visitor chats', 'wp-cortex' ),
 			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING ) ),
 			esc_html__( 'Indexing', 'wp-cortex' ),
 			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ),
-			esc_html__( 'Settings', 'wp-cortex' )
+			esc_html__( 'Settings', 'wp-cortex' ),
+			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_REPORTS ) ),
+			esc_html__( 'Issue reports', 'wp-cortex' )
 		);
 
 		echo '</div>';
@@ -187,6 +191,73 @@ final class DashboardWidget {
 			);
 		}
 		echo '</ul>';
+	}
+
+	/**
+	 * Issue report counters and the latest open reports. Hidden while reporting is off
+	 * and nothing was reported.
+	 */
+	private function render_issue_reports(): void {
+		$store  = new IssueReportStore();
+		$counts = $store->counts();
+		$url    = admin_url( 'admin.php?page=' . Menu::SLUG_REPORTS );
+
+		if ( ! $counts['all'] && ! Settings::get( 'public_chat_reports' ) ) {
+			return;
+		}
+
+		echo '<div class="wp-cortex-dash-section">';
+		echo '<h3>' . esc_html__( 'Issue reports', 'wp-cortex' ) . '</h3>';
+
+		$tiles = array(
+			array( $counts['open'], __( 'Open', 'wp-cortex' ), IssueReportStore::STATUS_OPEN, $counts['open'] > 0 ? 'is-unread' : '' ),
+			array( $counts['resolved'], __( 'Resolved', 'wp-cortex' ), IssueReportStore::STATUS_RESOLVED, '' ),
+			array( $counts['dismissed'], __( 'Dismissed', 'wp-cortex' ), IssueReportStore::STATUS_DISMISSED, '' ),
+			array( $counts['all'], __( 'Total', 'wp-cortex' ), '', '' ),
+		);
+
+		echo '<ul class="wp-cortex-dash-tiles">';
+		foreach ( $tiles as $tile ) {
+			printf(
+				'<li class="%1$s"><a href="%2$s"><span class="wp-cortex-dash-tile-value">%3$s</span><span class="wp-cortex-dash-tile-label">%4$s</span></a></li>',
+				esc_attr( $tile[3] ),
+				esc_url( add_query_arg( 'status', $tile[2], $url ) ),
+				esc_html( number_format_i18n( $tile[0] ) ),
+				esc_html( $tile[1] )
+			);
+		}
+		echo '</ul>';
+
+		if ( $counts['open'] > 0 ) {
+			echo '<ul class="wp-cortex-dash-unread">';
+			foreach ( $store->query( IssueReportStore::STATUS_OPEN, '', 1, self::UNREAD_LIST )['reports'] as $report ) {
+				$time = strtotime( $report['created_at'] . ' UTC' );
+
+				printf(
+					'<li><a href="%1$s"><span class="wp-cortex-dash-unread-title">%2$s</span><span class="wp-cortex-dash-unread-meta">%3$s</span></a></li>',
+					esc_url( $url . '#report=' . (int) $report['id'] ),
+					esc_html( wp_html_excerpt( $report['description'], 90, '…' ) ),
+					esc_html(
+						implode(
+							' · ',
+							array_filter(
+								array(
+									$report['category_label'],
+									$report['page'] ? $report['page']['title'] : '',
+									/* translators: %s: human-readable time difference. */
+									$time ? sprintf( __( '%s ago', 'wp-cortex' ), human_time_diff( $time ) ) : '',
+								)
+							)
+						)
+					)
+				);
+			}
+			echo '</ul>';
+		} elseif ( $counts['all'] > 0 ) {
+			echo '<p class="wp-cortex-dash-muted">' . esc_html__( 'No open issue reports.', 'wp-cortex' ) . '</p>';
+		}
+
+		echo '</div>';
 	}
 
 	/**
