@@ -233,7 +233,7 @@
 			method: 'POST',
 			credentials: 'omit',
 			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-			body: JSON.stringify( { message: text, history: previous, post_id: cfg.postId || 0, session: state.session } )
+			body: JSON.stringify( { message: text, history: previous, post_id: cfg.postId || 0, session: state.session, page_url: window.location.href.split( '#' )[ 0 ] } )
 		} ).then( function ( res ) {
 			return res.json().catch( function () {
 				return {};

@@ -108,6 +108,8 @@ final class Settings {
 			'public_chat_retention'      => 0,
 			'public_chat_navigation'     => true,
 			'public_chat_contact'        => true,
+			'public_chat_reports'        => true,
+			'public_chat_report_email'   => '',
 			'public_chat_store_ip'       => true,
 			'public_chat_ip_header'      => '',
 			'public_chat_accent'         => '#2271b1',
@@ -267,9 +269,29 @@ final class Settings {
 			'public_chat_retention'    => self::clamp( $input['public_chat_retention'] ?? $defaults['public_chat_retention'], 0, 3650 ),
 			'public_chat_navigation'   => ! empty( $input['public_chat_navigation'] ),
 			'public_chat_contact'      => ! empty( $input['public_chat_contact'] ),
+			'public_chat_reports'      => ! empty( $input['public_chat_reports'] ),
+			'public_chat_report_email' => self::sanitize_emails( $input['public_chat_report_email'] ?? '' ),
 			'public_chat_store_ip'     => ! empty( $input['public_chat_store_ip'] ),
 			'public_chat_ip_header'    => isset( Chat\ClientIp::HEADERS[ $input['public_chat_ip_header'] ?? '' ] ) ? (string) $input['public_chat_ip_header'] : '',
 		);
+	}
+
+	/**
+	 * Valid, unique email addresses from a comma, semicolon or space separated list,
+	 * joined with ", " (at most Chat\IssueReportMailer::MAX_RECIPIENTS).
+	 *
+	 * @param mixed $value Raw list.
+	 */
+	private static function sanitize_emails( $value ): string {
+		$emails = array();
+
+		foreach ( preg_split( '/[\s,;]+/', (string) $value, -1, PREG_SPLIT_NO_EMPTY ) as $address ) {
+			if ( is_email( $address ) ) {
+				$emails[ strtolower( sanitize_email( $address ) ) ] = sanitize_email( $address );
+			}
+		}
+
+		return implode( ', ', array_slice( array_values( $emails ), 0, Chat\IssueReportMailer::MAX_RECIPIENTS ) );
 	}
 
 	/**
