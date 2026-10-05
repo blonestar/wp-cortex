@@ -12,7 +12,8 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Stores visitor chat conversations, the contact details visitors leave, the client IP,
  * the AI summary, the visitor's presence and the administrator's read state, note and
- * forwarding in a custom MySQL table.
+ * forwarding in a custom MySQL table. Attached images are files (VisitorImages)
+ * referenced by name in the transcript and deleted with their conversation.
  *
  * A conversation is identified by a random session token generated in the browser;
  * only its SHA-256 hash is stored. The visitor chat only appends to its own
@@ -510,9 +511,12 @@ final class VisitorChatStore {
 			return 0;
 		}
 
-		$table = self::table();
+		$table   = self::table();
+		$deleted = (int) $wpdb->query( "DELETE FROM {$table} WHERE id IN (" . implode( ',', $ids ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-		return (int) $wpdb->query( "DELETE FROM {$table} WHERE id IN (" . implode( ',', $ids ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		VisitorImages::delete( $ids );
+
+		return $deleted;
 	}
 
 	/**
@@ -530,8 +534,15 @@ final class VisitorChatStore {
 
 		$table  = self::table();
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
+		$ids    = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE updated_at < %s", $cutoff ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$count  = 0;
 
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE updated_at < %s", $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// In batches, so the images of every deleted conversation are removed too.
+		foreach ( array_chunk( $ids, 500 ) as $batch ) {
+			$count += $this->delete( $batch );
+		}
+
+		return $count;
 	}
 
 	/**
@@ -587,6 +598,10 @@ final class VisitorChatStore {
 		foreach ( is_array( $transcript ) ? $transcript : array() as $item ) {
 			if ( 'user' === ( $item['role'] ?? '' ) ) {
 				$preview = mb_substr( (string) ( $item['text'] ?? '' ), 0, 160 );
+
+				if ( '' === $preview && ! empty( $item['image'] ) ) {
+					$preview = __( '(image)', 'wp-cortex' );
+				}
 				break;
 			}
 		}
