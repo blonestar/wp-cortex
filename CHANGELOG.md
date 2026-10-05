@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-05
+
 ### Added
 
 - Visitor chat AI assistant settings (Settings > Visitor chat > AI assistant): the visitor chat can use its own AI provider, model and reasoning level (`public_chat_provider`, `public_chat_model`, `public_chat_reasoning`) instead of the admin chat's, for example a cheaper or faster model. By default it keeps following the admin chat. The visitor chat custom instructions moved to this section.
