@@ -10,6 +10,7 @@ namespace WPCortex\Admin;
 use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Plugin;
+use WPCortex\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -94,14 +95,16 @@ final class Menu {
 			self::SLUG_INDEXING
 		);
 
-		$this->skills_hook = (string) add_submenu_page(
-			self::SLUG_INDEXING,
-			__( 'Cortex Skills', 'wp-cortex' ),
-			__( 'Skills', 'wp-cortex' ),
-			'manage_options',
-			self::SLUG_SKILLS,
-			array( new SkillsPage(), 'render' )
-		);
+		if ( Settings::skills_enabled() ) {
+			$this->skills_hook = (string) add_submenu_page(
+				self::SLUG_INDEXING,
+				__( 'Cortex Skills', 'wp-cortex' ),
+				__( 'Skills', 'wp-cortex' ),
+				'manage_options',
+				self::SLUG_SKILLS,
+				array( new SkillsPage(), 'render' )
+			);
+		}
 
 		$can = current_user_can( 'manage_options' );
 
