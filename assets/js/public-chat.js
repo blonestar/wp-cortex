@@ -7,9 +7,9 @@
  * message only and kept in the session as a small preview. A random session token
  * identifies the conversation in the server log (when the site keeps one). While the
  * window is open and the tab visible, the widget pings the presence endpoint every minute
- * (and once when the window is closed), so the site can tell whether the visitor is still
- * in the conversation. Requests carry no cookies or nonce, so they are always anonymous
- * and work on cached pages.
+ * (and once when the window is closed, the tab hidden or the page left), so the site can
+ * tell whether the visitor is still in the conversation. Requests carry no cookies or
+ * nonce, so they are always anonymous and work on cached pages.
  */
 ( function () {
 	'use strict';
@@ -522,9 +522,11 @@
 		} ).catch( function () {} );
 	}
 
-	// Pings while the window is open and the tab is visible; a hidden tab simply stops.
-	function updatePresence() {
-		var active = state.open && 'hidden' !== document.visibilityState;
+	// Pings while the window is open and the tab is visible. Closing the window, hiding
+	// the tab or leaving the page (closing the tab, navigating) reports it closed at once;
+	// the next page of the site reports it open again when the window is restored.
+	function updatePresence( leaving ) {
+		var active = ! leaving && state.open && 'hidden' !== document.visibilityState;
 		if ( active && ! presenceTimer ) {
 			ping( true );
 			presenceTimer = window.setInterval( function () {
@@ -533,6 +535,7 @@
 		} else if ( ! active && presenceTimer ) {
 			window.clearInterval( presenceTimer );
 			presenceTimer = null;
+			ping( false );
 		}
 	}
 
@@ -556,7 +559,6 @@
 		panel.classList.remove( 'is-open' );
 		toggle.setAttribute( 'aria-expanded', 'false' );
 		updatePresence();
-		ping( false );
 		toggle.focus();
 	}
 
@@ -653,7 +655,18 @@
 			// Restored after navigation: do not move the focus away from the page.
 			openPanel( false );
 		}
-		document.addEventListener( 'visibilitychange', updatePresence );
+		document.addEventListener( 'visibilitychange', function () {
+			updatePresence();
+		} );
+		window.addEventListener( 'pagehide', function () {
+			updatePresence( true );
+		} );
+		// Restored from the back/forward cache: report the open window again.
+		window.addEventListener( 'pageshow', function ( e ) {
+			if ( e.persisted ) {
+				updatePresence();
+			}
+		} );
 	}
 
 	if ( 'loading' === document.readyState ) {

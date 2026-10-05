@@ -147,7 +147,7 @@
 		return toTime( chat.seen_at ) > toTime( chat.updated_at ) ? chat.seen_at : chat.updated_at;
 	}
 
-	// The visitor closed the chat window after their last message.
+	// The visitor closed the chat window (or left the page) after their last message.
 	function closedChat( chat ) {
 		return chat.seen_at && ! chat.chat_open && toTime( chat.seen_at ) >= toTime( chat.updated_at );
 	}
@@ -162,6 +162,17 @@
 		return null;
 	}
 
+	// Activity dot at the start of a list row: green (active), yellow (idle) or grey (ended).
+	function activityDot( chat ) {
+		var td = el( 'td', 'wp-cortex-col-live' );
+		var text = activityText( chat );
+		var dot = el( 'span', 'wp-cortex-vchat-dot is-' + ( chat.activity || 'ended' ) );
+		dot.title = text;
+		td.appendChild( dot );
+		td.appendChild( el( 'span', 'screen-reader-text', text ) );
+		return td;
+	}
+
 	function activityText( chat ) {
 		if ( 'active' === chat.activity ) {
 			return chat.chat_open ?
@@ -170,7 +181,7 @@
 		}
 		if ( 'idle' === chat.activity ) {
 			return closedChat( chat ) ?
-				sprintf( __( 'The visitor closed the chat %s and may come back.', 'wp-cortex' ), fmtAgo( chat.seen_at ) ) :
+				sprintf( __( 'The visitor closed the chat or left the page %s and may come back.', 'wp-cortex' ), fmtAgo( chat.seen_at ) ) :
 				sprintf( __( 'No activity since %s: the visitor may come back.', 'wp-cortex' ), fmtAgo( lastActivity( chat ) ) );
 		}
 		return sprintf( __( 'Conversation ended: no activity since %s.', 'wp-cortex' ), fmtDate( lastActivity( chat ) ) );
@@ -330,6 +341,7 @@
 		box.setAttribute( 'aria-label', sprintf( __( 'Select conversation %d', 'wp-cortex' ), chat.id ) );
 		cb.appendChild( box );
 		tr.appendChild( cb );
+		tr.appendChild( activityDot( chat ) );
 
 		var main = el( 'td', 'column-primary' );
 		var open = el( 'a', 'row-title', chat.preview || sprintf( __( 'Conversation #%d', 'wp-cortex' ), chat.id ) );
@@ -354,11 +366,6 @@
 		tr.appendChild( el( 'td', '', String( chat.message_count || 0 ) ) );
 		tr.appendChild( el( 'td', '', fmtDate( chat.updated_at ) ) );
 		var status = el( 'td', 'wp-cortex-col-status' );
-		var live = activityBadge( chat );
-		if ( live ) {
-			live.title = activityText( chat );
-			status.appendChild( live );
-		}
 		status.appendChild( badge( chat ) );
 		if ( chat.forward_stale ) {
 			status.appendChild( el( 'span', 'wp-cortex-badge wp-cortex-badge-warn', __( 'Changed since sent', 'wp-cortex' ) ) );
@@ -376,7 +383,7 @@
 		if ( ! state.chats.length ) {
 			var tr = el( 'tr' );
 			var td = el( 'td', '', state.search || state.filter ? __( 'No conversations match.', 'wp-cortex' ) : __( 'No visitor conversations yet.', 'wp-cortex' ) );
-			td.colSpan = 6;
+			td.colSpan = 7;
 			tr.appendChild( td );
 			els.list.appendChild( tr );
 			return;

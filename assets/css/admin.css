@@ -690,6 +690,15 @@
 	width: 90px;
 }
 
+.wp-cortex-vchats-table .wp-cortex-col-live {
+	width: 14px;
+	padding-right: 0;
+}
+
+.wp-cortex-vchats-table td.wp-cortex-col-live {
+	padding-top: 14px;
+}
+
 .wp-cortex-vchats-table .wp-cortex-col-date {
 	width: 170px;
 }
@@ -762,6 +771,24 @@
 	animation: wp-cortex-vchat-pulse 1.6s ease-in-out infinite;
 }
 
+/* Activity dot at the start of a list row. */
+.wp-cortex-vchat-dot {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #c3c4c7;
+}
+
+.wp-cortex-vchat-dot.is-idle {
+	background: #dba617;
+}
+
+.wp-cortex-vchat-dot.is-active {
+	background: #00a32a;
+	animation: wp-cortex-vchat-pulse 1.6s ease-in-out infinite;
+}
+
 @keyframes wp-cortex-vchat-pulse {
 	50% {
 		opacity: 0.35;
@@ -769,7 +796,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.wp-cortex-vchat-live::before {
+	.wp-cortex-vchat-live::before,
+	.wp-cortex-vchat-dot.is-active {
 		animation: none;
 	}
 }
