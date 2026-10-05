@@ -601,9 +601,30 @@ final class ChatAgent {
 			$action['tab'] = $tab;
 		}
 
-		$actions[] = $action;
+		self::add_navigation( $actions, $action );
 
 		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
+	}
+
+	/**
+	 * Adds a navigate action. The browser can only go to one page per reply, so a later
+	 * navigation (for example the model correcting itself with a more exact screen)
+	 * replaces an earlier one, and with it any tab queued for that page.
+	 *
+	 * @param array $actions UI actions (by reference).
+	 * @param array $action  The navigate action.
+	 */
+	private static function add_navigation( array &$actions, array $action ): void {
+		$actions = array_values(
+			array_filter(
+				$actions,
+				static function ( array $item ): bool {
+					return 'navigate' !== $item['type'];
+				}
+			)
+		);
+
+		$actions[] = $action;
 	}
 
 	/**
@@ -823,11 +844,14 @@ final class ChatAgent {
 			);
 		}
 
-		$actions[] = array(
-			'type'    => 'navigate',
-			'url'     => $url,
-			'post_id' => $post_id,
-			'title'   => get_the_title( $post ),
+		self::add_navigation(
+			$actions,
+			array(
+				'type'    => 'navigate',
+				'url'     => $url,
+				'post_id' => $post_id,
+				'title'   => get_the_title( $post ),
+			)
 		);
 
 		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
