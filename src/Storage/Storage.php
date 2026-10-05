@@ -170,38 +170,182 @@ final class Storage {
 	}
 
 	/**
-	 * Checks over HTTP whether the admin database can be downloaded. Result is cached.
+	 * Whether a database file can be downloaded over HTTP, from the cached exposure report.
 	 *
 	 * @return bool|null True if exposed, false if protected, null if it could not be determined.
 	 */
 	public static function is_exposed(): ?bool {
-		if ( ! self::is_in_uploads() || ! file_exists( self::db_path( self::SCOPE_ADMIN ) ) ) {
-			return false;
+		$status = self::exposure_report()['status'];
+
+		if ( 'unknown' === $status ) {
+			return null;
 		}
 
-		$cached = get_transient( self::EXPOSURE_TRANSIENT );
-		if ( false !== $cached ) {
-			return 'unknown' === $cached ? null : 'yes' === $cached;
-		}
+		return 'exposed' === $status;
+	}
 
-		$url      = untrailingslashit( wp_upload_dir( null, false )['baseurl'] ) . '/' . self::dir_name() . '/' . self::SCOPE_ADMIN . '.sqlite';
-		$response = wp_remote_head(
-			$url,
-			array(
-				'timeout'   => 3,
-				'sslverify' => false,
+	/**
+	 * Checks over HTTP whether the data directory lists its files and whether the database
+	 * files can be downloaded. The result is cached for 12 hours, or until a database file
+	 * appears or disappears.
+	 *
+	 * @param bool $force Run the check again even when a cached result exists.
+	 * @return array{status: string, checked_at: int, present: string[], checks: array<int, array{target: string, status: string, code: int, error: string}>}
+	 *         Status is "ok", "exposed", "unknown" (the server could not reach itself) or
+	 *         "outside" (the directory is outside the web root and is not tested). Check
+	 *         statuses are "protected", "exposed", "reachable" (directory answers without
+	 *         listing files), "missing" (database not created yet) or "unknown".
+	 */
+	public static function exposure_report( bool $force = false ): array {
+		$present = array_values(
+			array_filter(
+				self::SCOPES,
+				static function ( string $scope ): bool {
+					return file_exists( self::db_path( $scope ) );
+				}
 			)
 		);
 
-		if ( is_wp_error( $response ) ) {
-			$result = 'unknown';
-		} else {
-			$result = 200 === wp_remote_retrieve_response_code( $response ) ? 'yes' : 'no';
+		$cached = get_transient( self::EXPOSURE_TRANSIENT );
+		if ( ! $force && is_array( $cached ) && isset( $cached['status'], $cached['present'] ) && $cached['present'] === $present ) {
+			return $cached;
 		}
 
-		set_transient( self::EXPOSURE_TRANSIENT, $result, 12 * HOUR_IN_SECONDS );
+		$report = array(
+			'status'     => 'ok',
+			'checked_at' => time(),
+			'present'    => $present,
+			'checks'     => array(),
+		);
 
-		return 'unknown' === $result ? null : 'yes' === $result;
+		$base_url = self::data_dir_url();
+
+		if ( null === $base_url ) {
+			$report['status'] = 'outside';
+		} else {
+			$report['checks'][] = self::check_directory( $base_url );
+
+			foreach ( self::SCOPES as $scope ) {
+				$report['checks'][] = in_array( $scope, $present, true )
+					? self::check_database( $scope, $base_url . '/' . $scope . '.sqlite' )
+					: self::check_result( $scope, 'missing' );
+			}
+
+			$statuses = wp_list_pluck( $report['checks'], 'status' );
+
+			if ( in_array( 'exposed', $statuses, true ) ) {
+				$report['status'] = 'exposed';
+			} elseif ( in_array( 'unknown', $statuses, true ) ) {
+				$report['status'] = 'unknown';
+			}
+		}
+
+		set_transient( self::EXPOSURE_TRANSIENT, $report, 12 * HOUR_IN_SECONDS );
+
+		return $report;
+	}
+
+	/**
+	 * Public URL of the data directory (no trailing slash), or null when it is outside the
+	 * WordPress directory and therefore not served by the site.
+	 */
+	private static function data_dir_url(): ?string {
+		if ( self::is_in_uploads() ) {
+			return untrailingslashit( wp_upload_dir( null, false )['baseurl'] ) . '/' . self::dir_name();
+		}
+
+		$dir  = wp_normalize_path( self::data_dir() );
+		$root = trailingslashit( wp_normalize_path( ABSPATH ) );
+
+		if ( 0 !== strpos( $dir . '/', $root ) ) {
+			return null;
+		}
+
+		return untrailingslashit( site_url( '/' . ltrim( substr( $dir, strlen( $root ) ), '/' ) ) );
+	}
+
+	/**
+	 * Requests the data directory itself: exposed when the response lists the database files.
+	 *
+	 * @param string $url Directory URL.
+	 * @return array{target: string, status: string, code: int, error: string}
+	 */
+	private static function check_directory( string $url ): array {
+		$response = self::probe( trailingslashit( $url ), 65536, array() );
+
+		if ( is_wp_error( $response ) ) {
+			return self::check_result( 'directory', 'unknown', 0, $response->get_error_message() );
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+
+		if ( 200 !== $code ) {
+			return self::check_result( 'directory', 'protected', $code );
+		}
+
+		$listed = false !== strpos( wp_remote_retrieve_body( $response ), '.sqlite' );
+
+		return self::check_result( 'directory', $listed ? 'exposed' : 'reachable', $code );
+	}
+
+	/**
+	 * Requests the first bytes of a database file: exposed when they are the SQLite header,
+	 * so a "200" error page or a redirect to the home page does not count.
+	 *
+	 * @param string $scope One of self::SCOPES.
+	 * @param string $url   Database file URL.
+	 * @return array{target: string, status: string, code: int, error: string}
+	 */
+	private static function check_database( string $scope, string $url ): array {
+		$response = self::probe( $url, 16, array( 'Range' => 'bytes=0-15' ) );
+
+		if ( is_wp_error( $response ) ) {
+			return self::check_result( $scope, 'unknown', 0, $response->get_error_message() );
+		}
+
+		$code   = (int) wp_remote_retrieve_response_code( $response );
+		$sqlite = in_array( $code, array( 200, 206 ), true ) && 0 === strpos( wp_remote_retrieve_body( $response ), 'SQLite format 3' );
+
+		return self::check_result( $scope, $sqlite ? 'exposed' : 'protected', $code );
+	}
+
+	/**
+	 * Unauthenticated GET request from the server to its own URL.
+	 *
+	 * @param string                $url     URL.
+	 * @param int                   $limit   Maximum number of body bytes to read.
+	 * @param array<string, string> $headers Extra request headers.
+	 * @return array<string, mixed>|\WP_Error
+	 */
+	private static function probe( string $url, int $limit, array $headers ) {
+		return wp_remote_get(
+			$url,
+			array(
+				'timeout'             => 5,
+				'sslverify'           => false,
+				'limit_response_size' => $limit,
+				'headers'             => $headers,
+				'cookies'             => array(),
+			)
+		);
+	}
+
+	/**
+	 * Builds one entry of the exposure report.
+	 *
+	 * @param string $target "directory" or a scope.
+	 * @param string $status Check status.
+	 * @param int    $code   HTTP status code, 0 when no response was received.
+	 * @param string $error  Request error message.
+	 * @return array{target: string, status: string, code: int, error: string}
+	 */
+	private static function check_result( string $target, string $status, int $code = 0, string $error = '' ): array {
+		return array(
+			'target' => $target,
+			'status' => $status,
+			'code'   => $code,
+			'error'  => $error,
+		);
 	}
 
 	/**
