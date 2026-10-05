@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Fixed
+
+- Visitor chat: saving contact details (`save_contact_details`) failed with a fatal error, so the visitor got "Sorry, the assistant is not available right now" or a generic error after giving their name, email address or website. Two helper methods lost in a merge are restored.
+
 ## [0.4.0] - 2026-10-05
 
 ### Added
