@@ -4,6 +4,14 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Skills settings (Settings > Admin chat > Skills): a switch that turns chat skills on or off (`skills_enabled`, on by default; when off, Cortex > Skills is hidden, the skills REST routes are refused and the admin chat neither uses nor proposes skills, while saved skills are kept), the language skills are written in (`skills_language`, English by default) and custom skill instructions added to the admin chat prompt (`skills_instructions`).
+
+### Changed
+
+- Admin chat: skills proposed by the assistant (`propose_skill`) are written in the skill language (English by default: name, description and instructions), whatever language the conversation is in. The assistant still replies in the user's language.
+
 ## [0.4.1] - 2026-10-05
 
 ### Fixed

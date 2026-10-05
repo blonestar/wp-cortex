@@ -8,6 +8,7 @@
 namespace WPCortex\Rest;
 
 use WPCortex\Chat\SkillStore;
+use WPCortex\Settings;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -102,10 +103,20 @@ final class SkillController {
 	}
 
 	/**
-	 * Only administrators may manage skills.
+	 * Only administrators may manage skills, and only while skills are enabled.
+	 *
+	 * @return bool|WP_Error
 	 */
-	public function permission(): bool {
-		return current_user_can( 'manage_options' );
+	public function permission() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return false;
+		}
+
+		if ( ! Settings::skills_enabled() ) {
+			return new WP_Error( 'wp_cortex_skills_disabled', __( 'Skills are turned off in Cortex > Settings > Admin chat.', 'wp-cortex' ), array( 'status' => 403 ) );
+		}
+
+		return true;
 	}
 
 	/**
