@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-05
+
 ### Fixed
 
 - Admin chat: asking to open a sub-tab, for example the Appearance section of Settings > Visitor chat, opened only the outer tab and the assistant said it could not go further. Every tab and section of Cortex > Settings is now an admin screen the assistant can open directly, and the tab of `open_admin_page` accepts a nested path such as "Visitor chat › Appearance", opened level by level on any screen.
