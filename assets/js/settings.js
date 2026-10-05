@@ -44,7 +44,7 @@
 		document.querySelectorAll( '.wp-cortex-model-picker' ).forEach( initModelPicker );
 	}
 
-	// Wires one model picker (admin or visitor chat) to its provider select.
+	// Wires one model picker (admin chat, visitor chat or summary) to its provider select.
 	function initModelPicker( picker ) {
 		var provider = document.getElementById( picker.getAttribute( 'data-provider' ) || '' );
 
@@ -61,6 +61,8 @@
 		var reasoning = picker.querySelector( '.wp-cortex-reasoning' );
 		var reasoningSelect = picker.querySelector( '.wp-cortex-reasoning-select' );
 		var chosen = picker.getAttribute( 'data-saved' ) || '';
+		// The summary makes no tool calls, so any model can be chosen.
+		var anyModel = picker.hasAttribute( 'data-any-model' );
 		var models = [];
 		var requestId = 0;
 
@@ -95,8 +97,9 @@
 
 			models.forEach( function ( m ) {
 				var label = m.name + ' (' + m.id + ')';
+				var usable = anyModel || m.tools;
 
-				if ( m.tools ) {
+				if ( usable ) {
 					toolIds.push( m.id );
 				}
 
@@ -104,7 +107,7 @@
 					return;
 				}
 
-				if ( m.tools ) {
+				if ( usable ) {
 					withTools.appendChild( option( m.id, label ) );
 				} else {
 					withoutTools.appendChild( option( m.id, label, true ) );
@@ -392,6 +395,7 @@
 	function initTabs() {
 		var tabs = Array.prototype.slice.call( document.querySelectorAll( '.wp-cortex-tabs .nav-tab' ) );
 		var referer = document.querySelector( '.wp-cortex-settings-form input[name="_wp_http_referer"]' );
+		var saveBar = document.querySelector( '.wp-cortex-settings-submit' );
 		var selectSection = {};
 
 		if ( ! tabs.length ) {
@@ -412,6 +416,10 @@
 
 			if ( ! target ) {
 				return;
+			}
+			if ( saveBar ) {
+				// Read-only tabs (Changelog) have nothing to save.
+				saveBar.hidden = tab.hasAttribute( 'data-read-only' );
 			}
 			if ( window.history && window.history.replaceState ) {
 				window.history.replaceState( null, '', target.href );
@@ -460,7 +468,21 @@
 		syncUrl();
 	}
 
+	// Expands or collapses every release on the Changelog tab.
+	function initChangelog() {
+		document.querySelectorAll( '[data-changelog-toggle]' ).forEach( function ( button ) {
+			button.addEventListener( 'click', function () {
+				var open = button.getAttribute( 'data-changelog-toggle' ) === 'open';
+
+				document.querySelectorAll( '.wp-cortex-changelog-release' ).forEach( function ( release ) {
+					release.open = open;
+				} );
+			} );
+		} );
+	}
+
 	initTabs();
+	initChangelog();
 	initEmbeddings();
 	initModelPickers();
 	initChatPreview();

@@ -10,6 +10,7 @@ namespace WPCortex\Rest;
 use WPCortex\Chat\VisitorChatMailer;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Chat\VisitorChatSummarizer;
+use WPCortex\Chat\VisitorImages;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -112,6 +113,16 @@ final class VisitorChatController {
 
 		register_rest_route(
 			self::NAMESPACE,
+			'/visitor-chats/(?P<id>\d+)/images/(?P<name>' . VisitorImages::NAME_PATTERN . ')',
+			array(
+				'methods'             => WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_image' ),
+				'permission_callback' => $permission,
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
 			'/visitor-chats/(?P<id>\d+)/forward',
 			array(
 				'methods'             => WP_REST_Server::CREATABLE,
@@ -207,6 +218,36 @@ final class VisitorChatController {
 		}
 
 		return rest_ensure_response( $chat );
+	}
+
+	/**
+	 * GET /visitor-chats/<id>/images/<name>: an image the visitor attached, as base64.
+	 *
+	 * Images live in the protected data directory and are never linked directly; the
+	 * admin screen loads them through this route (with the REST nonce) instead.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function get_image( WP_REST_Request $request ) {
+		$name  = (string) $request['name'];
+		$path  = VisitorImages::path( (int) $request['id'], $name );
+		$bytes = '' !== $path ? file_get_contents( $path ) : false; // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+
+		if ( false === $bytes ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Image not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		$response = rest_ensure_response(
+			array(
+				'name' => $name,
+				'mime' => VisitorImages::mime( $name ),
+				'data' => base64_encode( $bytes ), // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_encode
+			)
+		);
+		$response->header( 'Cache-Control', 'private, no-store' );
+
+		return $response;
 	}
 
 	/**

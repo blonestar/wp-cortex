@@ -27,10 +27,15 @@ final class Settings {
 	public const CHAT_INSTRUCTIONS_MAX = 4000;
 
 	/**
-	 * Visitor chat provider value that uses whatever provider the admin chat would pick.
-	 * An empty visitor chat provider means "same provider, model and reasoning as the admin chat".
+	 * Visitor chat (and summary) provider value that uses whatever provider the admin chat would pick.
+	 * An empty visitor chat or summary provider means "same provider, model and reasoning as the admin chat".
 	 */
 	public const PUBLIC_CHAT_PROVIDER_AUTO = 'auto';
+
+	/**
+	 * Languages of the visitor chat summary (the first is the default): the site language or the visitor's.
+	 */
+	public const SUMMARY_LANGUAGES = array( 'site', 'visitor' );
 
 	/**
 	 * Maximum length of the visitor chat title and welcome message, in characters.
@@ -104,6 +109,8 @@ final class Settings {
 			'public_chat_model'          => '',
 			'public_chat_reasoning'      => '',
 			'public_chat_rate_limit'     => 20,
+			'public_chat_images'         => false,
+			'public_chat_image_limit'    => 10,
 			'public_chat_log'            => true,
 			'public_chat_retention'      => 0,
 			'public_chat_navigation'     => true,
@@ -123,6 +130,11 @@ final class Settings {
 			'public_chat_launcher_size'  => 56,
 			'public_chat_offset'         => 20,
 			'public_chat_font_size'      => 14,
+			'summary_provider'           => '',
+			'summary_model'              => '',
+			'summary_reasoning'          => '',
+			'summary_language'           => 'site',
+			'summary_instructions'       => '',
 		);
 	}
 
@@ -221,6 +233,11 @@ final class Settings {
 		$public_provider = sanitize_key( (string) ( $input['public_chat_provider'] ?? '' ) );
 		$public_custom   = '' !== $public_provider && self::PUBLIC_CHAT_PROVIDER_AUTO !== $public_provider;
 
+		$summary_provider     = sanitize_key( (string) ( $input['summary_provider'] ?? '' ) );
+		$summary_custom       = '' !== $summary_provider && self::PUBLIC_CHAT_PROVIDER_AUTO !== $summary_provider;
+		$summary_language     = (string) ( $input['summary_language'] ?? '' );
+		$summary_instructions = trim( sanitize_textarea_field( (string) ( $input['summary_instructions'] ?? '' ) ) );
+
 		$chunk_size = self::clamp( $input['chunk_size'] ?? $defaults['chunk_size'], 300, 6000 );
 
 		$accent     = sanitize_hex_color( (string) ( $input['public_chat_accent'] ?? '' ) );
@@ -265,6 +282,8 @@ final class Settings {
 			'public_chat_model'        => $public_custom ? self::sanitize_model( $input['public_chat_model'] ?? '' ) : '',
 			'public_chat_reasoning'    => $public_custom ? sanitize_key( (string) ( $input['public_chat_reasoning'] ?? '' ) ) : '',
 			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
+			'public_chat_images'       => ! empty( $input['public_chat_images'] ),
+			'public_chat_image_limit'  => self::clamp( $input['public_chat_image_limit'] ?? $defaults['public_chat_image_limit'], 1, 1000 ),
 			'public_chat_log'          => ! empty( $input['public_chat_log'] ),
 			'public_chat_retention'    => self::clamp( $input['public_chat_retention'] ?? $defaults['public_chat_retention'], 0, 3650 ),
 			'public_chat_navigation'   => ! empty( $input['public_chat_navigation'] ),
@@ -273,6 +292,11 @@ final class Settings {
 			'public_chat_report_email' => self::sanitize_emails( $input['public_chat_report_email'] ?? '' ),
 			'public_chat_store_ip'     => ! empty( $input['public_chat_store_ip'] ),
 			'public_chat_ip_header'    => isset( Chat\ClientIp::HEADERS[ $input['public_chat_ip_header'] ?? '' ] ) ? (string) $input['public_chat_ip_header'] : '',
+			'summary_provider'         => $summary_provider,
+			'summary_model'            => $summary_custom ? self::sanitize_model( $input['summary_model'] ?? '' ) : '',
+			'summary_reasoning'        => $summary_custom ? sanitize_key( (string) ( $input['summary_reasoning'] ?? '' ) ) : '',
+			'summary_language'         => in_array( $summary_language, self::SUMMARY_LANGUAGES, true ) ? $summary_language : self::SUMMARY_LANGUAGES[0],
+			'summary_instructions'     => mb_substr( $summary_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
 		);
 	}
 
@@ -306,17 +330,26 @@ final class Settings {
 	/**
 	 * Provider, model and reasoning level of a chat.
 	 *
-	 * The visitor chat uses its own choice, or the admin chat's when its provider is empty;
-	 * "auto" lets the AI Client pick any configured provider with its default model.
+	 * The visitor chat and the visitor chat summary use their own choice, or the admin chat's
+	 * when their provider is empty; "auto" lets the AI Client pick any configured provider
+	 * with its default model.
 	 *
-	 * @param bool $is_public Whether the configuration is for the visitor chat.
+	 * @param string $chat Which configuration: "admin", "public" (visitor chat) or "summary" (visitor chat summary).
 	 * @return array{provider: string, model: string, reasoning: string}
 	 */
-	public static function chat_model_config( bool $is_public = false ): array {
-		$all    = self::all();
-		$prefix = $is_public && '' !== (string) $all['public_chat_provider'] ? 'public_chat_' : 'chat_';
+	public static function chat_model_config( string $chat = 'admin' ): array {
+		$all      = self::all();
+		$prefixes = array(
+			'public'  => 'public_chat_',
+			'summary' => 'summary_',
+		);
+		$prefix   = $prefixes[ $chat ] ?? 'chat_';
 
-		if ( 'public_chat_' === $prefix && self::PUBLIC_CHAT_PROVIDER_AUTO === $all['public_chat_provider'] ) {
+		if ( 'chat_' !== $prefix && '' === (string) $all[ $prefix . 'provider' ] ) {
+			$prefix = 'chat_';
+		}
+
+		if ( 'chat_' !== $prefix && self::PUBLIC_CHAT_PROVIDER_AUTO === $all[ $prefix . 'provider' ] ) {
 			return array(
 				'provider'  => '',
 				'model'     => '',

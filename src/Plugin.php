@@ -15,6 +15,7 @@ use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\SkillStore;
 use WPCortex\Chat\VisitorChatStore;
+use WPCortex\Chat\VisitorImages;
 use WPCortex\Cli\Command;
 use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
@@ -103,6 +104,10 @@ final class Plugin {
 
 		if ( Settings::get( 'public_chat_reports' ) ) {
 			$text .= '<p>' . esc_html__( 'If you report a problem with the site in the chat (for example a typo or a broken image), the report is stored on this site with the address of the page it is about, so that the site team can fix it.', 'wp-cortex' ) . '</p>';
+		}
+
+		if ( VisitorImages::enabled() ) {
+			$text .= '<p>' . esc_html__( 'You can attach images to your chat messages, for example screenshots. They are sent to the AI service together with your message; if conversations are stored, they are stored with the conversation and deleted with it. Avoid sending images that show personal data you do not want to share.', 'wp-cortex' ) . '</p>';
 		}
 
 		if ( Settings::get( 'public_chat_log' ) ) {

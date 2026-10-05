@@ -86,7 +86,8 @@ final class VisitorChatReport {
 	}
 
 	/**
-	 * Transcript with timestamps, the page of each visitor message, sources and opened pages.
+	 * Transcript with timestamps, the page and attached image of each visitor message, sources
+	 * and opened pages.
 	 *
 	 * @param array $chat Conversation.
 	 */
@@ -99,7 +100,8 @@ final class VisitorChatReport {
 			switch ( $item['role'] ?? '' ) {
 				case 'user':
 					$page    = ! empty( $item['page'] ) ? ' (' . sprintf( /* translators: %s: page title. */ __( 'on "%s"', 'wp-cortex' ), $item['page']['title'] ) . ')' : '';
-					$lines[] = $at . __( 'Visitor', 'wp-cortex' ) . $page . ': ' . $item['text'];
+					$image   = ! empty( $item['image'] ) ? ' [' . sprintf( /* translators: %s: image file name. */ __( 'image attached: %s', 'wp-cortex' ), $item['image'] ) . ']' : '';
+					$lines[] = trim( $at . __( 'Visitor', 'wp-cortex' ) . $page . ': ' . $item['text'] . $image );
 					break;
 				case 'assistant':
 					$lines[] = $at . __( 'Assistant', 'wp-cortex' ) . ': ' . $item['text'];

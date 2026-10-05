@@ -11,16 +11,18 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Stores visitor chat conversations, the contact details visitors leave, the client IP,
- * the AI summary and the administrator's read state, note and forwarding in a custom
- * MySQL table.
+ * the AI summary, the visitor's presence and the administrator's read state, note and
+ * forwarding in a custom MySQL table. Attached images are files (VisitorImages)
+ * referenced by name in the transcript and deleted with their conversation.
  *
  * A conversation is identified by a random session token generated in the browser;
  * only its SHA-256 hash is stored. The visitor chat only appends to its own
- * conversation and saves its contact details: it never reads stored conversations.
+ * conversation, saves its contact details and reports whether the chat is open
+ * (touch()): it never reads stored conversations.
  */
 final class VisitorChatStore {
 
-	public const DB_VERSION        = '3';
+	public const DB_VERSION        = '4';
 	public const DB_VERSION_OPTION = 'wp_cortex_visitor_chats_db_version';
 	public const TABLE_SUFFIX      = 'wp_cortex_visitor_chats';
 	public const PURGE_HOOK        = 'wp_cortex_purge_visitor_chats';
@@ -28,6 +30,32 @@ final class VisitorChatStore {
 	public const MAX_TRANSCRIPT_ITEMS = 400;
 	public const MAX_NOTE             = 4000;
 	public const MAX_SUMMARY          = 8000;
+
+	/**
+	 * Activity of a conversation (format_summary() "activity"): the visitor is in the
+	 * chat, may come back, or the conversation is over.
+	 */
+	public const ACTIVITY_ACTIVE = 'active';
+	public const ACTIVITY_IDLE   = 'idle';
+	public const ACTIVITY_ENDED  = 'ended';
+
+	/**
+	 * Seconds after the last presence ping while an open chat still counts as active.
+	 * The widget pings every 60 seconds, so one missed ping is tolerated.
+	 */
+	public const PRESENCE_TIMEOUT = 150;
+
+	/**
+	 * Without presence pings (for example a cached older widget), a conversation is
+	 * active for this many seconds after the last visitor activity.
+	 */
+	public const ACTIVE_WINDOW = 5 * MINUTE_IN_SECONDS;
+
+	/**
+	 * A conversation that is not active is idle (the visitor may come back) for this
+	 * many seconds after the last activity, then ended.
+	 */
+	public const IDLE_WINDOW = 30 * MINUTE_IN_SECONDS;
 
 	/**
 	 * JSON flags for the transcript and contact columns: unescaped, readable text.
@@ -89,6 +117,8 @@ final class VisitorChatStore {
 			summary_at datetime DEFAULT NULL,
 			forwarded_to varchar(255) NOT NULL DEFAULT '',
 			forwarded_at datetime DEFAULT NULL,
+			seen_at datetime DEFAULT NULL,
+			chat_open tinyint(1) NOT NULL DEFAULT 0,
 			created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			updated_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
@@ -184,6 +214,26 @@ final class VisitorChatStore {
 	}
 
 	/**
+	 * Records the presence of the visitor of a session: the chat window is open (pinged
+	 * periodically while it is visible) or was closed. Only an existing conversation is
+	 * updated; updated_at and the read state are left alone, they track messages.
+	 *
+	 * @param string $token Session token.
+	 * @param bool   $open  Whether the chat window is open.
+	 */
+	public function touch( string $token, bool $open ): void {
+		global $wpdb;
+
+		if ( ! self::is_valid_token( $token ) ) {
+			return;
+		}
+
+		$table = self::table();
+
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET seen_at = %s, chat_open = %d WHERE session_hash = %s", current_time( 'mysql', true ), $open ? 1 : 0, hash( 'sha256', $token ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
 	 * Cleans contact fields: known keys only, plain text, length limits, valid email and URLs.
 	 *
 	 * @param array $data Raw fields.
@@ -204,10 +254,10 @@ final class VisitorChatStore {
 			} elseif ( 'website' === $key ) {
 				$urls = array();
 
-				foreach ( preg_split( '/\r\n|\r|\n/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
-					$url = esc_url_raw( trim( $url ), array( 'http', 'https' ) );
+				foreach ( preg_split( '/[\r\n,]+/', $value, -1, PREG_SPLIT_NO_EMPTY ) as $url ) {
+					$url = self::sanitize_website( $url );
 
-					if ( '' !== $url && false !== wp_http_validate_url( $url ) ) {
+					if ( self::is_website_url( $url ) ) {
 						$urls[ $url ] = $url;
 					}
 				}
@@ -221,6 +271,19 @@ final class VisitorChatStore {
 		}
 
 		return $contact;
+	}
+
+	/**
+	 * Checks that a URL looks like a public website address (syntax only, no DNS lookup:
+	 * visitors may give domains that do not resolve yet or from this server).
+	 *
+	 * @param string $url URL from esc_url_raw().
+	 * @return bool
+	 */
+	private static function is_website_url( string $url ): bool {
+		$host = (string) wp_parse_url( $url, PHP_URL_HOST );
+
+		return '' !== $host && 1 === preg_match( '/^(?:[\p{L}\p{N}](?:[\p{L}\p{N}-]*[\p{L}\p{N}])?\.)+\p{L}{2,}$/u', $host );
 	}
 
 	/**
@@ -248,7 +311,7 @@ final class VisitorChatStore {
 			array(
 				'contact'     => wp_json_encode( $merged, self::JSON_FLAGS ),
 				'search_text' => self::search_text( (string) $stored['search_text'], $contact ),
-				'has_contact' => $merged ? 1 : 0,
+				'has_contact' => self::has_contact_details( $merged ) ? 1 : 0,
 				'is_read'     => 0,
 				'updated_at'  => current_time( 'mysql', true ),
 			),
@@ -448,9 +511,12 @@ final class VisitorChatStore {
 			return 0;
 		}
 
-		$table = self::table();
+		$table   = self::table();
+		$deleted = (int) $wpdb->query( "DELETE FROM {$table} WHERE id IN (" . implode( ',', $ids ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
-		return (int) $wpdb->query( "DELETE FROM {$table} WHERE id IN (" . implode( ',', $ids ) . ')' ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		VisitorImages::delete( $ids );
+
+		return $deleted;
 	}
 
 	/**
@@ -468,8 +534,15 @@ final class VisitorChatStore {
 
 		$table  = self::table();
 		$cutoff = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
+		$ids    = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE updated_at < %s", $cutoff ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$count  = 0;
 
-		return (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE updated_at < %s", $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		// In batches, so the images of every deleted conversation are removed too.
+		foreach ( array_chunk( $ids, 500 ) as $batch ) {
+			$count += $this->delete( $batch );
+		}
+
+		return $count;
 	}
 
 	/**
@@ -525,12 +598,27 @@ final class VisitorChatStore {
 		foreach ( is_array( $transcript ) ? $transcript : array() as $item ) {
 			if ( 'user' === ( $item['role'] ?? '' ) ) {
 				$preview = mb_substr( (string) ( $item['text'] ?? '' ), 0, 160 );
+
+				if ( '' === $preview && ! empty( $item['image'] ) ) {
+					$preview = __( '(image)', 'wp-cortex' );
+				}
 				break;
 			}
 		}
 
-		$post_id    = (int) $row['post_id'];
-		$summary_at = (string) ( $row['summary_at'] ?? '' );
+		$post_id      = (int) $row['post_id'];
+		$summary_at   = (string) ( $row['summary_at'] ?? '' );
+		$forwarded_at = (string) ( $row['forwarded_at'] ?? '' );
+		$seen_at      = (string) ( $row['seen_at'] ?? '' );
+		$new_messages = 0;
+
+		if ( '' !== $forwarded_at ) {
+			foreach ( is_array( $transcript ) ? $transcript : array() as $item ) {
+				if ( 'user' === ( $item['role'] ?? '' ) && strcmp( (string) ( $item['at'] ?? '' ), $forwarded_at ) > 0 ) {
+					++$new_messages;
+				}
+			}
+		}
 
 		return array(
 			'id'            => (int) $row['id'],
@@ -547,11 +635,40 @@ final class VisitorChatStore {
 			// The conversation continued (or contact details changed) after the summary.
 			'summary_stale' => '' !== $summary_at && strcmp( (string) $row['updated_at'], $summary_at ) > 0,
 			'forwarded_to'  => (string) $row['forwarded_to'],
-			'forwarded_at'  => (string) ( $row['forwarded_at'] ?? '' ),
+			'forwarded_at'  => $forwarded_at,
+			// The conversation continued (or contact details changed) after it was forwarded.
+			'forward_stale' => '' !== $forwarded_at && strcmp( (string) $row['updated_at'], $forwarded_at ) > 0,
+			'new_messages'  => $new_messages,
+			'seen_at'       => $seen_at,
+			'chat_open'     => (bool) ( $row['chat_open'] ?? false ),
+			'activity'      => self::activity( (string) $row['updated_at'], $seen_at, (bool) ( $row['chat_open'] ?? false ) ),
 			'page'          => self::page( $post_id ),
 			'created_at'    => (string) $row['created_at'],
 			'updated_at'    => (string) $row['updated_at'],
 		);
+	}
+
+	/**
+	 * Whether the visitor is still in the conversation.
+	 *
+	 * Active: the chat window is open and pinged recently or, when the widget never sent
+	 * a presence ping, the last visitor activity is recent. Idle: not active, but the
+	 * visitor was active within IDLE_WINDOW and may come back. Ended: older than that.
+	 *
+	 * @param string $updated_at Last visitor message or contact change (UTC).
+	 * @param string $seen_at    Last presence ping (UTC), empty when none.
+	 * @param bool   $open       Whether the chat window was open at the last ping.
+	 */
+	private static function activity( string $updated_at, string $seen_at, bool $open ): string {
+		$now     = time();
+		$updated = (int) strtotime( $updated_at . ' UTC' );
+		$seen    = '' !== $seen_at ? (int) strtotime( $seen_at . ' UTC' ) : 0;
+
+		if ( ( $open && $seen && $now - $seen <= self::PRESENCE_TIMEOUT ) || ( ! $seen && $now - $updated <= self::ACTIVE_WINDOW ) ) {
+			return self::ACTIVITY_ACTIVE;
+		}
+
+		return $now - max( $updated, $seen ) <= self::IDLE_WINDOW ? self::ACTIVITY_IDLE : self::ACTIVITY_ENDED;
 	}
 
 	/**
