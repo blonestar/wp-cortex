@@ -6,12 +6,15 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Cortex > Indexing: a public access check in the Storage card, below the data directory. It reports whether the data directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded from the site's URL, in green when everything is blocked and red when something is reachable, with the time of the check and a Test again button. The result is cached for 12 hours.
+
 - Skills settings (Settings > Admin chat > Skills): a switch that turns chat skills on or off (`skills_enabled`, on by default; when off, Cortex > Skills is hidden, the skills REST routes are refused and the admin chat neither uses nor proposes skills, while saved skills are kept), the language skills are written in (`skills_language`, English by default) and custom skill instructions added to the admin chat prompt (`skills_instructions`).
 
 ### Changed
 
+- The public access warning (Indexing screen and dashboard widget) now covers both databases and the directory listing, not only `admin.sqlite`, and a check only counts a file as downloadable when the response is an actual SQLite file.
 - Admin chat: skills proposed by the assistant (`propose_skill`) are written in the skill language (English by default: name, description and instructions), whatever language the conversation is in. The assistant still replies in the user's language.
-- The data directory in uploads is now hidden (`.wp-cortex-<random>` instead of `wp-cortex-<random>`), so Nginx servers that refuse paths starting with a dot (common in WordPress setups, Local for example) no longer serve the index databases or visitor images, even though they ignore the `.htaccess` deny rules. Existing directories are renamed automatically; no re-indexing is needed. When the database is still downloadable, the Indexing screen shows the Nginx rule that blocks it.
+- The data directory in uploads is now hidden (`.wp-cortex-<random>` instead of `wp-cortex-<random>`), so Nginx servers that refuse paths starting with a dot (common in WordPress setups, Local for example) no longer serve the index databases or visitor images, even though they ignore the `.htaccess` deny rules. Existing directories are renamed automatically; no re-indexing is needed. When a database is still downloadable, the Indexing screen shows the Nginx rule that blocks it.
 
 ## [0.4.1] - 2026-10-05
 
