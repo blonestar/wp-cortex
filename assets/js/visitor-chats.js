@@ -526,7 +526,12 @@
 				els.transcript.appendChild( nav );
 				break;
 			case 'notice':
-				els.transcript.appendChild( el( 'div', 'wp-cortex-vchat-event', '✓ ' + ( item.text || '' ) ) );
+				var notice = el( 'div', 'wp-cortex-vchat-event', '✓ ' + ( item.text || '' ) );
+				if ( item.report_id && cfg.reportsUrl ) {
+					notice.appendChild( document.createTextNode( ' ' ) );
+					notice.appendChild( link( __( 'View report', 'wp-cortex' ), cfg.reportsUrl + '#report=' + item.report_id ) );
+				}
+				els.transcript.appendChild( notice );
 				break;
 			case 'error':
 				addMessage( 'error', item.text || '', false, item.at );

@@ -30,8 +30,8 @@ defined( 'ABSPATH' ) || exit;
  * visitor attaches is sent with their message only; later turns just note that it was
  * there. When the
  * conversation log is on, the controller stores the turn (VisitorChatStore); the agent
- * may only save contact details to the visitor's own conversation and never reads
- * stored conversations.
+ * may only save contact details to the visitor's own conversation and add issue reports
+ * (IssueReportStore), and never reads stored conversations or reports.
  */
 final class PublicChatAgent {
 
@@ -56,6 +56,8 @@ final class PublicChatAgent {
 	private const PAGE_FUNCTION   = 'get_page';
 	private const GOTO_FUNCTION   = 'go_to_page';
 	private const SAVE_FUNCTION   = 'save_contact_details';
+	private const REPORT_FUNCTION = 'report_issue';
+	private const MAX_REPORTS     = 3;
 
 	/**
 	 * Search service over the public index.
@@ -86,18 +88,42 @@ final class PublicChatAgent {
 	private bool $contact_saved = false;
 
 	/**
+	 * Post the visitor is viewing, 0 for none.
+	 *
+	 * @var int
+	 */
+	private int $post_id = 0;
+
+	/**
+	 * URL of the page the visitor is viewing, as sent by the browser.
+	 *
+	 * @var string
+	 */
+	private string $page_url = '';
+
+	/**
+	 * IDs of the issue reports added in this turn.
+	 *
+	 * @var int[]
+	 */
+	private array $reports = array();
+
+	/**
 	 * Handles one visitor message.
 	 *
-	 * @param string     $message Visitor message, may be empty when an image is attached.
-	 * @param array      $history Previous turns: items with role ("user" or "assistant"), text and image (bool).
-	 * @param int        $post_id Post the visitor is viewing, 0 for none.
-	 * @param int        $chat_id Stored conversation (VisitorChatStore), 0 when the log is off.
-	 * @param array|null $image   Attached image processed by VisitorImages::process().
+	 * @param string     $message  Visitor message, may be empty when an image is attached.
+	 * @param array      $history  Previous turns: items with role ("user" or "assistant"), text and image (bool).
+	 * @param int        $post_id  Post the visitor is viewing, 0 for none.
+	 * @param int        $chat_id  Stored conversation (VisitorChatStore), 0 when the log is off.
+	 * @param array|null $image    Attached image processed by VisitorImages::process().
+	 * @param string     $page_url URL of the page the visitor is viewing, used for issue reports.
 	 * @return array{items: array}|WP_Error
 	 */
-	public function respond( string $message, array $history, int $post_id, int $chat_id = 0, ?array $image = null ) {
-		$message       = trim( $message );
-		$this->chat_id = $chat_id;
+	public function respond( string $message, array $history, int $post_id, int $chat_id = 0, ?array $image = null, string $page_url = '' ) {
+		$message        = trim( $message );
+		$this->chat_id  = $chat_id;
+		$this->post_id  = $post_id;
+		$this->page_url = IssueReportStore::sanitize_page_url( $page_url );
 
 		if ( '' === $message && ! $image ) {
 			return new WP_Error( 'wp_cortex_empty_message', __( 'The message is empty.', 'wp-cortex' ), array( 'status' => 400 ) );
@@ -189,6 +215,15 @@ final class PublicChatAgent {
 					);
 				}
 
+				foreach ( $this->reports as $report_id ) {
+					$items[] = array(
+						'role'      => 'notice',
+						/* translators: %d: issue report ID. */
+						'text'      => sprintf( __( 'Issue report #%d saved.', 'wp-cortex' ), $report_id ),
+						'report_id' => $report_id,
+					);
+				}
+
 				if ( $this->navigate ) {
 					$items[] = array_merge( array( 'role' => 'navigate' ), $this->navigate );
 				}
@@ -205,6 +240,8 @@ final class PublicChatAgent {
 					$payload = $this->go_to_page( (array) $call->getArgs() );
 				} elseif ( self::SAVE_FUNCTION === $call->getName() && $this->contact_enabled() ) {
 					$payload = $this->save_contact_details( (array) $call->getArgs() );
+				} elseif ( self::REPORT_FUNCTION === $call->getName() && $this->reports_enabled() ) {
+					$payload = $this->report_issue( (array) $call->getArgs() );
 				} else {
 					$payload = array( 'error' => 'Unknown function.' );
 				}
@@ -374,7 +411,44 @@ final class PublicChatAgent {
 			);
 		}
 
+		if ( $this->reports_enabled() ) {
+			$declarations[] = new FunctionDeclaration(
+				self::REPORT_FUNCTION,
+				'Reports a problem the visitor found on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work) to the site team. Call it once per problem.',
+				array(
+					'type'       => 'object',
+					'properties' => array(
+						'category'    => array(
+							'type'        => 'string',
+							'description' => 'Kind of problem.',
+							'enum'        => IssueReportStore::CATEGORIES,
+						),
+						'description' => array(
+							'type'        => 'string',
+							'description' => 'What is wrong and where on the page, in a few sentences, in the language of this website\'s content (it is read by the site team). Include the correction when the visitor gave one.',
+						),
+						'excerpt'     => array(
+							'type'        => 'string',
+							'description' => 'Optional. The affected text exactly as it appears on the page (for example the misspelled sentence), or the name of the affected image, link or button.',
+						),
+						'post_id'     => array(
+							'type'        => 'integer',
+							'description' => 'Optional. ID of the page with the problem, from search_site results, when it is not the page the visitor is viewing. Omit it for the current page.',
+						),
+					),
+					'required'   => array( 'category', 'description' ),
+				)
+			);
+		}
+
 		return $declarations;
+	}
+
+	/**
+	 * Whether the report_issue tool is offered.
+	 */
+	private function reports_enabled(): bool {
+		return (bool) Settings::get( 'public_chat_reports' );
 	}
 
 	/**
@@ -591,6 +665,66 @@ final class PublicChatAgent {
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Tool: report_issue. Adds a report about the current page or another public page.
+	 *
+	 * @param array $args Function arguments.
+	 * @return array<string, mixed>
+	 */
+	private function report_issue( array $args ): array {
+		if ( count( $this->reports ) >= self::MAX_REPORTS ) {
+			return array( 'error' => 'Too many reports in one message. Ask the visitor to send the remaining problems in a new message.' );
+		}
+
+		if ( '' === trim( (string) ( $args['description'] ?? '' ) ) ) {
+			return array( 'error' => 'Describe the problem.' );
+		}
+
+		$post_id  = (int) ( $args['post_id'] ?? 0 );
+		$page_url = $this->page_url;
+
+		if ( $post_id > 0 && $post_id !== $this->post_id ) {
+			$doc = $this->get_public_document( $post_id );
+
+			if ( null === $doc ) {
+				return array( 'error' => 'No published page with this ID. Omit post_id to report the page the visitor is viewing.' );
+			}
+
+			$page_url = (string) $doc['url'];
+		} else {
+			// The browser's post ID is kept only for pages in the public index.
+			$post_id = null !== $this->get_public_document( $this->post_id ) ? $this->post_id : 0;
+		}
+
+		$store = new IssueReportStore();
+		$id    = $store->add(
+			array(
+				'chat_id'     => $this->chat_id,
+				'post_id'     => $post_id,
+				'page_url'    => $page_url,
+				'category'    => (string) ( $args['category'] ?? '' ),
+				'description' => (string) $args['description'],
+				'excerpt'     => (string) ( $args['excerpt'] ?? '' ),
+			)
+		);
+
+		if ( ! $id ) {
+			return array( 'error' => 'The report could not be saved.' );
+		}
+
+		$this->reports[] = $id;
+		$report          = $store->get( $id );
+
+		if ( $report ) {
+			( new IssueReportMailer() )->notify( $report );
+		}
+
+		return array(
+			'reported' => true,
+			'note'     => 'In one or two short sentences, thank the visitor and tell them the problem was passed on to the site team. Do not promise when or whether it will be fixed.',
+		);
 	}
 
 	/**
@@ -831,6 +965,10 @@ final class PublicChatAgent {
 
 		if ( $this->contact_enabled() ) {
 			$lines[] = 'Contact details: whenever the visitor gives their own name, email address, phone number, website URL(s), postal address or company, at any point in the conversation, call save_contact_details right away with those details; do not ask the visitor to confirm them first. Write an email address in its standard form (for example "ana at example dot com" as ana@example.com). After saving a name alone, do not mention it: greet the visitor by name and carry on; a name alone is not a request to be contacted, so do not ask for other details because of it. After saving an email address, phone number or other contact details, repeat them in one short sentence so the visitor can correct a mistake. If the visitor wants to be contacted, asks for an offer or a quote, wants to send an inquiry, or the content cannot answer their question, you may offer to take their contact details so the team can get back to them; ask for a first and/or last name and an email address or phone number, and only if relevant a website, postal address or company, a few items at a time, and do not ask again for an item the visitor skipped. Also save a short summary of what the visitor needs as the request: as soon as the visitor wants to be contacted and the conversation shows what about (for example a service they are interested in, a question the content could not answer, or an offer they asked about), call save_contact_details with the request right away, even before any other details, and do not ask them again what it is about; if it is still unknown once an email address or phone number is saved, ask once, briefly, what they would like the team to get back to them about, and save their answer. The request must say what the visitor needs (a topic, service, question or offer); wanting to be contacted is not a request in itself, so never write one like "wants to be contacted" and never invent one. If the visitor corrects a detail, save the corrected value. Never ask for sensitive data (passwords, payment cards, ID numbers, health data). Do not push the visitor to leave details.';
+		}
+
+		if ( $this->reports_enabled() ) {
+			$lines[] = 'If the visitor points out a problem on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work), report it with report_issue so the site team can fix it. Unless the visitor says otherwise, the problem is on the page they are viewing. Ask one short question only when it is unclear what is wrong or on which page; otherwise report it right away, without asking for confirmation or contact details. Quote the affected text exactly when the visitor gives it. Report each problem once and never report something the visitor did not point out.';
 		}
 
 		if ( $current ) {

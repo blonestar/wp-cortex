@@ -8,6 +8,7 @@
 namespace WPCortex\Rest;
 
 use WPCortex\Chat\ClientIp;
+use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\RateLimiter;
 use WPCortex\Chat\VisitorChatStore;
@@ -53,17 +54,17 @@ final class PublicChatController {
 				'callback'            => array( $this, 'message' ),
 				'permission_callback' => array( $this, 'permission' ),
 				'args'                => array(
-					'message' => array(
+					'message'  => array(
 						'type'      => 'string',
 						'default'   => '',
 						'maxLength' => PublicChatAgent::MAX_MESSAGE_LENGTH,
 					),
-					'image'   => array(
+					'image'    => array(
 						'type'      => 'string',
 						'default'   => '',
 						'maxLength' => VisitorImages::MAX_DATA_URL,
 					),
-					'history' => array(
+					'history'  => array(
 						'type'     => 'array',
 						'default'  => array(),
 						'maxItems' => 50,
@@ -79,15 +80,20 @@ final class PublicChatController {
 							),
 						),
 					),
-					'post_id' => array(
+					'post_id'  => array(
 						'type'    => 'integer',
 						'default' => 0,
 						'minimum' => 0,
 					),
-					'session' => array(
+					'session'  => array(
 						'type'    => 'string',
 						'default' => '',
 						'pattern' => '^([a-f0-9]{32})?$',
+					),
+					'page_url' => array(
+						'type'      => 'string',
+						'default'   => '',
+						'maxLength' => IssueReportStore::MAX_URL,
 					),
 				),
 			)
@@ -169,7 +175,7 @@ final class PublicChatController {
 		$store   = new VisitorChatStore();
 		$chat_id = Settings::get( 'public_chat_log' ) ? $store->open( (string) $request->get_param( 'session' ), $post_id ) : 0;
 
-		$result = ( new PublicChatAgent() )->respond( $message, is_array( $history ) ? $history : array(), $post_id, $chat_id, $image );
+		$result = ( new PublicChatAgent() )->respond( $message, is_array( $history ) ? $history : array(), $post_id, $chat_id, $image, (string) $request->get_param( 'page_url' ) );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
