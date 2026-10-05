@@ -14,13 +14,18 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Sends a conversation (summary, contact details, note and transcript) as a plain-text
- * email through wp_mail(), so whatever handles the site's mail (an SMTP plugin, a mail
- * connector or the server's mailer) delivers it.
+ * email, with the visitor's images attached, through wp_mail(), so whatever handles the
+ * site's mail (an SMTP plugin, a mail connector or the server's mailer) delivers it.
  */
 final class VisitorChatMailer {
 
 	public const MAX_RECIPIENTS = 10;
 	public const MAX_MESSAGE    = 2000;
+
+	/**
+	 * Most images attached to one email (the latest are kept).
+	 */
+	private const MAX_ATTACHMENTS = 10;
 
 	/**
 	 * Valid, unique email addresses from a comma, semicolon or space separated list.
@@ -70,6 +75,11 @@ final class VisitorChatMailer {
 			/* translators: 1: site name, 2: conversation ID. */
 			: sprintf( __( '[%1$s] Visitor chat #%2$d', 'wp-cortex' ), $site, $chat['id'] );
 
+		if ( ! empty( $chat['forward_stale'] ) ) {
+			/* translators: %s: email subject. */
+			$subject = sprintf( __( '%s (update)', 'wp-cortex' ), $subject );
+		}
+
 		$headers = array( 'Content-Type: text/plain; charset=UTF-8' );
 
 		// Replies go straight to the visitor when they left an email address.
@@ -83,7 +93,7 @@ final class VisitorChatMailer {
 		};
 
 		add_action( 'wp_mail_failed', $capture );
-		$sent = wp_mail( $to, $subject, $this->body( $chat, $message ), $headers );
+		$sent = wp_mail( $to, $subject, $this->body( $chat, $message ), $headers, $this->attachments( $chat ) );
 		remove_action( 'wp_mail_failed', $capture );
 
 		if ( ! $sent ) {
@@ -110,6 +120,12 @@ final class VisitorChatMailer {
 			$sections[] = $message;
 		}
 
+		$status = $this->status( $chat );
+
+		if ( '' !== $status ) {
+			$sections[] = $status;
+		}
+
 		if ( '' !== trim( (string) $chat['summary'] ) ) {
 			$title = __( 'Summary', 'wp-cortex' );
 
@@ -128,9 +144,51 @@ final class VisitorChatMailer {
 		}
 
 		$sections[] = $this->section( __( 'Conversation', 'wp-cortex' ), VisitorChatReport::details( $chat ) . "\n\n" . VisitorChatReport::transcript( $chat ) );
+
+		$images = count( VisitorImages::paths( (int) $chat['id'], (array) $chat['transcript'] ) );
+
+		if ( $images > self::MAX_ATTACHMENTS ) {
+			/* translators: 1: number of attached images, 2: number of images in the conversation. */
+			$sections[] = sprintf( __( 'The latest %1$d of %2$d images are attached; open the conversation in the admin to see all of them.', 'wp-cortex' ), self::MAX_ATTACHMENTS, $images );
+		}
+
 		$sections[] = __( 'Open in the admin:', 'wp-cortex' ) . ' ' . admin_url( 'admin.php?page=' . Menu::SLUG_VISITORS . '#chat=' . (int) $chat['id'] );
 
 		return implode( "\n\n", $sections ) . "\n";
+	}
+
+	/**
+	 * Notes about an update of an earlier email and a conversation that may continue.
+	 *
+	 * @param array $chat Conversation.
+	 */
+	private function status( array $chat ): string {
+		$lines = array();
+
+		if ( ! empty( $chat['forward_stale'] ) ) {
+			$count   = (int) $chat['new_messages'];
+			$lines[] = $count > 0
+				/* translators: 1: date and time (UTC) of the previous email, 2: number of new visitor messages. */
+				? sprintf( _n( 'Update: this conversation was already sent on %1$s UTC and has continued since then (%2$d new visitor message).', 'Update: this conversation was already sent on %1$s UTC and has continued since then (%2$d new visitor messages).', $count, 'wp-cortex' ), $chat['forwarded_at'], $count )
+				/* translators: %s: date and time (UTC) of the previous email. */
+				: sprintf( __( 'Update: this conversation was already sent on %s UTC and has changed since then.', 'wp-cortex' ), $chat['forwarded_at'] );
+		}
+
+		if ( VisitorChatStore::ACTIVITY_ACTIVE === ( $chat['activity'] ?? '' ) ) {
+			$lines[] = __( 'The visitor was still in the chat when this was sent: the conversation may continue.', 'wp-cortex' );
+		}
+
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Images of the conversation to attach, the latest MAX_ATTACHMENTS.
+	 *
+	 * @param array $chat Conversation.
+	 * @return string[] Absolute paths.
+	 */
+	private function attachments( array $chat ): array {
+		return array_slice( VisitorImages::paths( (int) $chat['id'], (array) $chat['transcript'] ), -self::MAX_ATTACHMENTS );
 	}
 
 	/**

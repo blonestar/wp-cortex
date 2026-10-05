@@ -139,6 +139,30 @@
 }
 .wp-cortex-pchat-send:hover { background: var(--wp-cortex-accent); color: var(--wp-cortex-accent-text); filter: brightness(1.08); }
 .wp-cortex-pchat-send:disabled, .wp-cortex-pchat-input:disabled { opacity: 0.6; cursor: default; }
+.wp-cortex-pchat-attach {
+	flex: none; width: 42px; height: 42px; min-height: 0; padding: 0; border: 1px solid var(--wp-cortex-border); border-radius: var(--wp-cortex-radius-sm); cursor: pointer;
+	background: var(--wp-cortex-surface); color: var(--wp-cortex-text-muted); display: inline-flex; align-items: center; justify-content: center; box-shadow: none;
+}
+.wp-cortex-pchat-attach:hover { background: var(--wp-cortex-surface); color: var(--wp-cortex-accent); border-color: var(--wp-cortex-accent); }
+.wp-cortex-pchat-attach:focus-visible { outline: 2px solid var(--wp-cortex-accent); outline-offset: -1px; }
+.wp-cortex-pchat-attach:disabled { opacity: 0.6; cursor: default; }
+.wp-cortex-pchat-attach svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wp-cortex-pchat-attachment { display: flex; align-items: flex-start; gap: 6px; padding: 10px 12px 0; border-top: 1px solid var(--wp-cortex-border); background: var(--wp-cortex-surface); }
+.wp-cortex-pchat-attachment[hidden] { display: none; }
+.wp-cortex-pchat-attachment:not([hidden]) + .wp-cortex-pchat-form { border-top: 0; }
+.wp-cortex-pchat-attachment img { display: block; max-width: 120px; max-height: 72px; border: 1px solid var(--wp-cortex-border); border-radius: var(--wp-cortex-radius-sm); object-fit: cover; }
+.wp-cortex-pchat-attachment-remove {
+	width: 24px; height: 24px; min-height: 0; padding: 0; border: 1px solid var(--wp-cortex-border); border-radius: 50%; cursor: pointer;
+	background: var(--wp-cortex-surface); color: var(--wp-cortex-text-muted); display: inline-flex; align-items: center; justify-content: center; box-shadow: none;
+}
+.wp-cortex-pchat-attachment-remove:hover { background: var(--wp-cortex-muted); color: var(--wp-cortex-text); }
+.wp-cortex-pchat-attachment-remove svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; }
+.wp-cortex-pchat-msg-image { display: block; max-width: 100%; max-height: 220px; border-radius: var(--wp-cortex-radius-sm); }
+.wp-cortex-pchat-msg-image-missing { display: block; font-style: italic; opacity: 0.85; }
+.wp-cortex-pchat-msg-text { display: block; }
+.wp-cortex-pchat-msg-image + .wp-cortex-pchat-msg-text,
+.wp-cortex-pchat-msg-image-missing + .wp-cortex-pchat-msg-text { margin-top: 6px; }
+.wp-cortex-pchat-panel.is-dragging { outline: 2px dashed var(--wp-cortex-accent); outline-offset: -6px; }
 @media (max-width: 600px) {
 	#wp-cortex-public-chat-root .wp-cortex-pchat-panel { right: 0; left: 0; bottom: 0; width: 100%; max-width: 100%; height: 85vh; max-height: 100vh; border-radius: var(--wp-cortex-radius) var(--wp-cortex-radius) 0 0; }
 	.wp-cortex-pchat-toggle { right: min(var(--wp-cortex-offset), 12px); bottom: min(var(--wp-cortex-offset), 12px); }

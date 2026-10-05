@@ -100,6 +100,7 @@ final class VisitorChatsPage {
 				<p><a href="#" id="wp-cortex-vchat-back">&larr; <?php esc_html_e( 'Back to visitor chats', 'wp-cortex' ); ?></a></p>
 				<h2 class="wp-cortex-vchat-title" id="wp-cortex-vchat-title"></h2>
 				<p class="wp-cortex-vchat-meta" id="wp-cortex-vchat-meta"></p>
+				<p class="wp-cortex-vchat-activity" id="wp-cortex-vchat-activity" aria-live="polite"></p>
 				<div class="wp-cortex-vchat-layout">
 					<div class="wp-cortex-vchat-main">
 						<div class="wp-cortex-card wp-cortex-vchat-summary">
@@ -123,6 +124,7 @@ final class VisitorChatsPage {
 						</div>
 						<form class="wp-cortex-card" id="wp-cortex-vchat-forward-form">
 							<h2><label for="wp-cortex-vchat-forward-to"><?php esc_html_e( 'Forward by email', 'wp-cortex' ); ?></label></h2>
+							<p class="wp-cortex-vchat-forward-hint is-stale" id="wp-cortex-vchat-forward-warning" hidden></p>
 							<input type="text" class="large-text" id="wp-cortex-vchat-forward-to" maxlength="2000" placeholder="<?php esc_attr_e( 'name@example.com, other@example.com', 'wp-cortex' ); ?>" required>
 							<p class="description">
 								<?php

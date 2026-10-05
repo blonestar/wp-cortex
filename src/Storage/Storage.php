@@ -24,6 +24,7 @@ final class Storage {
 	public const SCOPES = array( self::SCOPE_PUBLIC, self::SCOPE_ADMIN );
 
 	private const DIR_OPTION         = 'wp_cortex_data_dir_name';
+	private const IMAGES_DIR         = 'visitor-images';
 	private const EXPOSURE_TRANSIENT = 'wp_cortex_storage_exposed';
 
 	/**
@@ -51,6 +52,14 @@ final class Storage {
 	 */
 	public static function db_path( string $scope ): string {
 		return self::data_dir() . '/' . $scope . '.sqlite';
+	}
+
+	/**
+	 * Absolute path of the directory with the images visitors attach in the visitor chat,
+	 * one subdirectory per conversation.
+	 */
+	public static function visitor_images_dir(): string {
+		return self::data_dir() . '/' . self::IMAGES_DIR;
 	}
 
 	/**
@@ -104,6 +113,8 @@ final class Storage {
 			self::delete_db( $scope );
 		}
 
+		self::delete_dir( self::visitor_images_dir() );
+
 		$dir = self::data_dir();
 		foreach ( array( 'index.php', '.htaccess', 'web.config' ) as $name ) {
 			if ( file_exists( "$dir/$name" ) ) {
@@ -117,6 +128,34 @@ final class Storage {
 
 		delete_option( self::DIR_OPTION );
 		delete_transient( self::EXPOSURE_TRANSIENT );
+	}
+
+	/**
+	 * Deletes a directory with its files and subdirectories. Symbolic links are removed,
+	 * never followed.
+	 *
+	 * @param string $dir Absolute path.
+	 */
+	public static function delete_dir( string $dir ): void {
+		if ( ! is_dir( $dir ) || is_link( $dir ) ) {
+			return;
+		}
+
+		foreach ( (array) scandir( $dir ) as $name ) {
+			if ( '.' === $name || '..' === $name ) {
+				continue;
+			}
+
+			$path = $dir . '/' . $name;
+
+			if ( is_dir( $path ) && ! is_link( $path ) ) {
+				self::delete_dir( $path );
+			} else {
+				wp_delete_file( $path );
+			}
+		}
+
+		@rmdir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir
 	}
 
 	/**
