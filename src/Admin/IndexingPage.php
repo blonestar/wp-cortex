@@ -61,6 +61,9 @@ final class IndexingPage {
 			echo esc_html__( 'The index database is publicly downloadable!', 'wp-cortex' );
 			echo '</strong> ';
 			echo esc_html__( 'Block access to the data directory in your web server configuration, or move it outside the web root with WP_CORTEX_DATA_DIR.', 'wp-cortex' );
+			echo '</p><p>';
+			echo esc_html__( 'On Nginx, refusing hidden paths (names starting with a dot) protects it:', 'wp-cortex' );
+			echo ' <code>location ~ /\\. { deny all; }</code>';
 			echo '</p></div>';
 		}
 
