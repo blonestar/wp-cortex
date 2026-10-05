@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-05
+
 ### Added
 
 - Cortex > Indexing: a public access check in the Storage card, below the data directory. It reports whether the data directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded from the site's URL, in green when everything is blocked and red when something is reachable, with the time of the check and a Test again button. The result is cached for 12 hours.
