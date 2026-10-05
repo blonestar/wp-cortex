@@ -287,6 +287,32 @@ final class VisitorChatStore {
 	}
 
 	/**
+	 * Cleans a website URL the visitor gave: adds https:// when the scheme is missing.
+	 * The form is checked by is_website_url(), since the URL is only shown, never fetched.
+	 *
+	 * @param string $url URL as given, for example "www.example.com".
+	 * @return string Clean URL, empty when it is not an http(s) address.
+	 */
+	public static function sanitize_website( string $url ): string {
+		$url = trim( $url );
+
+		if ( '' !== $url && ! preg_match( '#^[a-z][a-z0-9+.-]*://#i', $url ) ) {
+			$url = 'https://' . $url;
+		}
+
+		return esc_url_raw( $url, array( 'http', 'https' ) );
+	}
+
+	/**
+	 * Whether contact details identify the visitor: anything but the request alone.
+	 *
+	 * @param array $contact Contact fields.
+	 */
+	public static function has_contact_details( array $contact ): bool {
+		return (bool) array_diff( array_keys( array_filter( $contact ) ), array( 'request' ) );
+	}
+
+	/**
 	 * Merges contact details into a conversation: non-empty values replace stored ones.
 	 *
 	 * @param int   $id      Conversation ID.
