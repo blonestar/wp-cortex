@@ -10,6 +10,7 @@ namespace WPCortex\Frontend;
 use WPCortex\Admin\ChatPanel;
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\PublicChatAgent;
+use WPCortex\Chat\VisitorImages;
 use WPCortex\Plugin;
 use WPCortex\Settings;
 
@@ -116,6 +117,9 @@ final class FrontendChat {
 					'welcome'   => '' !== $welcome ? $welcome : __( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
 					'label'     => (string) Settings::get( 'public_chat_launcher_label' ),
 					'maxLength' => PublicChatAgent::MAX_MESSAGE_LENGTH,
+					'images'    => VisitorImages::enabled(),
+					'imageSide' => VisitorImages::MAX_SIDE,
+					'imageMax'  => VisitorImages::MAX_UPLOAD_BYTES,
 				)
 			) . ';',
 			'before'

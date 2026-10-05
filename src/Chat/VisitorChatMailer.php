@@ -14,13 +14,18 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Sends a conversation (summary, contact details, note and transcript) as a plain-text
- * email through wp_mail(), so whatever handles the site's mail (an SMTP plugin, a mail
- * connector or the server's mailer) delivers it.
+ * email, with the visitor's images attached, through wp_mail(), so whatever handles the
+ * site's mail (an SMTP plugin, a mail connector or the server's mailer) delivers it.
  */
 final class VisitorChatMailer {
 
 	public const MAX_RECIPIENTS = 10;
 	public const MAX_MESSAGE    = 2000;
+
+	/**
+	 * Most images attached to one email (the latest are kept).
+	 */
+	private const MAX_ATTACHMENTS = 10;
 
 	/**
 	 * Valid, unique email addresses from a comma, semicolon or space separated list.
@@ -88,7 +93,7 @@ final class VisitorChatMailer {
 		};
 
 		add_action( 'wp_mail_failed', $capture );
-		$sent = wp_mail( $to, $subject, $this->body( $chat, $message ), $headers );
+		$sent = wp_mail( $to, $subject, $this->body( $chat, $message ), $headers, $this->attachments( $chat ) );
 		remove_action( 'wp_mail_failed', $capture );
 
 		if ( ! $sent ) {
@@ -139,6 +144,14 @@ final class VisitorChatMailer {
 		}
 
 		$sections[] = $this->section( __( 'Conversation', 'wp-cortex' ), VisitorChatReport::details( $chat ) . "\n\n" . VisitorChatReport::transcript( $chat ) );
+
+		$images = count( VisitorImages::paths( (int) $chat['id'], (array) $chat['transcript'] ) );
+
+		if ( $images > self::MAX_ATTACHMENTS ) {
+			/* translators: 1: number of attached images, 2: number of images in the conversation. */
+			$sections[] = sprintf( __( 'The latest %1$d of %2$d images are attached; open the conversation in the admin to see all of them.', 'wp-cortex' ), self::MAX_ATTACHMENTS, $images );
+		}
+
 		$sections[] = __( 'Open in the admin:', 'wp-cortex' ) . ' ' . admin_url( 'admin.php?page=' . Menu::SLUG_VISITORS . '#chat=' . (int) $chat['id'] );
 
 		return implode( "\n\n", $sections ) . "\n";
@@ -166,6 +179,16 @@ final class VisitorChatMailer {
 		}
 
 		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Images of the conversation to attach, the latest MAX_ATTACHMENTS.
+	 *
+	 * @param array $chat Conversation.
+	 * @return string[] Absolute paths.
+	 */
+	private function attachments( array $chat ): array {
+		return array_slice( VisitorImages::paths( (int) $chat['id'], (array) $chat['transcript'] ), -self::MAX_ATTACHMENTS );
 	}
 
 	/**
