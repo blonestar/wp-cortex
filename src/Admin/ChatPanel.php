@@ -71,9 +71,25 @@ final class ChatPanel {
 			array(
 				'screen'     => $screen ? (string) $screen->id : '',
 				'postId'     => $post_id,
-				'adminPages' => AdminPages::from_menu(),
+				'adminPages' => self::admin_pages(),
 			)
 		);
+	}
+
+	/**
+	 * Admin screens the assistant may open: the admin menu, followed by the tabs and
+	 * sections of the Cortex settings screen, which the menu does not list.
+	 *
+	 * @return array<int, array{path: string, label: string}>
+	 */
+	private static function admin_pages(): array {
+		$pages = AdminPages::from_menu();
+
+		if ( current_user_can( 'manage_options' ) ) {
+			$pages = AdminPages::sanitize( array_merge( $pages, ( new SettingsPage() )->chat_screens() ) );
+		}
+
+		return $pages;
 	}
 
 	/**

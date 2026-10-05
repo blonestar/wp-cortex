@@ -6,6 +6,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Fixed
 
+- Admin chat: asking to open a sub-tab, for example the Appearance section of Settings > Visitor chat, opened only the outer tab and the assistant said it could not go further. Every tab and section of Cortex > Settings is now an admin screen the assistant can open directly, and the tab of `open_admin_page` accepts a nested path such as "Visitor chat › Appearance", opened level by level on any screen.
+
 - Visitor chat: saving contact details (`save_contact_details`) failed with a fatal error, so the visitor got "Sorry, the assistant is not available right now" or a generic error after giving their name, email address or website. Two helper methods lost in a merge are restored.
 
 ## [0.4.0] - 2026-10-05
