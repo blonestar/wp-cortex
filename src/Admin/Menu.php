@@ -7,6 +7,7 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Plugin;
 
@@ -21,6 +22,7 @@ final class Menu {
 	public const SLUG_INDEXING = 'wp-cortex-indexing';
 	public const SLUG_SKILLS   = 'wp-cortex-skills';
 	public const SLUG_VISITORS = 'wp-cortex-visitor-chats';
+	public const SLUG_REPORTS  = 'wp-cortex-issue-reports';
 
 	/**
 	 * Hook suffix of the Settings screen.
@@ -49,6 +51,13 @@ final class Menu {
 	 * @var string
 	 */
 	private string $visitors_hook = '';
+
+	/**
+	 * Hook suffix of the Issue reports screen.
+	 *
+	 * @var string
+	 */
+	private string $reports_hook = '';
 
 	/**
 	 * Registers admin hooks.
@@ -94,20 +103,24 @@ final class Menu {
 			array( new SkillsPage(), 'render' )
 		);
 
-		$unread = current_user_can( 'manage_options' ) ? ( new VisitorChatStore() )->unread_count() : 0;
-		$label  = __( 'Visitor chats', 'wp-cortex' );
-
-		if ( $unread > 0 ) {
-			$label .= sprintf( ' <span class="awaiting-mod count-%1$d"><span class="pending-count">%2$s</span></span>', $unread, number_format_i18n( $unread ) );
-		}
+		$can = current_user_can( 'manage_options' );
 
 		$this->visitors_hook = (string) add_submenu_page(
 			self::SLUG_INDEXING,
 			__( 'Cortex Visitor Chats', 'wp-cortex' ),
-			$label,
+			self::count_label( __( 'Visitor chats', 'wp-cortex' ), $can ? ( new VisitorChatStore() )->unread_count() : 0 ),
 			'manage_options',
 			self::SLUG_VISITORS,
 			array( new VisitorChatsPage(), 'render' )
+		);
+
+		$this->reports_hook = (string) add_submenu_page(
+			self::SLUG_INDEXING,
+			__( 'Cortex Issue Reports', 'wp-cortex' ),
+			self::count_label( __( 'Issue reports', 'wp-cortex' ), $can ? ( new IssueReportStore() )->open_count() : 0 ),
+			'manage_options',
+			self::SLUG_REPORTS,
+			array( new IssueReportsPage(), 'render' )
 		);
 
 		$this->settings_hook = (string) add_submenu_page(
@@ -121,6 +134,20 @@ final class Menu {
 	}
 
 	/**
+	 * Menu label with a count bubble when the count is positive.
+	 *
+	 * @param string $label Label.
+	 * @param int    $count Count.
+	 */
+	private static function count_label( string $label, int $count ): string {
+		if ( $count < 1 ) {
+			return $label;
+		}
+
+		return $label . sprintf( ' <span class="awaiting-mod count-%1$d"><span class="pending-count">%2$s</span></span>', $count, number_format_i18n( $count ) );
+	}
+
+	/**
 	 * Enqueues assets on the plugin screens only.
 	 *
 	 * @param string $hook_suffix Current admin page hook suffix.
@@ -130,8 +157,9 @@ final class Menu {
 		$is_indexing = '' !== $this->indexing_hook && $hook_suffix === $this->indexing_hook;
 		$is_skills   = '' !== $this->skills_hook && $hook_suffix === $this->skills_hook;
 		$is_visitors = '' !== $this->visitors_hook && $hook_suffix === $this->visitors_hook;
+		$is_reports  = '' !== $this->reports_hook && $hook_suffix === $this->reports_hook;
 
-		if ( ! $is_settings && ! $is_indexing && ! $is_skills && ! $is_visitors ) {
+		if ( ! $is_settings && ! $is_indexing && ! $is_skills && ! $is_visitors && ! $is_reports ) {
 			return;
 		}
 
@@ -170,7 +198,28 @@ final class Menu {
 			wp_set_script_translations( 'wp-cortex-visitor-chats', 'wp-cortex' );
 			wp_add_inline_script(
 				'wp-cortex-visitor-chats',
-				'window.wpCortexVisitorChats = ' . wp_json_encode( array( 'forwardTo' => (string) get_option( 'admin_email' ) ) ) . ';',
+				'window.wpCortexVisitorChats = ' . wp_json_encode(
+					array(
+						'forwardTo'  => (string) get_option( 'admin_email' ),
+						'reportsUrl' => admin_url( 'admin.php?page=' . self::SLUG_REPORTS ),
+					)
+				) . ';',
+				'before'
+			);
+		}
+
+		if ( $is_reports ) {
+			wp_enqueue_script( 'wp-cortex-issue-reports', WP_CORTEX_URL . 'assets/js/issue-reports.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/issue-reports.js' ), true );
+			wp_set_script_translations( 'wp-cortex-issue-reports', 'wp-cortex' );
+			wp_add_inline_script(
+				'wp-cortex-issue-reports',
+				'window.wpCortexIssueReports = ' . wp_json_encode(
+					array(
+						'chatUrl'    => admin_url( 'admin.php?page=' . self::SLUG_VISITORS ),
+						'categories' => IssueReportStore::category_labels(),
+						'statuses'   => IssueReportStore::status_labels(),
+					)
+				) . ';',
 				'before'
 			);
 		}

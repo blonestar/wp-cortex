@@ -9,6 +9,7 @@ namespace WPCortex\Admin;
 
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ClientIp;
+use WPCortex\Chat\IssueReportMailer;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\Reasoning;
 use WPCortex\Embeddings\OpenAIEmbeddings;
@@ -775,7 +776,7 @@ final class SettingsPage {
 		$this->row_end(
 			sprintf(
 				/* translators: %s: name of the Visitor chats screen. */
-				__( 'Conversations and the contact details visitors leave are stored on the server and listed under %s. No cookie is stored. Mention it in your privacy policy. When off, nothing is stored and contact details cannot be collected.', 'wp-cortex' ),
+				__( 'Conversations and the contact details visitors leave are stored on the server and listed under %s. No cookie is stored. Mention it in your privacy policy. When off, conversations are not stored and contact details cannot be collected; issue reports are still saved.', 'wp-cortex' ),
 				__( 'Cortex > Visitor chats', 'wp-cortex' )
 			)
 		);
@@ -812,6 +813,31 @@ final class SettingsPage {
 		echo '<br />';
 		$this->checkbox( 'public_chat_contact', __( 'Collect contact details from visitors who want to be contacted', 'wp-cortex' ), (bool) Settings::get( 'public_chat_contact' ) );
 		$this->row_end( __( 'The assistant may offer to open a published page (for example the contact page) and opens it only after the visitor agrees. Contact details (name, email, phone, website URL(s), address, company and the request) are collected only when the visitor wants to leave them and confirms them; they require the conversation log.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Issue reports', 'wp-cortex' ) );
+		$this->checkbox( 'public_chat_reports', __( 'Let visitors report problems on the site', 'wp-cortex' ), (bool) Settings::get( 'public_chat_reports' ) );
+		$this->row_end(
+			sprintf(
+				/* translators: %s: name of the Issue reports screen. */
+				__( 'When a visitor points out a problem (for example a typo, a broken image or link, or outdated information), the assistant reports it with the page it is about. Reports are listed under %s, also when the conversation log is off.', 'wp-cortex' ),
+				__( 'Cortex > Issue reports', 'wp-cortex' )
+			)
+		);
+
+		$this->row_start( __( 'Email new reports to', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" placeholder="%3$s" />',
+			$this->name( 'public_chat_report_email' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'public_chat_report_email' ) ),
+			esc_attr__( 'name@example.com, other@example.com', 'wp-cortex' )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of addresses. */
+				__( 'Optional. Up to %d addresses, separated by commas, notified of each new report through the site\'s mail setup. Leave empty to only list reports in the admin.', 'wp-cortex' ),
+				IssueReportMailer::MAX_RECIPIENTS
+			)
+		);
 	}
 
 	/**
