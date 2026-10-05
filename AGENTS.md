@@ -50,7 +50,7 @@ Lint JS with `node --check <file>`. WP-CLI phar: `/opt/Local/resources/extraReso
 
 Semantic versioning `A.B.C`, bumped only when a release is made (not on every commit):
 
-- `C` (patch): only bug fixes and small adjustments since the last release.
+- `C` (patch, the last decimal): always use it for bug fixes and small adjustments since the last release (for example, `0.4.0` -> `0.4.1`).
 - `B` (minor, reset `C` to 0): new features, settings, abilities, endpoints or schema changes.
 - `A` (major, reset `B` and `C`): breaking changes (removed features or options, incompatible data or API changes).
 

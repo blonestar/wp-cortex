@@ -102,6 +102,38 @@ final class SettingsPage {
 	}
 
 	/**
+	 * Every tab and section of the settings screen as an admin screen the chat assistant
+	 * can open directly (open_admin_page), for example "Cortex › Settings › Visitor chat › Appearance".
+	 *
+	 * @return array<int, array{path: string, label: string}>
+	 */
+	public function chat_screens(): array {
+		$base    = 'admin.php?page=' . Menu::SLUG_SETTINGS;
+		$prefix  = __( 'Cortex', 'wp-cortex' ) . ' › ' . __( 'Settings', 'wp-cortex' ) . ' › ';
+		$screens = array();
+
+		foreach ( $this->tabs() as $id => $tab ) {
+			$screens[] = array(
+				'path'  => $base . '&tab=' . $id,
+				'label' => $prefix . $tab['label'],
+			);
+
+			if ( empty( $tab['sections'] ) || count( $tab['sections'] ) < 2 ) {
+				continue;
+			}
+
+			foreach ( $tab['sections'] as $section_id => $section ) {
+				$screens[] = array(
+					'path'  => $base . '&tab=' . $id . '&section=' . $section_id,
+					'label' => $prefix . $tab['label'] . ' › ' . $section[0],
+				);
+			}
+		}
+
+		return $screens;
+	}
+
+	/**
 	 * Renders the page.
 	 */
 	public function render(): void {
