@@ -653,20 +653,29 @@
 		return normalizeLabel( label );
 	}
 
-	// ACF initializes its tabs on ready, so retry for a few seconds.
+	// Opens a tab path such as "Visitor chat › Appearance" level by level: a nested tab
+	// only becomes visible after its parent is selected. ACF initializes its tabs on
+	// ready, so each level is retried for a few seconds.
 	function applyPendingTab() {
-		var label = takePendingTab();
-		if ( ! label ) {
+		var path = takePendingTab();
+		if ( ! path ) {
 			return;
 		}
+		var parts = path.split( /\s*[›>]\s*/ ).filter( Boolean );
+		var level = 0;
 		var tries = 0;
 		( function attempt() {
-			if ( clickTab( label ) ) {
-				reportTab( label, true );
+			if ( clickTab( parts[ level ] ) ) {
+				if ( ++level >= parts.length ) {
+					reportTab( parts.join( ' › ' ), true );
+					return;
+				}
+				tries = 0;
+				window.setTimeout( attempt, 100 );
 			} else if ( ++tries < 12 ) {
 				window.setTimeout( attempt, 250 );
 			} else {
-				reportTab( label, false );
+				reportTab( parts[ level ], false );
 			}
 		}() );
 	}

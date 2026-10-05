@@ -545,7 +545,7 @@ final class ChatAgent {
 					),
 					'tab'  => array(
 						'type'        => 'string',
-						'description' => 'Optional. The name of a tab to open on that screen after it loads. Use it when the user names a tab; tabs of other screens are not listed.',
+						'description' => 'Optional. The name of a tab to open on that screen after it loads. Use it when the user names a tab; tabs of other screens are not listed. For a tab nested inside another tab, give the path from the outer tab separated by " › ", for example "Visitor chat › Appearance".',
 					),
 				),
 				'required'   => array( 'page' ),
@@ -627,6 +627,10 @@ final class ChatAgent {
 	/**
 	 * Handles the select_tab function. Only tabs reported for the current screen can be selected.
 	 *
+	 * After open_admin_page in the same reply, the browser leaves the current screen, so the
+	 * tab is appended to the tab path opened on the new screen instead (for example a saved
+	 * skill opening a settings tab and then its section).
+	 *
 	 * @param FunctionCall $call    Function call.
 	 * @param string[]     $tabs    Tab labels on the screen the user is viewing.
 	 * @param array        $actions UI actions (by reference).
@@ -634,6 +638,23 @@ final class ChatAgent {
 	private function handle_select_tab( FunctionCall $call, array $tabs, array &$actions ): FunctionResponse {
 		$args  = (array) $call->getArgs();
 		$label = (string) ( $args['tab'] ?? '' );
+
+		foreach ( $actions as $index => $action ) {
+			if ( 'navigate' !== $action['type'] ) {
+				continue;
+			}
+
+			$label = sanitize_text_field( $label );
+			$path  = isset( $action['tab'] ) ? $action['tab'] . ' › ' . $label : $label;
+
+			if ( '' === $label || mb_strlen( $path ) > AdminPages::MAX_TAB_LENGTH ) {
+				break;
+			}
+
+			$actions[ $index ]['tab'] = $path;
+
+			return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
+		}
 
 		if ( ! in_array( $label, $tabs, true ) ) {
 			return new FunctionResponse(
@@ -955,7 +976,7 @@ final class ChatAgent {
 			'To find posts by an author, use the author filter of search-content, not a text query. For duplicate titles, meta descriptions or content, use find-duplicates.',
 			'Call open_post ONLY when the user explicitly asks to open, go to, edit or show a specific post (including references such as "this one" or "open the first" to earlier results). Otherwise just list the results.',
 			'When the user asks to go to an admin screen (settings, plugins, users, media library, a post type list and similar), call open_admin_page if it is available.',
-			'To switch to a tab on the screen the user is currently viewing, call select_tab if it is available. When the user names both an admin screen and a tab, call open_admin_page with its tab parameter. You cannot click anything other than tabs.',
+			'To switch to a tab on the screen the user is currently viewing, call select_tab if it is available. When the user names both an admin screen and a tab, call open_admin_page with its tab parameter (a path such as "Visitor chat › Appearance" for nested tabs). You cannot click anything other than tabs.',
 			'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.',
 		);
 
