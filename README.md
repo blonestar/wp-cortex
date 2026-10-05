@@ -112,7 +112,11 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 
 ### Data directory
 
-By default the databases live in `wp-content/uploads/wp-cortex-<random>/`. The random directory name is generated once and stored in the `wp_cortex_data_dir_name` option. The directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**, so on Nginx the fallback relies only on the unguessable name. The Indexing screen warns when the fallback is used and checks over HTTP whether `admin.sqlite` is downloadable.
+By default the databases live in `wp-content/uploads/.wp-cortex-<random>/`. The random directory name is generated once and stored in the `wp_cortex_data_dir_name` option. The directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**. The name starts with a dot because most Nginx configurations for WordPress (Local, for example) refuse hidden paths; where the server has no such rule, the fallback relies only on the unguessable name. Directories created by earlier versions (`wp-cortex-<random>`) are renamed to the hidden name automatically. The Indexing screen warns when the fallback is used and checks over HTTP whether `admin.sqlite` is downloadable; if it is, add a rule like this to the Nginx server block (or ask the host to):
+
+```nginx
+location ~ /\. { deny all; }
+```
 
 For real protection, put the data outside the web root:
 
