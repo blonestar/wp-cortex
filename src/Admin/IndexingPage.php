@@ -39,7 +39,7 @@ final class IndexingPage {
 	}
 
 	/**
-	 * Storage card with location and exposure warnings.
+	 * Storage card with location, warnings and the public access check (filled in by indexing.js).
 	 */
 	private function render_storage(): void {
 		echo '<div class="wp-cortex-card"><h2>' . esc_html__( 'Storage', 'wp-cortex' ) . '</h2>';
@@ -56,16 +56,18 @@ final class IndexingPage {
 			echo '</p></div>';
 		}
 
-		if ( true === Storage::is_exposed() ) {
-			echo '<div class="notice notice-error inline"><p><strong>';
-			echo esc_html__( 'The index database is publicly downloadable!', 'wp-cortex' );
-			echo '</strong> ';
-			echo esc_html__( 'Block access to the data directory in your web server configuration, or move it outside the web root with WP_CORTEX_DATA_DIR.', 'wp-cortex' );
-			echo '</p><p>';
-			echo esc_html__( 'On Nginx, refusing hidden paths (names starting with a dot) protects it:', 'wp-cortex' );
-			echo ' <code>location ~ /\\. { deny all; }</code>';
-			echo '</p></div>';
-		}
+		echo '<div class="wp-cortex-storage-check is-checking" id="wp-cortex-storage-check">';
+		echo '<p class="wp-cortex-storage-check-summary" aria-live="polite"><span class="dashicons dashicons-update" aria-hidden="true"></span> <strong data-check-summary>' . esc_html__( 'Checking public access…', 'wp-cortex' ) . '</strong></p>';
+		echo '<ul class="wp-cortex-storage-check-list" data-check-list></ul>';
+		echo '<div class="wp-cortex-storage-check-help" data-check-help hidden><p>';
+		echo esc_html__( 'Block access to the data directory in your web server configuration, or move it outside the web root with WP_CORTEX_DATA_DIR.', 'wp-cortex' );
+		echo '</p><p>';
+		echo esc_html__( 'On Nginx, refusing hidden paths (names starting with a dot) protects it:', 'wp-cortex' );
+		echo ' <code>location ~ /\\. { deny all; }</code>';
+		echo '</p></div>';
+		echo '<p class="wp-cortex-storage-check-meta"><span data-check-time></span> ';
+		echo '<button type="button" class="button button-small" id="wp-cortex-storage-recheck" disabled>' . esc_html__( 'Test again', 'wp-cortex' ) . '</button></p>';
+		echo '</div>';
 
 		echo '</div>';
 	}
