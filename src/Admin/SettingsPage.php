@@ -79,6 +79,7 @@ final class SettingsPage {
 				'icon'     => 'dashicons-format-chat',
 				'sections' => array(
 					'assistant' => array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
+					'skills'    => array( __( 'Skills', 'wp-cortex' ), __( 'Procedures the admin chat saves with your confirmation and follows when a request matches them.', 'wp-cortex' ), array( $this, 'fields_skills' ) ),
 				),
 			),
 			'visitors'   => array(
@@ -516,6 +517,41 @@ final class SettingsPage {
 			sprintf(
 				/* translators: %d: maximum number of characters. */
 				__( 'Optional. Added to the system prompt of every chat message, for example a preferred language, tone or answer format. Takes precedence over the default instructions. Up to %d characters.', 'wp-cortex' ),
+				Settings::CHAT_INSTRUCTIONS_MAX
+			)
+		);
+	}
+
+	/**
+	 * Admin chat skills section: on/off switch, skill language and custom skill instructions.
+	 */
+	public function fields_skills(): void {
+		$this->row_start( __( 'Enabled', 'wp-cortex' ) );
+		$this->checkbox( 'skills_enabled', __( 'Use chat skills', 'wp-cortex' ), Settings::skills_enabled() );
+		$this->row_end( __( 'Shows Cortex > Skills and lets the admin chat use saved skills and propose new ones. When off, the Skills screen is hidden and no skill is used or proposed; saved skills are kept.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Language', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" maxlength="%3$d" placeholder="%4$s" />',
+			$this->name( 'skills_language' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( Settings::skills_language() ),
+			(int) Settings::SKILLS_LANGUAGE_MAX,
+			esc_attr( Settings::SKILLS_LANGUAGE_DEFAULT )
+		);
+		$this->row_end( __( 'The language the assistant writes proposed skills in (name, description and instructions), whatever language you chat in. Empty means English.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Custom instructions', 'wp-cortex' ) );
+		printf(
+			'<textarea name="%1$s" rows="6" class="large-text" maxlength="%2$d" placeholder="%3$s">%4$s</textarea>',
+			$this->name( 'skills_instructions' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			(int) Settings::CHAT_INSTRUCTIONS_MAX,
+			esc_attr__( 'For example: Keep skills to at most five steps. Offer to save a skill only after tasks that took three or more steps.', 'wp-cortex' ),
+			esc_textarea( (string) Settings::get( 'skills_instructions' ) )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of characters. */
+				__( 'Optional. Added to the admin chat system prompt while skills are on, for example how skills should be written or when the assistant should offer one. Up to %d characters.', 'wp-cortex' ),
 				Settings::CHAT_INSTRUCTIONS_MAX
 			)
 		);

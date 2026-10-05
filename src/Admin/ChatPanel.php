@@ -8,6 +8,7 @@
 namespace WPCortex\Admin;
 
 use WPCortex\Plugin;
+use WPCortex\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -110,7 +111,8 @@ final class ChatPanel {
 				'screen'      => '',
 				'postId'      => 0,
 				'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
-				'skillsUrl'   => admin_url( 'admin.php?page=' . Menu::SLUG_SKILLS ),
+				'skills'      => Settings::skills_enabled(),
+				'skillsUrl'   => Settings::skills_enabled() ? admin_url( 'admin.php?page=' . Menu::SLUG_SKILLS ) : '',
 				'adminPages'  => array(),
 				'frontend'    => false,
 			),
