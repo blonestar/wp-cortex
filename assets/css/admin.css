@@ -46,6 +46,89 @@
 	color: #2271b1;
 }
 
+.wp-cortex-storage-check {
+	margin: 12px 0 4px;
+	padding: 8px 12px;
+	border-left: 4px solid #c3c4c7;
+	background: #f6f7f7;
+}
+
+.wp-cortex-storage-check.is-ok,
+.wp-cortex-storage-check.is-outside {
+	border-left-color: #00a32a;
+	background: #edfaef;
+}
+
+.wp-cortex-storage-check.is-exposed {
+	border-left-color: #d63638;
+	background: #fcf0f1;
+}
+
+.wp-cortex-storage-check.is-unknown {
+	border-left-color: #dba617;
+	background: #fcf9e8;
+}
+
+.wp-cortex-storage-check p {
+	margin: 6px 0;
+}
+
+.wp-cortex-storage-check-summary {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.wp-cortex-storage-check.is-ok .wp-cortex-storage-check-summary,
+.wp-cortex-storage-check.is-outside .wp-cortex-storage-check-summary {
+	color: #00450c;
+}
+
+.wp-cortex-storage-check.is-exposed .wp-cortex-storage-check-summary {
+	color: #8a2424;
+}
+
+.wp-cortex-storage-check.is-unknown .wp-cortex-storage-check-summary {
+	color: #614200;
+}
+
+.wp-cortex-storage-check.is-checking .dashicons-update {
+	animation: wp-cortex-spin 1s linear infinite;
+}
+
+.wp-cortex-storage-check-list {
+	margin: 4px 0 4px 28px;
+}
+
+.wp-cortex-storage-check-list li {
+	margin: 2px 0;
+}
+
+.wp-cortex-storage-check-list li.is-protected strong,
+.wp-cortex-storage-check-list li.is-reachable strong {
+	color: #00450c;
+}
+
+.wp-cortex-storage-check-list li.is-exposed strong {
+	color: #b32d2e;
+}
+
+.wp-cortex-storage-check-list li.is-unknown strong {
+	color: #614200;
+}
+
+.wp-cortex-storage-check-list li.is-missing strong {
+	color: #646970;
+	font-weight: 400;
+}
+
+.wp-cortex-storage-check-meta {
+	color: #646970;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
 .wp-cortex-stats-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
