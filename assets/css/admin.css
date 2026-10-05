@@ -24,6 +24,28 @@
 	margin: 16px 0 8px;
 }
 
+.wp-cortex-data-dir {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+}
+
+.wp-cortex-data-dir-mask {
+	letter-spacing: 1px;
+	user-select: none;
+}
+
+.wp-cortex-data-dir-toggle {
+	color: #646970;
+	text-decoration: none;
+}
+
+.wp-cortex-data-dir-toggle:hover,
+.wp-cortex-data-dir-toggle:focus {
+	color: #2271b1;
+}
+
 .wp-cortex-stats-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));

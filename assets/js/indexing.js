@@ -294,6 +294,25 @@
 		} );
 	}
 
+	var dirToggle = document.getElementById( 'wp-cortex-data-dir-toggle' );
+	if ( dirToggle ) {
+		dirToggle.addEventListener( 'click', function () {
+			var path = document.getElementById( 'wp-cortex-data-dir-path' );
+			var mask = root.querySelector( '.wp-cortex-data-dir-mask' );
+			var show = path.hidden;
+			var label = show ? __( 'Hide data directory', 'wp-cortex' ) : __( 'Show data directory', 'wp-cortex' );
+
+			path.hidden = ! show;
+			if ( mask ) {
+				mask.hidden = show;
+			}
+			dirToggle.setAttribute( 'aria-expanded', show ? 'true' : 'false' );
+			dirToggle.setAttribute( 'aria-label', label );
+			dirToggle.title = label;
+			dirToggle.firstElementChild.className = 'dashicons ' + ( show ? 'dashicons-hidden' : 'dashicons-visibility' );
+		} );
+	}
+
 	els.sync.addEventListener( 'click', function () {
 		start( 'sync' );
 	} );
