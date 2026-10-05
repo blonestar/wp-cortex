@@ -49,9 +49,10 @@ final class SettingsPage {
 	 * Tabs of the settings screen: ID => label, dashicon and the sections it holds.
 	 *
 	 * Each section (keyed by ID) is a heading, an intro and the method rendering its fields.
-	 * A tab with more than one section shows them as vertical sub-tabs.
+	 * A tab with more than one section shows them as vertical sub-tabs. A read-only tab
+	 * has a `render` callback instead of sections and hides the save bar.
 	 *
-	 * @return array<string, array{label: string, icon: string, sections: array<string, array{0: string, 1: string, 2: callable}>}>
+	 * @return array<string, array{label: string, icon: string, sections?: array<string, array{0: string, 1: string, 2: callable}>, render?: callable}>
 	 */
 	private function tabs(): array {
 		return array(
@@ -90,6 +91,11 @@ final class SettingsPage {
 					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
 				),
 			),
+			'changelog'  => array(
+				'label'  => __( 'Changelog', 'wp-cortex' ),
+				'icon'   => 'dashicons-backup',
+				'render' => array( new Changelog(), 'render' ),
+			),
 		);
 	}
 
@@ -116,13 +122,14 @@ final class SettingsPage {
 		echo '<nav class="nav-tab-wrapper wp-cortex-tabs" role="tablist" aria-label="' . esc_attr__( 'Settings sections', 'wp-cortex' ) . '">';
 		foreach ( $tabs as $id => $tab ) {
 			printf(
-				'<a href="%1$s" class="nav-tab%2$s" id="wp-cortex-tab-%3$s" role="tab" aria-controls="wp-cortex-panel-%3$s" aria-selected="%4$s" data-tab="%3$s"><span class="dashicons %5$s" aria-hidden="true"></span>%6$s</a>',
+				'<a href="%1$s" class="nav-tab%2$s" id="wp-cortex-tab-%3$s" role="tab" aria-controls="wp-cortex-panel-%3$s" aria-selected="%4$s" data-tab="%3$s"%7$s><span class="dashicons %5$s" aria-hidden="true"></span>%6$s</a>',
 				esc_url( add_query_arg( 'tab', $id, admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ) ),
 				$active === $id ? ' nav-tab-active' : '',
 				esc_attr( $id ),
 				$active === $id ? 'true' : 'false',
 				esc_attr( $tab['icon'] ),
-				esc_html( $tab['label'] )
+				esc_html( $tab['label'] ),
+				isset( $tab['render'] ) ? ' data-read-only="1"' : ''
 			);
 		}
 		echo '</nav>';
@@ -142,12 +149,16 @@ final class SettingsPage {
 				$this->reindex_notice();
 			}
 
-			$this->render_sections( $id, $tab['sections'], $active === $id ? $section : '' );
+			if ( isset( $tab['render'] ) ) {
+				call_user_func( $tab['render'] );
+			} else {
+				$this->render_sections( $id, $tab['sections'], $active === $id ? $section : '' );
+			}
 
 			echo '</div>';
 		}
 
-		echo '<div class="wp-cortex-settings-submit">';
+		printf( '<div class="wp-cortex-settings-submit" %s>', isset( $tabs[ $active ]['render'] ) ? 'hidden' : '' );
 		submit_button( __( 'Save settings', 'wp-cortex' ), 'primary', 'submit', false );
 		echo '</div>';
 		echo '</form></div>';
