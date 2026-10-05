@@ -73,6 +73,8 @@
 	var initialFilter = new URLSearchParams( window.location.search ).get( 'filter' );
 	var state = { filter: -1 !== [ 'unread', 'contact' ].indexOf( initialFilter ) ? initialFilter : '', search: '', page: 1, pages: 1, total: 0, chats: [], counts: null };
 	var current = null;
+	// Blob URLs of the loaded images of the open conversation, by file name.
+	var imageUrls = {};
 
 	/* ---------- Helpers ---------- */
 
@@ -374,11 +376,56 @@
 		return m;
 	}
 
+	function clearImages() {
+		Object.keys( imageUrls ).forEach( function ( name ) {
+			URL.revokeObjectURL( imageUrls[ name ] );
+		} );
+		imageUrls = {};
+	}
+
+	function loadImage( name ) {
+		if ( imageUrls[ name ] ) {
+			return Promise.resolve( imageUrls[ name ] );
+		}
+		return apiFetch( { path: PATH + '/' + current.id + '/images/' + encodeURIComponent( name ) } ).then( function ( res ) {
+			var bin = window.atob( res.data );
+			var bytes = new Uint8Array( bin.length );
+			for ( var i = 0; i < bin.length; i++ ) {
+				bytes[ i ] = bin.charCodeAt( i );
+			}
+			imageUrls[ name ] = URL.createObjectURL( new Blob( [ bytes ], { type: res.mime } ) );
+			return imageUrls[ name ];
+		} );
+	}
+
+	// Images are loaded through the REST API (they are not publicly reachable) and shown
+	// as blob URLs; a click opens the full image in a new tab.
+	function renderImage( name ) {
+		var wrap = el( 'a', 'wp-cortex-vchat-image', __( 'Loading image…', 'wp-cortex' ) );
+		wrap.target = '_blank';
+		wrap.rel = 'noopener';
+		loadImage( name ).then( function ( url ) {
+			var img = el( 'img' );
+			img.src = url;
+			img.alt = __( 'Image attached by the visitor', 'wp-cortex' );
+			wrap.textContent = '';
+			wrap.href = url;
+			wrap.title = __( 'Open the full image', 'wp-cortex' );
+			wrap.appendChild( img );
+		} ).catch( function () {
+			wrap.textContent = __( 'The image is no longer available.', 'wp-cortex' );
+		} );
+		return wrap;
+	}
+
 	function renderItem( item ) {
 		var m;
 		switch ( item.role ) {
 			case 'user':
 				m = addMessage( 'user', item.text || '', false, item.at );
+				if ( item.image ) {
+					m.insertBefore( renderImage( item.image ), m.firstChild );
+				}
 				if ( item.page ) {
 					var on = el( 'span', 'wp-cortex-vchat-page', __( 'on', 'wp-cortex' ) + ' ' );
 					on.appendChild( link( item.page.title || item.page.url, item.page.url ) );
@@ -664,6 +711,7 @@
 
 	function openChat( id ) {
 		clearNotice();
+		clearImages();
 		els.listView.hidden = true;
 		els.detail.hidden = false;
 		els.transcript.innerHTML = '';
@@ -687,6 +735,7 @@
 
 	function showList() {
 		current = null;
+		clearImages();
 		els.detail.hidden = true;
 		els.listView.hidden = false;
 		load();

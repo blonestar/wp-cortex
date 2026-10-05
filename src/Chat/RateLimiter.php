@@ -10,7 +10,8 @@ namespace WPCortex\Chat;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Counts visitor chat messages per client IP (ClientIp) in a fixed one-hour window (transients).
+ * Counts visitor chat messages (and, separately, attached images) per client IP (ClientIp)
+ * in a fixed one-hour window (transients).
  */
 final class RateLimiter {
 
@@ -22,10 +23,11 @@ final class RateLimiter {
 	 * Records one message for the client and tells whether it is within the limit.
 	 * Messages over the limit are not counted.
 	 *
-	 * @param int $limit Messages allowed per hour.
+	 * @param int    $limit  Messages allowed per hour.
+	 * @param string $bucket What is counted: "" for messages, "image" for attached images.
 	 */
-	public static function allow( int $limit ): bool {
-		$key   = self::TRANSIENT_PREFIX . substr( wp_hash( ClientIp::get() ), 0, 32 );
+	public static function allow( int $limit, string $bucket = '' ): bool {
+		$key   = self::TRANSIENT_PREFIX . substr( wp_hash( $bucket . ClientIp::get() ), 0, 32 );
 		$entry = get_transient( $key );
 		$now   = time();
 
