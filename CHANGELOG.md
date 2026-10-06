@@ -4,6 +4,14 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Issue reports show the images the visitor attached while reporting the problem (for example a screenshot), and the notification email says how many there are. Images are kept with the conversation and disappear when it is deleted.
+
+### Fixed
+
+- A visitor who followed up on a problem they had already reported (with more details or a screenshot) created a second report for the same problem. While the conversation log is on, the visitor chat now updates the existing open report of the conversation instead.
+
 ## [0.8.0] - 2026-10-06
 
 ### Added

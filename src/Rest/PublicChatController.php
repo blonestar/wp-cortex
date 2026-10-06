@@ -175,7 +175,9 @@ final class PublicChatController {
 		$store   = new VisitorChatStore();
 		$chat_id = Settings::get( 'public_chat_log' ) ? $store->open( (string) $request->get_param( 'session' ), $post_id ) : 0;
 
-		$result = ( new PublicChatAgent() )->respond( $message, is_array( $history ) ? $history : array(), $post_id, $chat_id, $image, (string) $request->get_param( 'page_url' ) );
+		// Stored before the turn, so issue reports of this turn can refer to the image.
+		$stored = $image && $chat_id > 0 ? VisitorImages::store( $chat_id, $image ) : '';
+		$result = ( new PublicChatAgent() )->respond( $message, is_array( $history ) ? $history : array(), $post_id, $chat_id, $image, (string) $request->get_param( 'page_url' ), $stored );
 
 		if ( is_wp_error( $result ) ) {
 			return $result;
@@ -190,8 +192,6 @@ final class PublicChatController {
 				'post_id' => $post_id,
 				'at'      => $now,
 			);
-
-			$stored = $image ? VisitorImages::store( $chat_id, $image ) : '';
 
 			if ( '' !== $stored ) {
 				$visitor['image'] = $stored;

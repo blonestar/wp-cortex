@@ -74,6 +74,11 @@ final class IssueReportMailer {
 			$lines[] = __( 'Edit the page:', 'wp-cortex' ) . ' ' . admin_url( 'post.php?post=' . (int) $report['page']['id'] . '&action=edit' );
 		}
 
+		if ( $report['images'] ) {
+			/* translators: %d: number of images. */
+			$lines[] = sprintf( _n( 'The visitor attached %d image (see the report in the admin).', 'The visitor attached %d images (see the report in the admin).', count( $report['images'] ), 'wp-cortex' ), count( $report['images'] ) );
+		}
+
 		$lines[] = '';
 		$lines[] = __( 'Open in the admin:', 'wp-cortex' ) . ' ' . admin_url( 'admin.php?page=' . Menu::SLUG_REPORTS );
 
