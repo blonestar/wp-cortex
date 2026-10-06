@@ -112,7 +112,7 @@ final class ChatPanel {
 				'postId'      => 0,
 				'settingsUrl' => admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ),
 				'skills'      => Settings::skills_enabled(),
-				'skillsUrl'   => Settings::skills_enabled() ? admin_url( 'admin.php?page=' . Menu::SLUG_SKILLS ) : '',
+				'skillsUrl'   => Settings::skills_enabled() ? admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS . '&tab=skills' ) : '',
 				'adminPages'  => array(),
 				'frontend'    => false,
 			),

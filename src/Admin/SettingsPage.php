@@ -51,11 +51,12 @@ final class SettingsPage {
 	/**
 	 * Tabs of the settings screen: ID => label, dashicon and the sections it holds.
 	 *
-	 * Each section (keyed by ID) is a heading, an intro and the method rendering its fields.
-	 * A tab with more than one section shows them as vertical sub-tabs. A read-only tab
-	 * has a `render` callback instead of sections and hides the save bar.
+	 * Each section (keyed by ID) is a heading, an intro, the method rendering its fields and
+	 * optionally `true` when it is read-only (hides the save bar). A tab with more than one
+	 * section shows them as vertical sub-tabs. A read-only tab has a `render` callback
+	 * instead of sections and hides the save bar.
 	 *
-	 * @return array<string, array{label: string, icon: string, sections?: array<string, array{0: string, 1: string, 2: callable}>, render?: callable}>
+	 * @return array<string, array{label: string, icon: string, sections?: array<string, array{0: string, 1: string, 2: callable, 3?: bool}>, render?: callable}>
 	 */
 	private function tabs(): array {
 		return array(
@@ -80,8 +81,12 @@ final class SettingsPage {
 				'icon'     => 'dashicons-format-chat',
 				'sections' => array(
 					'assistant' => array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
-					'skills'    => array( __( 'Skills', 'wp-cortex' ), __( 'Procedures the admin chat saves with your confirmation and follows when a request matches them.', 'wp-cortex' ), array( $this, 'fields_skills' ) ),
 				),
+			),
+			'skills'     => array(
+				'label'    => __( 'Skills', 'wp-cortex' ),
+				'icon'     => 'dashicons-welcome-learn-more',
+				'sections' => $this->skills_sections(),
 			),
 			'visitors'   => array(
 				'label'    => __( 'Visitor chat', 'wp-cortex' ),
@@ -109,6 +114,42 @@ final class SettingsPage {
 				'render' => array( new Changelog(), 'render' ),
 			),
 		);
+	}
+
+	/**
+	 * Sections of the Skills tab. The saved skills list is shown only while skills are on;
+	 * it saves through the REST API, so it is read-only for the settings form.
+	 *
+	 * @return array<string, array>
+	 */
+	private function skills_sections(): array {
+		$sections = array();
+
+		if ( Settings::skills_enabled() ) {
+			$sections['saved'] = array( __( 'Saved skills', 'wp-cortex' ), __( 'Procedures the chat assistant follows when a request matches them, for example how to reach a settings tab. The assistant can propose a skill after a task; it is only saved when you confirm it in the chat. Inactive skills are not offered to the assistant.', 'wp-cortex' ), array( new SkillsPage(), 'render' ), true );
+		}
+
+		$sections['settings'] = array( __( 'Settings', 'wp-cortex' ), __( 'Whether the admin chat uses skills and how it writes the skills it proposes.', 'wp-cortex' ), array( $this, 'fields_skills' ) );
+
+		return $sections;
+	}
+
+	/**
+	 * Whether the save bar is hidden for a tab and section: read-only tabs and sections have nothing to save.
+	 *
+	 * @param array  $tab     Tab definition.
+	 * @param string $section Requested section ID; the first section when unknown.
+	 */
+	private function is_read_only( array $tab, string $section ): bool {
+		if ( isset( $tab['render'] ) ) {
+			return true;
+		}
+
+		if ( ! isset( $tab['sections'][ $section ] ) ) {
+			$section = (string) array_key_first( $tab['sections'] );
+		}
+
+		return ! empty( $tab['sections'][ $section ][3] );
 	}
 
 	/**
@@ -215,10 +256,16 @@ final class SettingsPage {
 			echo '</div>';
 		}
 
-		printf( '<div class="wp-cortex-settings-submit" %s>', isset( $tabs[ $active ]['render'] ) ? 'hidden' : '' );
+		printf( '<div class="wp-cortex-settings-submit" %s>', $this->is_read_only( $tabs[ $active ], $section ) ? 'hidden' : '' );
 		submit_button( __( 'Save settings', 'wp-cortex' ), 'primary', 'submit', false );
 		echo '</div>';
-		echo '</form></div>';
+		echo '</form>';
+
+		if ( Settings::skills_enabled() ) {
+			( new SkillsPage() )->render_form();
+		}
+
+		echo '</div>';
 	}
 
 	/**
@@ -240,13 +287,14 @@ final class SettingsPage {
 			echo '<nav class="wp-cortex-subtabs" role="tablist" aria-orientation="vertical">';
 			foreach ( $sections as $id => $section ) {
 				printf(
-					'<a href="%1$s" class="wp-cortex-subtab%2$s" id="wp-cortex-subtab-%3$s-%4$s" role="tab" aria-controls="wp-cortex-section-%3$s-%4$s" aria-selected="%5$s" data-section="%4$s">%6$s</a>',
+					'<a href="%1$s" class="wp-cortex-subtab%2$s" id="wp-cortex-subtab-%3$s-%4$s" role="tab" aria-controls="wp-cortex-section-%3$s-%4$s" aria-selected="%5$s" data-section="%4$s"%7$s>%6$s</a>',
 					esc_url( add_query_arg( array( 'tab' => $tab, 'section' => $id ), admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ) ),
 					$active === $id ? ' is-active' : '',
 					esc_attr( $tab ),
 					esc_attr( $id ),
 					$active === $id ? 'true' : 'false',
-					esc_html( $section[0] )
+					esc_html( $section[0] ),
+					empty( $section[3] ) ? '' : ' data-read-only="1"'
 				);
 			}
 			echo '</nav><div class="wp-cortex-subtab-panels">';
@@ -586,12 +634,12 @@ final class SettingsPage {
 	}
 
 	/**
-	 * Admin chat skills section: on/off switch, skill language and custom skill instructions.
+	 * Skills settings section: on/off switch, skill language and custom skill instructions.
 	 */
 	public function fields_skills(): void {
 		$this->row_start( __( 'Enabled', 'wp-cortex' ) );
 		$this->checkbox( 'skills_enabled', __( 'Use chat skills', 'wp-cortex' ), Settings::skills_enabled() );
-		$this->row_end( __( 'Shows Cortex > Skills and lets the admin chat use saved skills and propose new ones. When off, the Skills screen is hidden and no skill is used or proposed; saved skills are kept.', 'wp-cortex' ) );
+		$this->row_end( __( 'Lets the admin chat use saved skills and propose new ones, and lists them on this tab. When off, the saved skills list is hidden and no skill is used or proposed; saved skills are kept.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'Language', 'wp-cortex' ) );
 		printf(

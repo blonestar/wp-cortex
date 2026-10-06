@@ -418,8 +418,8 @@
 				return;
 			}
 			if ( saveBar ) {
-				// Read-only tabs (Changelog) have nothing to save.
-				saveBar.hidden = tab.hasAttribute( 'data-read-only' );
+				// Read-only tabs (Changelog) and sections (Saved skills) have nothing to save.
+				saveBar.hidden = tab.hasAttribute( 'data-read-only' ) || !! ( section && section.hasAttribute( 'data-read-only' ) );
 			}
 			if ( window.history && window.history.replaceState ) {
 				window.history.replaceState( null, '', target.href );
