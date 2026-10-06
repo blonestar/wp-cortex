@@ -7,16 +7,26 @@
 
 namespace WPCortex\Storage;
 
+use WPCortex\Indexing\IndexRun;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Resolves where the index databases live.
  *
- * Preferred: a directory outside the web root, set via the WP_CORTEX_DATA_DIR constant.
- * Fallback: a randomly named hidden directory in uploads (".wp-cortex-<random>"), protected
- * with deny rules. Nginx ignores the deny rules, but most Nginx configurations refuse paths
- * with a segment starting with a dot; where neither applies, the fallback relies on the
- * unguessable directory name.
+ * The data directory is a randomly named hidden directory (".wp-cortex-<random>"). Its parent
+ * is, in order of preference:
+ *
+ * 1. The WP_CORTEX_DATA_DIR constant, used as the data directory itself.
+ * 2. The host's private directory that the web server never serves (WP Engine, Pantheon).
+ * 3. The directory above the web root, when PHP can write to it.
+ * 4. Fallback: uploads, protected with deny rules. Nginx ignores the deny rules, but most
+ *    Nginx configurations refuse paths with a segment starting with a dot; where neither
+ *    applies, the fallback relies on the unguessable directory name.
+ *
+ * The first writable location is chosen once and stored (as a location key, not a path, so
+ * copies of the site to other environments resolve it again). Data that earlier versions
+ * stored in uploads is moved to a private location by maybe_relocate().
  */
 final class Storage {
 
@@ -26,9 +36,21 @@ final class Storage {
 	public const SCOPES = array( self::SCOPE_PUBLIC, self::SCOPE_ADMIN );
 
 	private const DIR_OPTION         = 'wp_cortex_data_dir_name';
+	private const LOCATION_OPTION    = 'wp_cortex_data_location';
 	private const IMAGES_DIR         = 'visitor-images';
 	private const EXPOSURE_TRANSIENT = 'wp_cortex_storage_exposed';
 	private const DIR_PREFIX         = '.wp-cortex-';
+
+	public const LOCATION_CONSTANT = 'constant';
+	public const LOCATION_WPENGINE = 'wpengine';
+	public const LOCATION_PANTHEON = 'pantheon';
+	public const LOCATION_OUTSIDE  = 'outside';
+	public const LOCATION_UPLOADS  = 'uploads';
+
+	/**
+	 * Automatic locations, in order of preference (uploads is the fallback).
+	 */
+	private const LOCATIONS = array( self::LOCATION_WPENGINE, self::LOCATION_PANTHEON, self::LOCATION_OUTSIDE, self::LOCATION_UPLOADS );
 
 	/**
 	 * Directory name resolved in this request.
@@ -38,21 +60,110 @@ final class Storage {
 	private static ?string $dir_name = null;
 
 	/**
+	 * Location key resolved in this request.
+	 *
+	 * @var string|null
+	 */
+	private static ?string $location = null;
+
+	/**
 	 * Absolute path of the data directory (no trailing slash).
 	 */
 	public static function data_dir(): string {
-		if ( defined( 'WP_CORTEX_DATA_DIR' ) && WP_CORTEX_DATA_DIR ) {
+		$location = self::location();
+
+		if ( self::LOCATION_CONSTANT === $location ) {
 			return untrailingslashit( (string) WP_CORTEX_DATA_DIR );
 		}
 
-		return untrailingslashit( wp_upload_dir( null, false )['basedir'] ) . '/' . self::dir_name();
+		return self::location_base( $location ) . '/' . self::dir_name();
 	}
 
 	/**
-	 * Whether the data directory sits inside the publicly served uploads directory.
+	 * Where the data directory is: one of the LOCATION_* constants.
+	 *
+	 * Chooses and stores the location on first use. While data of an earlier version is
+	 * still in uploads, that is the location until maybe_relocate() moves it.
+	 */
+	public static function location(): string {
+		if ( defined( 'WP_CORTEX_DATA_DIR' ) && WP_CORTEX_DATA_DIR ) {
+			return self::LOCATION_CONSTANT;
+		}
+
+		if ( null !== self::$location ) {
+			return self::$location;
+		}
+
+		$stored = get_option( self::LOCATION_OPTION );
+
+		if ( is_string( $stored ) && in_array( $stored, self::LOCATIONS, true ) && null !== self::location_base( $stored ) ) {
+			self::$location = $stored;
+		} elseif ( false === $stored && self::has_legacy_dir() ) {
+			self::$location = self::LOCATION_UPLOADS;
+		} else {
+			self::$location = self::pick_location();
+			update_option( self::LOCATION_OPTION, self::$location, false );
+		}
+
+		return self::$location;
+	}
+
+	/**
+	 * Whether the data directory sits inside the publicly served uploads directory, as the
+	 * fallback location.
 	 */
 	public static function is_in_uploads(): bool {
-		return ! ( defined( 'WP_CORTEX_DATA_DIR' ) && WP_CORTEX_DATA_DIR );
+		return self::LOCATION_UPLOADS === self::location();
+	}
+
+	/**
+	 * Moves data that earlier versions stored in uploads to the first writable private
+	 * location. Runs once per site, on an admin request, and not while an index run is
+	 * running; stays in uploads when no private location is writable or the move fails.
+	 */
+	public static function maybe_relocate(): void {
+		if ( self::LOCATION_CONSTANT === self::location() || false !== get_option( self::LOCATION_OPTION ) ) {
+			return;
+		}
+
+		$run = IndexRun::state();
+		if ( $run && 'running' === $run['status'] ) {
+			return;
+		}
+
+		// Claims the move: add_option() fails when another request stored a location first.
+		if ( ! add_option( self::LOCATION_OPTION, self::LOCATION_UPLOADS, '', false ) ) {
+			return;
+		}
+
+		$target = self::pick_location();
+
+		if ( self::LOCATION_UPLOADS !== $target && self::move_dir( self::location_base( self::LOCATION_UPLOADS ) . '/' . self::dir_name(), self::location_base( $target ) . '/' . self::dir_name() ) ) {
+			update_option( self::LOCATION_OPTION, $target, false );
+			self::$location = $target;
+			delete_transient( self::EXPOSURE_TRANSIENT );
+			return;
+		}
+
+		self::$location = self::LOCATION_UPLOADS;
+	}
+
+	/**
+	 * Human-readable description of the data directory location.
+	 */
+	public static function location_label(): string {
+		switch ( self::location() ) {
+			case self::LOCATION_CONSTANT:
+				return __( 'set by WP_CORTEX_DATA_DIR', 'wp-cortex' );
+			case self::LOCATION_WPENGINE:
+				return __( 'WP Engine private directory (_wpeprivate)', 'wp-cortex' );
+			case self::LOCATION_PANTHEON:
+				return __( 'Pantheon private directory (uploads/private)', 'wp-cortex' );
+			case self::LOCATION_OUTSIDE:
+				return __( 'outside the web root', 'wp-cortex' );
+			default:
+				return __( 'uploads directory', 'wp-cortex' );
+		}
 	}
 
 	/**
@@ -119,6 +230,14 @@ final class Storage {
 	 * Removes the whole data directory. Used on uninstall.
 	 */
 	public static function delete_data_dir(): void {
+		if ( ! ( defined( 'WP_CORTEX_DATA_DIR' ) && WP_CORTEX_DATA_DIR ) && false === get_option( self::LOCATION_OPTION ) && ! self::has_legacy_dir() ) {
+			// Nothing was ever stored: do not choose (and create) a location just to delete it.
+			delete_option( self::DIR_OPTION );
+			delete_option( self::LOCATION_OPTION );
+			delete_transient( self::EXPOSURE_TRANSIENT );
+			return;
+		}
+
 		foreach ( self::SCOPES as $scope ) {
 			self::delete_db( $scope );
 		}
@@ -137,8 +256,10 @@ final class Storage {
 		}
 
 		delete_option( self::DIR_OPTION );
+		delete_option( self::LOCATION_OPTION );
 		delete_transient( self::EXPOSURE_TRANSIENT );
 		self::$dir_name = null;
+		self::$location = null;
 	}
 
 	/**
@@ -250,18 +371,20 @@ final class Storage {
 	 * WordPress directory and therefore not served by the site.
 	 */
 	private static function data_dir_url(): ?string {
-		if ( self::is_in_uploads() ) {
-			return untrailingslashit( wp_upload_dir( null, false )['baseurl'] ) . '/' . self::dir_name();
+		$dir     = wp_normalize_path( self::data_dir() );
+		$uploads = wp_upload_dir( null, false );
+		$bases   = array(
+			trailingslashit( wp_normalize_path( $uploads['basedir'] ) ) => trailingslashit( $uploads['baseurl'] ),
+			trailingslashit( wp_normalize_path( ABSPATH ) )             => trailingslashit( site_url( '/' ) ),
+		);
+
+		foreach ( $bases as $path => $url ) {
+			if ( 0 === strpos( $dir . '/', $path ) ) {
+				return untrailingslashit( $url . ltrim( substr( $dir, strlen( $path ) ), '/' ) );
+			}
 		}
 
-		$dir  = wp_normalize_path( self::data_dir() );
-		$root = trailingslashit( wp_normalize_path( ABSPATH ) );
-
-		if ( 0 !== strpos( $dir . '/', $root ) ) {
-			return null;
-		}
-
-		return untrailingslashit( site_url( '/' . ltrim( substr( $dir, strlen( $root ) ), '/' ) ) );
+		return null;
 	}
 
 	/**
@@ -349,7 +472,189 @@ final class Storage {
 	}
 
 	/**
-	 * Random, persistent, hidden directory name inside uploads.
+	 * First automatic location PHP can write to; uploads when no other one is writable.
+	 */
+	private static function pick_location(): string {
+		foreach ( self::LOCATIONS as $location ) {
+			$base = self::location_base( $location );
+
+			if ( null !== $base && ( self::LOCATION_UPLOADS === $location || self::is_writable_dir( $base ) ) ) {
+				return $location;
+			}
+		}
+
+		return self::LOCATION_UPLOADS;
+	}
+
+	/**
+	 * Parent directory of the data directory for an automatic location (no trailing slash),
+	 * or null when the location does not apply to this site.
+	 *
+	 * @param string $location One of self::LOCATIONS.
+	 */
+	private static function location_base( string $location ): ?string {
+		switch ( $location ) {
+			case self::LOCATION_WPENGINE:
+				$base = untrailingslashit( wp_normalize_path( ABSPATH ) ) . '/_wpeprivate';
+				return ( defined( 'WPE_APIKEY' ) || function_exists( 'is_wpe' ) ) && @is_dir( $base ) ? $base : null; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+			case self::LOCATION_PANTHEON:
+				$base = untrailingslashit( wp_normalize_path( wp_upload_dir( null, false )['basedir'] ) ) . '/private';
+				return defined( 'PANTHEON_ENVIRONMENT' ) || ! empty( $_ENV['PANTHEON_ENVIRONMENT'] ) ? $base : null;
+
+			case self::LOCATION_OUTSIDE:
+				return self::outside_base();
+
+			case self::LOCATION_UPLOADS:
+				return untrailingslashit( wp_upload_dir( null, false )['basedir'] );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Directory above the web root (the directory that serves the site's home URL), or null
+	 * when it cannot be determined or could be served by the web server.
+	 */
+	private static function outside_base(): ?string {
+		$abspath = untrailingslashit( wp_normalize_path( ABSPATH ) );
+		$path    = trim( (string) wp_parse_url( is_multisite() ? network_site_url() : site_url(), PHP_URL_PATH ), '/' );
+
+		// WordPress in a subdirectory: ABSPATH ends with the site URL path.
+		if ( '' !== $path ) {
+			if ( substr( $abspath, -strlen( $path ) - 1 ) !== '/' . $path ) {
+				return null;
+			}
+			$abspath = substr( $abspath, 0, -strlen( $path ) - 1 );
+		}
+
+		$parent = dirname( $abspath );
+
+		if ( '' === $parent || '/' === $parent || '.' === $parent || $parent === $abspath || preg_match( '#^[A-Za-z]:/?$#', $parent ) ) {
+			return null;
+		}
+
+		$document_root = isset( $_SERVER['DOCUMENT_ROOT'] ) ? (string) $_SERVER['DOCUMENT_ROOT'] : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+		$parent_real   = @realpath( $parent ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		$root_real     = '' !== $document_root ? @realpath( $document_root ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+		if ( false === $parent_real ) {
+			return null;
+		}
+
+		if ( false !== $root_real && 0 === strpos( trailingslashit( wp_normalize_path( $parent_real ) ), trailingslashit( wp_normalize_path( $root_real ) ) ) ) {
+			return null;
+		}
+
+		return $parent;
+	}
+
+	/**
+	 * Whether PHP can create files in a directory, tested with a real write: is_writable()
+	 * is unreliable on network file systems and read-only mounts. Creates the directory
+	 * when it is missing (and its parent exists).
+	 *
+	 * @param string $dir Absolute path.
+	 */
+	private static function is_writable_dir( string $dir ): bool {
+		// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions
+		if ( ! @is_dir( $dir ) && ( ! @is_dir( dirname( $dir ) ) || ! @mkdir( $dir, 0755 ) ) ) {
+			return false;
+		}
+
+		$probe = $dir . '/' . self::DIR_PREFIX . 'probe-' . strtolower( wp_generate_password( 8, false ) );
+
+		if ( false === @file_put_contents( $probe, '1' ) ) {
+			return false;
+		}
+
+		@unlink( $probe );
+		// phpcs:enable
+
+		return true;
+	}
+
+	/**
+	 * Whether an earlier version left a data directory in uploads, before locations were
+	 * stored.
+	 */
+	private static function has_legacy_dir(): bool {
+		$name = get_option( self::DIR_OPTION );
+
+		if ( ! is_string( $name ) || '' === $name ) {
+			return false;
+		}
+
+		$base = untrailingslashit( wp_upload_dir( null, false )['basedir'] );
+
+		return is_dir( "$base/$name" ) || is_dir( "$base/.$name" );
+	}
+
+	/**
+	 * Moves the data directory: renamed when possible (atomic on one file system), copied
+	 * and then deleted otherwise. A failed copy is removed and the source kept.
+	 *
+	 * @param string $from Current directory.
+	 * @param string $to   New directory; must not exist yet.
+	 */
+	private static function move_dir( string $from, string $to ): bool {
+		if ( ! is_dir( $from ) ) {
+			return true;
+		}
+
+		if ( file_exists( $to ) ) {
+			return false;
+		}
+
+		foreach ( self::SCOPES as $scope ) {
+			Database::close( $scope );
+		}
+
+		if ( @rename( $from, $to ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+			return true;
+		}
+
+		if ( ! self::copy_dir( $from, $to ) ) {
+			self::delete_dir( $to );
+			return false;
+		}
+
+		self::delete_dir( $from );
+
+		return true;
+	}
+
+	/**
+	 * Copies a directory with its files and subdirectories. Symbolic links are skipped.
+	 *
+	 * @param string $from Source directory.
+	 * @param string $to   Target directory.
+	 */
+	private static function copy_dir( string $from, string $to ): bool {
+		if ( ! wp_mkdir_p( $to ) ) {
+			return false;
+		}
+
+		foreach ( (array) scandir( $from ) as $name ) {
+			$source = $from . '/' . $name;
+
+			if ( '.' === $name || '..' === $name || is_link( $source ) ) {
+				continue;
+			}
+
+			$target = $to . '/' . $name;
+			$copied = is_dir( $source ) ? self::copy_dir( $source, $target ) : @copy( $source, $target ) && filesize( $source ) === filesize( $target ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+
+			if ( ! $copied ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Random, persistent, hidden directory name.
 	 */
 	private static function dir_name(): string {
 		if ( null !== self::$dir_name ) {
