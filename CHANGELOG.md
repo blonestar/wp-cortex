@@ -13,6 +13,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - The Storage card (data directory and public access check) moved from Cortex > Indexing to a new Settings > Advanced tab. Cortex > Indexing only shows an alert, with a link to it, while the index is publicly downloadable; the dashboard widget alert links there too.
 - Existing data in uploads is moved to the first writable private location once, the first time an administrator opens the admin while no index run is running. No re-indexing is needed. On hosts such as WP Engine, where Nginx served the databases from uploads, this makes them private.
+- Chat skills moved from the Cortex > Skills screen to a new Skills tab under Cortex > Settings, with a Saved skills section (the skills list and editor) and a Settings section (the skills settings formerly under Settings > Admin chat > Skills). The Cortex > Skills menu item is removed, and the chat's "Manage skills" link opens the new tab.
 
 ## [0.5.0] - 2026-10-05
 
