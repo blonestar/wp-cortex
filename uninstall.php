@@ -10,7 +10,15 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 require_once __DIR__ . '/src/Storage/Storage.php';
 require_once __DIR__ . '/src/Storage/Database.php';
 
-\WPCortex\Storage\Storage::delete_data_dir();
+$wp_cortex_settings = get_option( 'wp_cortex_settings' );
+
+if ( ! is_array( $wp_cortex_settings ) || ! isset( $wp_cortex_settings['uninstall_delete_index'] ) || $wp_cortex_settings['uninstall_delete_index'] ) {
+	\WPCortex\Storage\Storage::delete_data_dir();
+} else {
+	// Keep the databases and the options that locate them; visitor images go with their conversations.
+	\WPCortex\Storage\Storage::delete_dir( \WPCortex\Storage\Storage::visitor_images_dir() );
+	delete_transient( 'wp_cortex_storage_exposed' );
+}
 
 foreach ( array( 'wp_cortex_settings', 'wp_cortex_index_run', 'wp_cortex_index_lock', 'wp_cortex_sync_queue', 'wp_cortex_last_sync', 'wp_cortex_db_version', 'wp_cortex_skills_db_version', 'wp_cortex_visitor_chats_db_version', 'wp_cortex_issue_reports_db_version' ) as $option ) {
 	delete_option( $option );

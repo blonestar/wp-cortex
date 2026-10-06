@@ -46,6 +46,10 @@
 	color: #2271b1;
 }
 
+.wp-cortex-data-dir-location {
+	color: #646970;
+}
+
 .wp-cortex-storage-check {
 	margin: 12px 0 4px;
 	padding: 8px 12px;

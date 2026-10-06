@@ -321,7 +321,7 @@ final class DashboardWidget {
 		if ( true === Storage::is_exposed() ) {
 			printf(
 				'<p class="wp-cortex-dash-alert"><a href="%1$s">%2$s</a></p>',
-				esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING ) ),
+				esc_url( SettingsPage::storage_url() ),
 				esc_html__( 'The index database is publicly downloadable! See how to protect it.', 'wp-cortex' )
 			);
 		}

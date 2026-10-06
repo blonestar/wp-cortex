@@ -17,6 +17,7 @@ use WPCortex\Chat\VisitorImages;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Settings;
+use WPCortex\Storage\Storage;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -99,6 +100,14 @@ final class SettingsPage {
 					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
 				),
 			),
+			'advanced'   => array(
+				'label'    => __( 'Advanced', 'wp-cortex' ),
+				'icon'     => 'dashicons-admin-tools',
+				'sections' => array(
+					'storage'   => array( __( 'Storage', 'wp-cortex' ), __( 'Where the index databases and visitor images are stored and whether they can be downloaded from the site.', 'wp-cortex' ), array( $this, 'fields_storage' ) ),
+					'uninstall' => array( __( 'Uninstall', 'wp-cortex' ), __( 'What happens to the index when the plugin is deleted.', 'wp-cortex' ), array( $this, 'fields_uninstall' ) ),
+				),
+			),
 			'changelog'  => array(
 				'label'  => __( 'Changelog', 'wp-cortex' ),
 				'icon'   => 'dashicons-backup',
@@ -141,6 +150,19 @@ final class SettingsPage {
 		}
 
 		return ! empty( $tab['sections'][ $section ][3] );
+	}
+
+	/**
+	 * URL of the Storage section (data directory and public access check).
+	 */
+	public static function storage_url(): string {
+		return add_query_arg(
+			array(
+				'tab'     => 'advanced',
+				'section' => 'storage',
+			),
+			admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS )
+		);
 	}
 
 	/**
@@ -472,6 +494,47 @@ final class SettingsPage {
 		$this->row_start( __( 'Batch size', 'wp-cortex' ) );
 		$this->number( 'batch_size', 1, 100 );
 		$this->row_end( __( 'Posts per indexing request. Lower it if requests time out.', 'wp-cortex' ) );
+	}
+
+	/**
+	 * Storage section: data directory, its location and the public access check (filled in
+	 * by storage.js).
+	 */
+	public function fields_storage(): void {
+		echo '<p class="wp-cortex-data-dir">' . esc_html__( 'Data directory:', 'wp-cortex' ) . ' ';
+		echo '<code class="wp-cortex-data-dir-mask" aria-hidden="true">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>';
+		echo '<code id="wp-cortex-data-dir-path" hidden>' . esc_html( Storage::data_dir() ) . '</code> ';
+		echo '<button type="button" class="button-link wp-cortex-data-dir-toggle" id="wp-cortex-data-dir-toggle" aria-controls="wp-cortex-data-dir-path" aria-expanded="false" aria-label="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '" title="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '">';
+		echo '<span class="dashicons dashicons-visibility" aria-hidden="true"></span>';
+		echo '</button> <span class="wp-cortex-data-dir-location">(' . esc_html( Storage::location_label() ) . ')</span></p>';
+
+		if ( Storage::is_in_uploads() ) {
+			echo '<div class="notice notice-warning inline"><p>';
+			echo esc_html__( 'The index is stored inside the uploads directory because no private location outside the web root is writable. For better protection, define WP_CORTEX_DATA_DIR in wp-config.php with a writable path outside the web root.', 'wp-cortex' );
+			echo '</p></div>';
+		}
+
+		echo '<div class="wp-cortex-storage-check is-checking" id="wp-cortex-storage-check">';
+		echo '<p class="wp-cortex-storage-check-summary" aria-live="polite"><span class="dashicons dashicons-update" aria-hidden="true"></span> <strong data-check-summary>' . esc_html__( 'Checking public access…', 'wp-cortex' ) . '</strong></p>';
+		echo '<ul class="wp-cortex-storage-check-list" data-check-list></ul>';
+		echo '<div class="wp-cortex-storage-check-help" data-check-help hidden><p>';
+		echo esc_html__( 'Block access to the data directory in your web server configuration, or move it outside the web root with WP_CORTEX_DATA_DIR.', 'wp-cortex' );
+		echo '</p><p>';
+		echo esc_html__( 'On Nginx, refusing hidden paths (names starting with a dot) protects it:', 'wp-cortex' );
+		echo ' <code>location ~ /\\. { deny all; }</code>';
+		echo '</p></div>';
+		echo '<p class="wp-cortex-storage-check-meta"><span data-check-time></span> ';
+		echo '<button type="button" class="button button-small" id="wp-cortex-storage-recheck" disabled>' . esc_html__( 'Test again', 'wp-cortex' ) . '</button></p>';
+		echo '</div>';
+	}
+
+	/**
+	 * Uninstall section.
+	 */
+	public function fields_uninstall(): void {
+		$this->row_start( __( 'Index data', 'wp-cortex' ) );
+		$this->checkbox( 'uninstall_delete_index', __( 'Delete the index databases when the plugin is deleted', 'wp-cortex' ), (bool) Settings::get( 'uninstall_delete_index' ) );
+		$this->row_end( __( 'When off, the data directory (shown under Cortex > Indexing > Storage) is kept, and installing the plugin again on this site reuses the index without re-indexing or new embeddings. Settings, conversations and visitor images are always deleted.', 'wp-cortex' ) );
 	}
 
 	/**
