@@ -60,19 +60,14 @@ final class SettingsPage {
 	 */
 	private function tabs(): array {
 		return array(
-			'content'    => array(
-				'label'    => __( 'Content', 'wp-cortex' ),
-				'icon'     => 'dashicons-admin-page',
-				'sections' => array(
-					'indexed' => array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
-					'sources' => array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
-				),
-			),
 			'indexing'   => array(
 				'label'    => __( 'Indexing', 'wp-cortex' ),
 				'icon'     => 'dashicons-database',
 				'sections' => array(
-					'chunking' => array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
+					'status'     => array( __( 'Status & stats', 'wp-cortex' ), __( 'Sync or rebuild the index and see what the public and admin indexes contain.', 'wp-cortex' ), array( new IndexStatus(), 'render' ), true ),
+					'indexed'    => array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
+					'sources'    => array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
+					'chunking'   => array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
 					'embeddings' => array( __( 'Embeddings', 'wp-cortex' ), __( 'Vector embeddings power semantic search. They are created with the OpenAI API.', 'wp-cortex' ), array( $this, 'fields_embeddings' ) ),
 				),
 			),
@@ -82,11 +77,6 @@ final class SettingsPage {
 				'sections' => array(
 					'assistant' => array( __( 'Admin chat assistant', 'wp-cortex' ), __( 'The assistant administrators use to search and navigate the site.', 'wp-cortex' ), array( $this, 'fields_chat' ) ),
 				),
-			),
-			'skills'     => array(
-				'label'    => __( 'Skills', 'wp-cortex' ),
-				'icon'     => 'dashicons-welcome-learn-more',
-				'sections' => $this->skills_sections(),
 			),
 			'visitors'   => array(
 				'label'    => __( 'Visitor chat', 'wp-cortex' ),
@@ -99,6 +89,11 @@ final class SettingsPage {
 					'actions'    => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
 					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
 				),
+			),
+			'skills'     => array(
+				'label'    => __( 'Skills', 'wp-cortex' ),
+				'icon'     => 'dashicons-welcome-learn-more',
+				'sections' => $this->skills_sections(),
 			),
 			'advanced'   => array(
 				'label'    => __( 'Advanced', 'wp-cortex' ),
@@ -153,16 +148,33 @@ final class SettingsPage {
 	}
 
 	/**
-	 * URL of the Storage section (data directory and public access check).
+	 * URL of a tab section of the settings screen.
+	 *
+	 * @param string $tab     Tab ID.
+	 * @param string $section Section ID.
 	 */
-	public static function storage_url(): string {
+	public static function section_url( string $tab, string $section ): string {
 		return add_query_arg(
 			array(
-				'tab'     => 'advanced',
-				'section' => 'storage',
+				'tab'     => $tab,
+				'section' => $section,
 			),
 			admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS )
 		);
+	}
+
+	/**
+	 * URL of the Storage section (data directory and public access check).
+	 */
+	public static function storage_url(): string {
+		return self::section_url( 'advanced', 'storage' );
+	}
+
+	/**
+	 * URL of the Status & stats section (index runs and stats).
+	 */
+	public static function status_url(): string {
+		return self::section_url( 'indexing', 'status' );
 	}
 
 	/**
@@ -326,13 +338,11 @@ final class SettingsPage {
 	 * Notice that index-shaping settings need a rebuild.
 	 */
 	private function reindex_notice(): void {
-		$indexing_url = admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING );
-
 		echo '<div class="notice notice-info inline wp-cortex-settings-notice"><p>';
 		printf(
-			/* translators: %s: link to the Indexing screen. */
-			esc_html__( 'Changing the embedding model, dimensions or chunking settings requires re-indexing. Use %s and choose "Rebuild from scratch".', 'wp-cortex' ),
-			'<a href="' . esc_url( $indexing_url ) . '">' . esc_html__( 'the Indexing screen', 'wp-cortex' ) . '</a>'
+			/* translators: %s: link to the Status & stats section. */
+			esc_html__( 'Changing the embedding model, dimensions or chunking settings requires re-indexing. Save, then use %s and choose "Rebuild from scratch".', 'wp-cortex' ),
+			'<a href="' . esc_url( self::status_url() ) . '">' . esc_html__( 'Status & stats', 'wp-cortex' ) . '</a>'
 		);
 		echo '</p></div>';
 	}
@@ -534,7 +544,7 @@ final class SettingsPage {
 	public function fields_uninstall(): void {
 		$this->row_start( __( 'Index data', 'wp-cortex' ) );
 		$this->checkbox( 'uninstall_delete_index', __( 'Delete the index databases when the plugin is deleted', 'wp-cortex' ), (bool) Settings::get( 'uninstall_delete_index' ) );
-		$this->row_end( __( 'When off, the data directory (shown under Cortex > Indexing > Storage) is kept, and installing the plugin again on this site reuses the index without re-indexing or new embeddings. Settings, conversations and visitor images are always deleted.', 'wp-cortex' ) );
+		$this->row_end( __( 'When off, the data directory (shown under Settings > Advanced > Storage) is kept, and installing the plugin again on this site reuses the index without re-indexing or new embeddings. Settings, conversations and visitor images are always deleted.', 'wp-cortex' ) );
 	}
 
 	/**
