@@ -18,7 +18,7 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 - **Front-end-equivalent content**: blocks (including dynamic ones) are rendered as an anonymous visitor, so the index matches what the public sees and logged-in-only content never leaks into it. Forms, navigation, scripts and styles are stripped.
 - **Heading-aware chunking**: HTML is split at headings; consecutive short sections are packed together and long ones split at paragraph/sentence boundaries into chunks of roughly N characters with configurable overlap.
 - **OpenAI embeddings** with reuse by chunk hash: unchanged text is never re-embedded, even across documents and scopes.
-- **Batch indexing with progress UI**: resumable and cancellable (Cortex > Indexing).
+- **Batch indexing with progress UI**: resumable and cancellable, with stats for both indexes (Cortex > Settings > Indexing > Status & stats).
 - **Incremental auto-sync** via WP-Cron when content, terms or relevant meta change.
 - **Hybrid search service** (`WPCortex\Search\SearchService`): FTS5 BM25 keyword search, brute-force cosine semantic search, merged with Reciprocal Rank Fusion and grouped per document. Structured filters on post type, status, modified date and any indexed field (`eq`, `neq`, `contains`, `not_contains`, `empty`, `not_empty`, `missing`, `exists`). Degrades to keyword search when embeddings are unavailable. Also offers `get_document()` and `field_catalog()`.
 - **Admin chat assistant**: a floating chat panel on every admin screen for administrators. An LLM (through the WordPress AI Client, any configured provider) answers questions about site content by calling tools over the admin index, shows the posts cited in its answer (as `#ID`) as cards below it and on request can open a post in the editor or go to any admin screen from the user's admin menu or any tab and section of Cortex > Settings (optionally straight to a named tab, including a nested tab given as a path such as "Visitor chat › Appearance") and switch tabs on the current screen. Conversations are stored per user in the `{prefix}wp_cortex_conversations` table. Needs an AI provider API key under Settings > Connectors.
@@ -43,8 +43,8 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 1. Copy the plugin into `wp-content/plugins/wp-cortex` and activate it.
 2. Check **Cortex > Settings > Advanced > Storage**: the plugin stores its databases outside the web root when it can (see [Data directory](#data-directory)); if it falls back to uploads, define `WP_CORTEX_DATA_DIR` in `wp-config.php` with a path outside the web root.
 3. Add an OpenAI API key under Settings > Connectors (or via env/constant).
-4. Open **Cortex > Settings** (the last item of the Cortex menu), choose post types and sources on the Content tab, and save.
-5. Open **Cortex > Indexing** and click Sync (or run `wp cortex index`).
+4. Open **Cortex > Settings** (the last item of the Cortex menu), choose post types and sources on the Indexing tab, and save.
+5. Open **Indexing > Status & stats** on the same screen and click Sync (or run `wp cortex index`).
 
 ## Releases and updates
 
@@ -54,7 +54,7 @@ WP Cortex uses WordPress's native plugin updater with the GitHub `Update URI`. W
 
 ## Configuration
 
-Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Content, Indexing, Admin chat and Visitor chat tabs. The last tab, Changelog, shows `CHANGELOG.md` with one collapsible panel per version (pending changes and the latest release expanded, the installed version marked).
+Settings are stored in the `wp_cortex_settings` option and edited under **Cortex > Settings**, grouped into the Indexing, Admin chat, Visitor chat, Skills and Advanced tabs. Indexing > Status & stats syncs or rebuilds the index and shows the stats of both indexes. The last tab, Changelog, shows `CHANGELOG.md` with one collapsible panel per version (pending changes and the latest release expanded, the installed version marked).
 
 | Setting | Default | Description |
 | --- | --- | --- |
@@ -125,7 +125,7 @@ The databases live in a hidden directory with a random name, `.wp-cortex-<random
 
 The location is stored as a key, not a path, so a copy of the site on another environment resolves it again (its index starts empty there; re-run an index). `WP_CORTEX_DATA_DIR` overrides the automatic choice. Data that earlier versions stored in uploads is moved to the first writable private location once, the first time an administrator opens the admin while no index run is running (renamed, or copied and deleted across file systems); if no private location is writable, it stays in uploads. Settings > Advanced > Storage shows the location next to the data directory.
 
-In uploads, the directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**. The name starts with a dot because most Nginx configurations for WordPress (Local, for example) refuse hidden paths; where the server has no such rule, the fallback relies only on the unguessable name. Directories created by earlier versions (`wp-cortex-<random>`) are renamed to the hidden name automatically. Settings > Advanced > Storage warns when the fallback is used and shows a public access check: the server requests its own data directory URL without cookies and reports whether the directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded (a response only counts when it starts with the SQLite header). The check also runs for private locations inside the WordPress directory (WP Engine, Pantheon), so it confirms that the host really blocks them. The result is green when nothing is reachable, red when something is and yellow when the server could not reach itself; it is cached for 12 hours (or until a database is created or deleted) and the Test again button runs it immediately. While the last check found a file downloadable, Cortex > Indexing and the dashboard widget show an alert that links to it. A location outside the WordPress directory is not tested. If a file is downloadable, add a rule like this to the Nginx server block (or ask the host to):
+In uploads, the directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**. The name starts with a dot because most Nginx configurations for WordPress (Local, for example) refuse hidden paths; where the server has no such rule, the fallback relies only on the unguessable name. Directories created by earlier versions (`wp-cortex-<random>`) are renamed to the hidden name automatically. Settings > Advanced > Storage warns when the fallback is used and shows a public access check: the server requests its own data directory URL without cookies and reports whether the directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded (a response only counts when it starts with the SQLite header). The check also runs for private locations inside the WordPress directory (WP Engine, Pantheon), so it confirms that the host really blocks them. The result is green when nothing is reachable, red when something is and yellow when the server could not reach itself; it is cached for 12 hours (or until a database is created or deleted) and the Test again button runs it immediately. While the last check found a file downloadable, Settings > Indexing > Status & stats and the dashboard widget show an alert that links to it. A location outside the WordPress directory is not tested. If a file is downloadable, add a rule like this to the Nginx server block (or ask the host to):
 
 ```nginx
 location ~ /\. { deny all; }
@@ -266,7 +266,7 @@ src/
     ClientIp.php           Visitor IP (REMOTE_ADDR or a trusted proxy header)
   Rest/                    IndexController, ChatController, PublicChatController, SkillController, VisitorChatController, IssueReportController
   Cli/Command.php          WP-CLI commands
-  Admin/                   Menu, Settings page (with the Changelog tab), Indexing page, Skills page, Visitor chats page, Issue reports page, Chat panel, Dashboard widget
+  Admin/                   Menu, Settings page (with the Changelog tab), Index status section, Skills page, Visitor chats page, Issue reports page, Chat panel, Dashboard widget
   Frontend/FrontendChat.php  Admin or visitor chat on the front end
   Frontend/ChatAppearance.php  Visitor chat appearance settings as CSS custom properties and classes
 assets/                  JS (no build step) and CSS for the admin, the chat panels and the visitor chat
