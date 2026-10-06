@@ -256,6 +256,7 @@
 }
 
 .wp-cortex-badge-warn,
+.wp-cortex-badge-paused,
 .wp-cortex-badge-cancelled {
 	background: #fcf9e8;
 	color: #614200;
