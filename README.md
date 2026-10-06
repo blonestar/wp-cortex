@@ -11,10 +11,11 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 ## Features (current)
 
 - **Two isolated indexes**
-  - `public.sqlite` holds only published, publicly viewable, non-password-protected content, and only fields/sections flagged as public.
-  - `admin.sqlite` holds everything eligible: drafts, pending, scheduled and private posts (configurable), plus Yoast SEO, ACF and custom meta data.
+  - `public.sqlite` holds only published, non-password-protected content of viewable post types, and only the fields chosen for the public index.
+  - `admin.sqlite` holds the chosen statuses (drafts, pending, scheduled and private posts are configurable) and the fields chosen for the admin index.
+  - Each index has its own post types (`admin_post_types`, `public_post_types`; media is the `attachment` type) and its own fields (`field_scopes`), configured under Settings > Indexing > Admin index and Public index. A post type or field can be in one index, both or neither; posts are extracted once and written to every index they belong to.
 - **Extractors**: core post data, taxonomies, Yoast SEO, ACF, custom meta keys, media library files. Extensible through a filter.
-- **Media indexing** (optional): attachments are indexed as post type `attachment` with title, caption, alt text, description, file URL and `media` fields (MIME type, file name and size, dimensions, audio/video duration, artist, album; EXIF credit, copyright and camera in the admin index only). Media inherit the status and password protection of the post they are attached to; unattached media count as published. Image `alt_text` is stored even when empty. Yoast fields are not indexed for media.
+- **Media indexing** (optional): attachments are indexed as post type `attachment` with title, caption, alt text, description, file URL and `media` fields (MIME type, file name and size, dimensions, audio/video duration, artist, album, EXIF credit, copyright and camera; by default only the file type, alt text and caption go into the public index). Media inherit the status and password protection of the post they are attached to; unattached media count as published. Image `alt_text` is stored even when empty. Yoast fields are not indexed for media.
 - **Front-end-equivalent content**: blocks (including dynamic ones) are rendered as an anonymous visitor, so the index matches what the public sees and logged-in-only content never leaks into it. Forms, navigation, scripts and styles are stripped.
 - **Heading-aware chunking**: HTML is split at headings; consecutive short sections are packed together and long ones split at paragraph/sentence boundaries into chunks of roughly N characters with configurable overlap.
 - **OpenAI embeddings** with reuse by chunk hash: unchanged text is never re-embedded, even across documents and scopes.
@@ -58,14 +59,14 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 
 | Setting | Default | Description |
 | --- | --- | --- |
-| `post_types` | `post`, `page` | Post types to index (internal types such as templates are not offered; attachments are controlled by `index_media`). |
+| `admin_post_types` | `post`, `page` | Post types of the admin index (internal types such as templates are not offered; `attachment` indexes media). |
+| `public_post_types` | `post`, `page` | Post types of the public index. Only viewable post types are used, and only their published, non-password-protected posts. |
 | `admin_statuses` | publish, future, draft, pending, private | Statuses included in the admin index. `publish` is always included. The public index only ever holds `publish`. |
 | `auto_sync` | on | Queue changed posts and index them in the background via WP-Cron. |
-| `index_yoast` | on | Index Yoast SEO fields (admin index only). Requires Yoast SEO. |
-| `index_acf` | on | Index ACF fields. Requires ACF. |
-| `acf_public` | off | Also put ACF text into the public index. |
-| `meta_keys` | none | Extra post meta keys to index (one per line; admin index only). |
-| `index_media` | off | Index media library attachments (see Features). File contents such as PDF text are not extracted. |
+| `index_yoast` | on | Index Yoast SEO fields (admin index only by default). Requires Yoast SEO. |
+| `index_acf` | on | Index ACF fields. Requires ACF. The admin index gets every field; the public index by default gets the content fields of its post types (text, textarea, WYSIWYG, dates, relationship, post object, page link, taxonomy, repeater, group, flexible content) except fields whose name marks them as internal (`id`, `code`, `key`, `note`, `email`, `phone`, `embed`...); switches, numbers, choices, colors, URLs, images, files and users are admin only by default. Values are indexed by field type, whatever the return format: related posts become their titles, terms their names, users their display name (never the email or other account data), images and files their title, alt text and caption, dates ISO dates (`2024-04-29`); repeaters, groups and flexible content are indexed per sub field and password fields never. In the admin index, related posts that are not published are marked with their status (`Title (draft)`); the public index only names published, non-password-protected posts and terms of viewable taxonomies. |
+| `meta_keys` | none | Extra post meta keys to index (one per line; admin index only by default). |
+| `field_scopes` | none | Index of each field: `"source:name" => both\|admin\|public\|none`. A key ending in `*` matches every name with that prefix (`acf:*`, `yoast:primary_*`); an ACF field's rule also covers its nested values (`acf:team` covers `acf:team.0.name`). Fields without a rule use the extractor's default: always in the admin index, and in the public index only the terms of public taxonomies, the Yoast SEO title, meta description and social (Open Graph, X) titles and descriptions, and the media file type, alt text and caption. ACF content fields of the public post types are public by default as well (see `index_acf`). Everything else (other ACF fields, custom meta, other Yoast fields, file details, parent, template, featured image) is admin only until chosen for the public index. Long ACF text and media alt text and captions are also chunked; these sections follow the rule of their field. Edited as checkboxes under Admin index and Public index, with a filter box; only choices that differ from the default are stored. ACF lists only the field groups stored on posts of that index's post types (not block, options page, term or user groups; block fields are part of the rendered content). Fields with the same name in several groups share one stored value and one rule; they are listed in every group, with a note, and their checkboxes change together. Older settings are migrated: `post_types` (plus `attachment` with `index_media`) fills both post type lists; `acf_public` is dropped. |
 | `chunk_size` | 1200 | Approximate characters per chunk (300-6000). |
 | `chunk_overlap` | 150 | Characters shared between chunks (0 to half of chunk size). |
 | `batch_size` | 10 | Posts per indexing request (1-100). |
@@ -145,7 +146,7 @@ Images visitors attach in the visitor chat are stored in the same directory unde
 
 ### Filters
 
-- `wp_cortex_extractors` (`Extractor[] $extractors`): add, remove or reorder extractors. Non-`Extractor` entries are discarded.
+- `wp_cortex_extractors` (`Extractor[] $extractors`): add, remove or reorder extractors. Non-`Extractor` entries are discarded. Extractors that also implement `DescribesFields` list their fields under Admin index and Public index, so each field's index can be chosen.
 - `wp_cortex_openai_api_key` (`string $key`): override the OpenAI API key.
 - `wp_cortex_chat_system_instruction` (`string $instruction`, `array $context`): modify the chat assistant's system instruction. `$context` holds `screen` and `post_id`.
 - `wp_cortex_chat_reasoning_levels` (`string[] $levels`, `string $provider`): reasoning levels offered for a provider (lowest first).
@@ -160,6 +161,7 @@ Images visitors attach in the visitor chat are stored in the same directory unde
 - **Rebuild** deletes both database files first and indexes everything from scratch. Use it after changing chunk settings or when the schema is damaged.
 - **Skipping**: for each scope a content hash is computed over the document columns, fields and chunk hashes. If it matches the stored hash (and, when embeddings are active, no chunk lacks a vector for the current embedding signature), the post is skipped.
 - **Embedding reuse**: each chunk is hashed (title, section heading, text). Existing vectors with the same hash and signature are reused; only missing ones are sent to OpenAI, in one pass per batch (96 inputs per request, up to 3 attempts on 429/5xx).
+- **Changing post types or fields**: run Sync. Documents whose fields changed get a new content hash and are rewritten; posts of deselected post types are removed.
 - **Stale removal**: documents not seen by a run (deleted posts, changed status, deselected post types) are deleted when the run finishes. Posts that become ineligible are also removed immediately when processed.
 - **Auto-sync**: on save, trash/untrash/delete, status transition, term changes and changes of `_yoast_wpseo_*` or configured meta keys (with media indexing also alt text, attachment metadata, attach/detach, and the media attached to a post whose status or password changes), post IDs are queued (option `wp_cortex_sync_queue`) and processed by a single WP-Cron event ~15 seconds later, 50 posts at a time. It pauses while a full run is active.
 - Run state is kept in the `wp_cortex_index_run` option and shared by the admin UI, REST and WP-CLI; a lock option prevents concurrent batches (stale after 300 s).
@@ -241,7 +243,8 @@ src/
     Storage.php          Data directory location and protection
     Database.php         SQLite connection, schema, CRUD, stats
   Indexing/
-    Document.php         Normalized object with public/admin flags
+    Document.php         Normalized object; for_scope() keeps a scope's fields
+    FieldPolicy.php      field_scopes rules and the field catalog of the settings screen
     Chunker.php          Heading-aware chunking
     Indexer.php          Pipeline: extract, chunk, embed, write
     IndexRun.php         Resumable batch run state machine

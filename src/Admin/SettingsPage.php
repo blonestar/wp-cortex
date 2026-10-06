@@ -16,6 +16,7 @@ use WPCortex\Chat\VisitorChatSummarizer;
 use WPCortex\Chat\VisitorImages;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
+use WPCortex\Indexing\FieldPolicy;
 use WPCortex\Settings;
 use WPCortex\Storage\Storage;
 
@@ -65,8 +66,9 @@ final class SettingsPage {
 				'icon'     => 'dashicons-database',
 				'sections' => array(
 					'status'     => array( __( 'Status & stats', 'wp-cortex' ), __( 'Sync or rebuild the index and see what the public and admin indexes contain.', 'wp-cortex' ), array( new IndexStatus(), 'render' ), true ),
-					'indexed'    => array( __( 'What gets indexed', 'wp-cortex' ), __( 'Choose the content Cortex keeps in its index and whether it stays in sync automatically.', 'wp-cortex' ), array( $this, 'fields_content' ) ),
-					'sources'    => array( __( 'Data sources', 'wp-cortex' ), __( 'Extra fields from plugins and post meta added to the indexed content.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
+					'admin'      => array( __( 'Admin index', 'wp-cortex' ), __( 'Content and fields the admin chat, the abilities and WP-CLI search. Visitors never see this index.', 'wp-cortex' ), array( $this, 'fields_admin_index' ) ),
+					'public'     => array( __( 'Public index', 'wp-cortex' ), __( 'Content and fields the visitor chat answers from. Everything in this index can be shown to any site visitor.', 'wp-cortex' ), array( $this, 'fields_public_index' ) ),
+					'sources'    => array( __( 'Data sources & sync', 'wp-cortex' ), __( 'Extra fields from plugins and post meta, and whether the index stays in sync automatically. Which index each field goes into is chosen under Admin index and Public index.', 'wp-cortex' ), array( $this, 'fields_sources' ) ),
 					'chunking'   => array( __( 'Chunking & batching', 'wp-cortex' ), __( 'How content is split into chunks for search and how many posts are processed per request.', 'wp-cortex' ), array( $this, 'fields_chunking' ) ),
 					'embeddings' => array( __( 'Embeddings', 'wp-cortex' ), __( 'Vector embeddings power semantic search. They are created with the OpenAI API.', 'wp-cortex' ), array( $this, 'fields_embeddings' ) ),
 				),
@@ -414,36 +416,18 @@ final class SettingsPage {
 	}
 
 	/**
-	 * Content section.
+	 * Admin index section: post types, statuses and fields.
 	 */
-	public function fields_content(): void {
-		$selected_types = (array) Settings::get( 'post_types' );
-		$types          = get_post_types( array( 'show_ui' => true ), 'objects' );
+	public function fields_admin_index(): void {
+		$this->scope_banner( Storage::SCOPE_ADMIN );
 
 		$this->row_start( __( 'Post types', 'wp-cortex' ) );
-		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Post types', 'wp-cortex' ) . '</legend>';
-		foreach ( $types as $slug => $type ) {
-			if ( in_array( $slug, self::EXCLUDED_POST_TYPES, true ) ) {
-				continue;
-			}
-			printf(
-				'<label class="wp-cortex-block"><input type="checkbox" name="%1$s" value="%2$s" %3$s /> %4$s <code>%2$s</code></label>',
-				$this->name( 'post_types', true ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-				esc_attr( $slug ),
-				checked( in_array( $slug, $selected_types, true ), true, false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-				esc_html( $type->labels->name ?? $slug )
-			);
-		}
-		echo '</fieldset>';
-		$this->row_end( __( 'Content of these post types is indexed.', 'wp-cortex' ) );
-
-		$this->row_start( __( 'Media', 'wp-cortex' ) );
-		$this->checkbox( 'index_media', __( 'Index media library files (title, caption, alt text, description and file details)', 'wp-cortex' ), (bool) Settings::get( 'index_media' ) );
+		$this->post_type_checkboxes( Storage::SCOPE_ADMIN );
 		$this->row_end( __( 'Media inherit the status of the post they are attached to; unattached media count as published. File contents (for example PDF text) are not extracted.', 'wp-cortex' ) );
 
 		$selected_statuses = Settings::admin_statuses();
-		$this->row_start( __( 'Admin index statuses', 'wp-cortex' ) );
-		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Admin index statuses', 'wp-cortex' ) . '</legend>';
+		$this->row_start( __( 'Statuses', 'wp-cortex' ) );
+		echo '<fieldset><legend class="screen-reader-text">' . esc_html__( 'Statuses', 'wp-cortex' ) . '</legend>';
 		foreach ( Settings::ADMIN_STATUSES as $status ) {
 			$object   = get_post_status_object( $status );
 			$label    = $object ? $object->label : $status;
@@ -458,25 +442,209 @@ final class SettingsPage {
 			);
 		}
 		echo '</fieldset>';
-		$this->row_end( __( 'Statuses included in the admin index. The public index only contains published content, so "Published" is always on.', 'wp-cortex' ) );
+		$this->row_end( __( 'Statuses included in the admin index. "Published" is always on.', 'wp-cortex' ) );
 
-		$this->row_start( __( 'Auto sync', 'wp-cortex' ) );
-		$this->checkbox( 'auto_sync', __( 'Keep the index updated automatically when content changes', 'wp-cortex' ), (bool) Settings::get( 'auto_sync' ) );
+		$this->field_checkboxes( Storage::SCOPE_ADMIN );
+	}
+
+	/**
+	 * Public index section: post types and fields.
+	 */
+	public function fields_public_index(): void {
+		$this->scope_banner( Storage::SCOPE_PUBLIC );
+
+		$this->row_start( __( 'Post types', 'wp-cortex' ) );
+		$this->post_type_checkboxes( Storage::SCOPE_PUBLIC );
+		$this->row_end( __( 'Only published content of post types that have pages on the site. Password-protected posts, and media attached to them, are never included.', 'wp-cortex' ) );
+
+		$this->field_checkboxes( Storage::SCOPE_PUBLIC );
+	}
+
+	/**
+	 * Colored banner that tells the admin and public index sections apart.
+	 *
+	 * @param string $scope Storage::SCOPE_ADMIN or Storage::SCOPE_PUBLIC.
+	 */
+	private function scope_banner( string $scope ): void {
+		$is_public = Storage::SCOPE_PUBLIC === $scope;
+
+		printf(
+			'<div class="wp-cortex-scope-banner wp-cortex-scope-%1$s"><span class="dashicons %2$s" aria-hidden="true"></span><div><strong>%3$s</strong> %4$s</div></div>',
+			esc_attr( $scope ),
+			$is_public ? 'dashicons-admin-site-alt3' : 'dashicons-lock',
+			$is_public ? esc_html__( 'Public index:', 'wp-cortex' ) : esc_html__( 'Admin index:', 'wp-cortex' ),
+			$is_public
+				? esc_html__( 'visible to anyone through the visitor chat. Only check what you would publish on the site.', 'wp-cortex' )
+				: esc_html__( 'only used by administrators (admin chat, abilities, WP-CLI).', 'wp-cortex' )
+		);
+	}
+
+	/**
+	 * Post type checkboxes of an index. Media is offered when the post type is registered;
+	 * the public index only offers post types that have pages on the site.
+	 *
+	 * @param string $scope Storage::SCOPE_ADMIN or Storage::SCOPE_PUBLIC.
+	 */
+	private function post_type_checkboxes( string $scope ): void {
+		$selected = (array) Settings::get( $scope . '_post_types' );
+		$types    = get_post_types( array( 'show_ui' => true ), 'objects' );
+
+		echo '<fieldset class="wp-cortex-columns"><legend class="screen-reader-text">' . esc_html__( 'Post types', 'wp-cortex' ) . '</legend>';
+		foreach ( $types as $slug => $type ) {
+			if ( in_array( $slug, self::EXCLUDED_POST_TYPES, true ) ) {
+				continue;
+			}
+			if ( Storage::SCOPE_PUBLIC === $scope && ! is_post_type_viewable( $slug ) ) {
+				continue;
+			}
+			$this->post_type_checkbox( $scope, $slug, (string) ( $type->labels->name ?? $slug ), in_array( $slug, $selected, true ) );
+		}
+		$this->post_type_checkbox( $scope, 'attachment', __( 'Media', 'wp-cortex' ), in_array( 'attachment', $selected, true ) );
+		echo '</fieldset>';
+	}
+
+	/**
+	 * One post type checkbox.
+	 *
+	 * @param string $scope   Index.
+	 * @param string $slug    Post type.
+	 * @param string $label   Label.
+	 * @param bool   $checked Checked state.
+	 */
+	private function post_type_checkbox( string $scope, string $slug, string $label, bool $checked ): void {
+		printf(
+			'<label class="wp-cortex-block"><input type="checkbox" name="%1$s" value="%2$s" %3$s /> %4$s <code>%2$s</code></label>',
+			$this->name( $scope . '_post_types', true ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			esc_attr( $slug ),
+			checked( $checked, true, false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			esc_html( $label )
+		);
+	}
+
+	/**
+	 * Field checkboxes of an index, one row per data source, with a filter box. Only fields
+	 * that exist on the index's post types are listed; fields with a subgroup (ACF field
+	 * groups) are listed in collapsible blocks, open when one of their fields is checked.
+	 * Each section also sends the keys it shows, so unchecked fields are saved as excluded
+	 * from that index only.
+	 *
+	 * @param string $scope Storage::SCOPE_ADMIN or Storage::SCOPE_PUBLIC.
+	 */
+	private function field_checkboxes( string $scope ): void {
+		$policy = FieldPolicy::from_settings();
+		$types  = Settings::post_types( $scope );
+
+		$this->row_start( __( 'Find a field', 'wp-cortex' ) );
+		printf(
+			'<input type="search" class="regular-text wp-cortex-field-filter" placeholder="%1$s" aria-label="%1$s" />',
+			esc_attr__( 'Filter by name, key or group', 'wp-cortex' )
+		);
+		echo '<p class="wp-cortex-field-filter-empty description" hidden>' . esc_html__( 'No fields match.', 'wp-cortex' ) . '</p>';
 		$this->row_end();
+
+		foreach ( FieldPolicy::catalog() as $label => $fields ) {
+			$groups = array();
+			foreach ( $fields as $key => $field ) {
+				$instances = $field['groups'] ?? array( (string) ( $field['group'] ?? '' ) => $field );
+
+				foreach ( $instances as $group => $instance ) {
+					if ( ! empty( $instance['post_types'] ) && ! array_intersect( $instance['post_types'], $types ) ) {
+						continue;
+					}
+					$groups[ (string) $group ][ $key ] = array_merge(
+						$field,
+						array_intersect_key( $instance, array_flip( array( 'label', 'type', 'post_types' ) ) ),
+						array( 'shared' => array_values( array_diff( array_keys( $instances ), array( $group ) ) ) )
+					);
+				}
+			}
+			if ( ! $groups ) {
+				continue;
+			}
+			ksort( $groups );
+
+			echo '<div class="wp-cortex-field-source">';
+			$this->row_start( $label );
+			foreach ( $groups as $group => $group_fields ) {
+				if ( '' === $group ) {
+					$this->field_group( $scope, $policy, $label, $group_fields );
+					continue;
+				}
+
+				$selected = count( array_filter( $group_fields, static fn( $field, $key ) => $policy->allows( $scope, $key, $field['public'] ), ARRAY_FILTER_USE_BOTH ) );
+				$on_types = array_values( array_intersect( array_unique( array_merge( ...array_map( static fn( $field ) => (array) ( $field['post_types'] ?? array() ), array_values( $group_fields ) ) ) ), $types ) );
+
+				printf( '<details class="wp-cortex-scope-group" %s><summary>', $selected ? 'open' : '' );
+				printf(
+					/* translators: 1: field group name, 2: number of checked fields, 3: number of fields. */
+					esc_html__( '%1$s (%2$d of %3$d)', 'wp-cortex' ),
+					esc_html( $group ),
+					(int) $selected,
+					count( $group_fields )
+				);
+				if ( $on_types ) {
+					echo ' <span class="wp-cortex-scope-group-types">' . esc_html( implode( ', ', $on_types ) ) . '</span>';
+				}
+				echo '</summary>';
+				$this->field_group( $scope, $policy, $group, $group_fields );
+				echo '</details>';
+			}
+			$this->row_end();
+			echo '</div>';
+		}
+
+		echo '<p class="description wp-cortex-scope-note">' . esc_html__( 'Title, URL, dates, author, excerpt and content are part of every indexed post (ACF block fields are part of the content). Only fields of the post types chosen above are listed, and only while their data source is on (Data sources & sync); save the settings after changing them to update the list. Run Sync on Status & stats after changing post types or fields.', 'wp-cortex' ) . '</p>';
+	}
+
+	/**
+	 * Checkboxes of one group of fields, with "Select all" and "Select none" links.
+	 *
+	 * @param string                                                                              $scope  Storage::SCOPE_ADMIN or Storage::SCOPE_PUBLIC.
+	 * @param FieldPolicy                                                                         $policy Saved field rules.
+	 * @param string                                                                              $legend Group name for screen readers.
+	 * @param array<string, array{label: string, public: bool, type?: string, shared?: string[]}> $fields Field key => field.
+	 */
+	private function field_group( string $scope, FieldPolicy $policy, string $legend, array $fields ): void {
+		echo '<div class="wp-cortex-scope-fieldset">';
+		printf( '<fieldset class="wp-cortex-columns wp-cortex-scope-fields"><legend class="screen-reader-text">%s</legend>', esc_html( $legend ) );
+		foreach ( $fields as $key => $field ) {
+			printf( '<input type="hidden" name="%1$s" value="%2$s" />', esc_attr( Settings::OPTION . '[field_scopes][known][' . $scope . '][]' ), esc_attr( $key ) );
+			printf(
+				'<label class="wp-cortex-block"><input type="checkbox" name="%1$s" value="%2$s" %3$s /> %4$s%5$s <code>%6$s</code>%7$s</label>',
+				esc_attr( Settings::OPTION . '[field_scopes][' . $scope . '][]' ),
+				esc_attr( $key ),
+				checked( $policy->allows( $scope, $key, $field['public'] ), true, false ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				esc_html( $field['label'] ),
+				empty( $field['type'] ) ? '' : ' <span class="wp-cortex-field-type">' . esc_html( $field['type'] ) . '</span>', // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				esc_html( $key ),
+				empty( $field['shared'] ) ? '' : '<span class="wp-cortex-field-shared">' . esc_html(
+					sprintf(
+						/* translators: %s: names of the other field groups. */
+						__( 'Same field name in: %s. One choice applies to all of them.', 'wp-cortex' ),
+						implode( ', ', $field['shared'] )
+					)
+				) . '</span>' // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			);
+		}
+		echo '</fieldset>';
+		echo '<p class="wp-cortex-scope-toggle"><button type="button" class="button-link" data-wp-cortex-check="1">' . esc_html__( 'Select all', 'wp-cortex' ) . '</button> | <button type="button" class="button-link" data-wp-cortex-check="0">' . esc_html__( 'Select none', 'wp-cortex' ) . '</button></p>';
+		echo '</div>';
 	}
 
 	/**
 	 * Data sources section.
 	 */
 	public function fields_sources(): void {
+		$this->row_start( __( 'Auto sync', 'wp-cortex' ) );
+		$this->checkbox( 'auto_sync', __( 'Keep the index updated automatically when content changes', 'wp-cortex' ), (bool) Settings::get( 'auto_sync' ) );
+		$this->row_end();
+
 		$this->row_start( __( 'Yoast SEO', 'wp-cortex' ) );
 		$this->checkbox( 'index_yoast', __( 'Index Yoast SEO fields (title, description, focus keyword)', 'wp-cortex' ), (bool) Settings::get( 'index_yoast' ) );
 		$this->row_end( defined( 'WPSEO_VERSION' ) ? '' : __( 'Yoast SEO not detected.', 'wp-cortex' ) );
 
 		$this->row_start( __( 'Advanced Custom Fields', 'wp-cortex' ) );
 		$this->checkbox( 'index_acf', __( 'Index ACF fields', 'wp-cortex' ), (bool) Settings::get( 'index_acf' ) );
-		echo '<br />';
-		$this->checkbox( 'acf_public', __( 'Include ACF text in the public index', 'wp-cortex' ), (bool) Settings::get( 'acf_public' ) );
 		$this->row_end( function_exists( 'get_field_objects' ) ? '' : __( 'Advanced Custom Fields not detected.', 'wp-cortex' ) );
 
 		$meta_keys = implode( "\n", array_map( 'strval', (array) Settings::get( 'meta_keys' ) ) );
@@ -486,7 +654,7 @@ final class SettingsPage {
 			$this->name( 'meta_keys' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
 			esc_textarea( $meta_keys )
 		);
-		$this->row_end( __( 'One meta key per line. Indexed in the admin index only.', 'wp-cortex' ) );
+		$this->row_end( __( 'One meta key per line. Indexed in the admin index unless you also choose them under Public index.', 'wp-cortex' ) );
 	}
 
 	/**
