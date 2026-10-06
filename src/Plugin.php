@@ -55,6 +55,7 @@ final class Plugin {
 
 		add_action( VisitorChatStore::PURGE_HOOK, array( self::class, 'purge_visitor_chats' ) );
 		add_action( 'admin_init', array( self::class, 'privacy_policy_content' ) );
+		add_action( 'admin_init', array( self::class, 'relocate_data_dir' ) );
 
 		if ( ! wp_next_scheduled( VisitorChatStore::PURGE_HOOK ) ) {
 			wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', VisitorChatStore::PURGE_HOOK );
@@ -119,6 +120,16 @@ final class Plugin {
 		}
 
 		wp_add_privacy_policy_content( __( 'WP Cortex', 'wp-cortex' ), wp_kses_post( $text ) );
+	}
+
+	/**
+	 * Moves data stored in uploads by earlier versions to a private location, once, when an
+	 * administrator opens the admin.
+	 */
+	public static function relocate_data_dir(): void {
+		if ( current_user_can( 'manage_options' ) && ! wp_doing_ajax() ) {
+			Storage::maybe_relocate();
+		}
 	}
 
 	/**

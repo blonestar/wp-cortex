@@ -4,8 +4,15 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- The index databases and visitor images are stored outside the web root by default when the site allows it: in WP Engine's `_wpeprivate/` directory, in Pantheon's `wp-content/uploads/private/`, or in the directory above the web root. The plugin uses the first location it can actually write to and falls back to uploads otherwise. The choice is stored in the new `wp_cortex_data_location` option, and Settings > Advanced > Storage shows it next to the data directory. `WP_CORTEX_DATA_DIR` still takes precedence.
+- Settings > Advanced > Uninstall: a switch to keep the index databases when the plugin is deleted (`uninstall_delete_index`, on by default, which deletes them as before). When off, the data directory is kept and a new installation reuses the index without re-indexing; settings, conversations and visitor images are still deleted.
+
 ### Changed
 
+- The Storage card (data directory and public access check) moved from Cortex > Indexing to a new Settings > Advanced tab. Cortex > Indexing only shows an alert, with a link to it, while the index is publicly downloadable; the dashboard widget alert links there too.
+- Existing data in uploads is moved to the first writable private location once, the first time an administrator opens the admin while no index run is running. No re-indexing is needed. On hosts such as WP Engine, where Nginx served the databases from uploads, this makes them private.
 - Chat skills moved from the Cortex > Skills screen to a new Skills tab under Cortex > Settings, with a Saved skills section (the skills list and editor) and a Settings section (the skills settings formerly under Settings > Admin chat > Skills). The Cortex > Skills menu item is removed, and the chat's "Manage skills" link opens the new tab.
 
 ## [0.5.0] - 2026-10-05
