@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-06
+
 ### Added
 
 - Issue reports show the images the visitor attached while reporting the problem (for example a screenshot), and the notification email says how many there are. Images are kept with the conversation and disappear when it is deleted.
