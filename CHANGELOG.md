@@ -6,14 +6,23 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Separate configuration of the admin and public indexes under Settings > Indexing > Admin index and Public index, shown as two clearly marked sections. Each index has its own post types (`admin_post_types`, `public_post_types`), including media, and its own fields: every field of the core data, taxonomies, Yoast SEO, ACF (grouped by field group), custom meta keys and media can go into the admin index, the public index, both or neither (`field_scopes`). ACF content fields (text, dates, links to other posts and terms, repeaters...) of the public post types are chosen for the public index by default; settings-like fields (switches, numbers, choices, URLs, images) and fields named like internal data (`id`, `code`, `note`, `email`...) are not. For example, a post type can be indexed only for visitors. The field lists have a filter box; ACF fields are grouped by field group and only groups stored on posts of the index's post types are listed. A field name used in several field groups is listed in each of them with one shared choice.
+- Extractors can implement `DescribesFields` so their fields can be assigned to an index on the settings screen.
 - Pause and Resume buttons for a running index run (Settings > Indexing > Status & stats, `POST /index/pause` and `/index/resume`). A paused run continues where it stopped; the time spent paused is not counted in the elapsed time.
 
 ### Changed
 
+- Fewer fields go into the public index by default: parent post ID, featured image URL and the media MIME type, file name and size, dimensions and audio/video metadata are now admin only. The Yoast SEO title, meta description and social titles and descriptions, which are printed in the page head anyway, now go into the public index as well. Run Sync to apply.
+- Settings > Indexing: "What gets indexed" and "Data sources" are replaced by Admin index, Public index and Data sources & sync (Auto sync moved there).
 - Sync and Rebuild (Settings > Indexing > Status & stats) run in the background on the server and continue after the page is closed. The page only shows the progress, refreshes it every few seconds (also in other tabs and when you come back) and can cancel the run. A WP-Cron watchdog restarts a run that stopped; where the host blocks loopback requests, an open status page keeps the run going as before.
+
+### Fixed
+
+- ACF relationship, post object, taxonomy, user, image, file and gallery fields were indexed as bare IDs (or, for user arrays, with the user's email and account data). They are now indexed as post titles, term names, user display names and image or file titles, alt texts and captions, whatever the field's return format. The admin index names every related post (unpublished ones with their status, for example "Title (draft)") and every term; the public index only published, non-password-protected posts and terms of viewable taxonomies. ACF dates are indexed as ISO dates (`2024-04-29`) and password fields are never indexed. Run Sync to apply.
 
 ### Removed
 
+- The `post_types`, `index_media` and `acf_public` settings, replaced by the per-index post types and fields. Saved settings are migrated: the selected post types (and media) go into both indexes. "Include ACF text in the public index" is not carried over: the ACF content fields of the public post types are chosen by default instead (adjust them under Public index).
 - The warning when leaving the page during indexing, which is no longer needed. The old Resume button (which continued a run in the browser) is replaced by Pause and Resume.
 
 ## [0.7.0] - 2026-10-06

@@ -92,14 +92,14 @@ final class Settings {
 	 */
 	public static function defaults(): array {
 		return array(
-			'post_types'                 => array( 'post', 'page' ),
+			'admin_post_types'           => array( 'post', 'page' ),
+			'public_post_types'          => array( 'post', 'page' ),
 			'admin_statuses'             => array( 'publish', 'future', 'draft', 'pending', 'private' ),
 			'auto_sync'                  => true,
 			'index_yoast'                => true,
 			'index_acf'                  => true,
-			'acf_public'                 => false,
 			'meta_keys'                  => array(),
-			'index_media'                => false,
+			'field_scopes'               => array(),
 			'chunk_size'                 => 1200,
 			'chunk_overlap'              => 150,
 			'batch_size'                 => 10,
@@ -163,7 +163,32 @@ final class Settings {
 	public static function all(): array {
 		$stored = get_option( self::OPTION, array() );
 
-		return array_merge( self::defaults(), is_array( $stored ) ? $stored : array() );
+		return array_merge( self::defaults(), self::upgrade( is_array( $stored ) ? $stored : array() ) );
+	}
+
+	/**
+	 * Maps settings saved before the admin and public indexes were configured separately:
+	 * "post_types" and "index_media" become both post type lists. "acf_public" is dropped,
+	 * so ACF fields go back to the admin index only until they are chosen for the public
+	 * index one by one. Saving the settings drops the old keys.
+	 *
+	 * @param array<string, mixed> $stored Stored settings.
+	 * @return array<string, mixed>
+	 */
+	private static function upgrade( array $stored ): array {
+		if ( isset( $stored['post_types'] ) && ! isset( $stored['admin_post_types'] ) ) {
+			$types = (array) $stored['post_types'];
+			if ( ! empty( $stored['index_media'] ) ) {
+				$types[] = 'attachment';
+			}
+
+			$stored['admin_post_types']  = $types;
+			$stored['public_post_types'] = $types;
+		}
+
+		unset( $stored['post_types'], $stored['index_media'], $stored['acf_public'] );
+
+		return $stored;
 	}
 
 	/**
@@ -177,19 +202,30 @@ final class Settings {
 	}
 
 	/**
-	 * Post types selected for indexing that still exist, plus "attachment" when media
-	 * indexing is on.
+	 * Post types selected for an index that still exist ("attachment" is media). The
+	 * public index only keeps the viewable ones.
 	 *
+	 * @param string $scope Storage\Storage::SCOPE_ADMIN, SCOPE_PUBLIC, or empty for both indexes.
 	 * @return string[]
 	 */
-	public static function post_types(): array {
-		$types = array_filter( (array) self::get( 'post_types' ), 'post_type_exists' );
-
-		if ( self::get( 'index_media' ) ) {
-			$types[] = 'attachment';
+	public static function post_types( string $scope = '' ): array {
+		if ( '' === $scope ) {
+			return array_values( array_unique( array_merge( self::post_types( Storage\Storage::SCOPE_ADMIN ), self::post_types( Storage\Storage::SCOPE_PUBLIC ) ) ) );
 		}
 
-		return array_values( array_unique( $types ) );
+		$types = array_filter( (array) self::get( $scope . '_post_types' ), 'post_type_exists' );
+		if ( Storage\Storage::SCOPE_PUBLIC === $scope ) {
+			$types = array_filter( $types, 'is_post_type_viewable' );
+		}
+
+		return array_values( array_unique( array_map( 'strval', $types ) ) );
+	}
+
+	/**
+	 * Whether media (attachments) go into at least one index.
+	 */
+	public static function index_media(): bool {
+		return in_array( 'attachment', self::post_types(), true );
 	}
 
 	/**
@@ -238,8 +274,9 @@ final class Settings {
 		$input    = is_array( $input ) ? $input : array();
 		$defaults = self::defaults();
 
-		$post_types = array_map( 'sanitize_key', (array) ( $input['post_types'] ?? array() ) );
-		$statuses   = array_map( 'sanitize_key', (array) ( $input['admin_statuses'] ?? array() ) );
+		$admin_types  = array_map( 'sanitize_key', (array) ( $input['admin_post_types'] ?? array() ) );
+		$public_types = array_map( 'sanitize_key', (array) ( $input['public_post_types'] ?? array() ) );
+		$statuses     = array_map( 'sanitize_key', (array) ( $input['admin_statuses'] ?? array() ) );
 
 		$meta_keys = $input['meta_keys'] ?? array();
 		if ( is_string( $meta_keys ) ) {
@@ -292,14 +329,14 @@ final class Settings {
 		}
 
 		return $appearance + array(
-			'post_types'               => array_values( array_filter( $post_types, 'post_type_exists' ) ),
+			'admin_post_types'         => array_values( array_unique( array_filter( $admin_types, 'post_type_exists' ) ) ),
+			'public_post_types'        => array_values( array_unique( array_filter( $public_types, 'post_type_exists' ) ) ),
 			'admin_statuses'           => array_values( array_intersect( $statuses, self::ADMIN_STATUSES ) ),
 			'auto_sync'                => ! empty( $input['auto_sync'] ),
 			'index_yoast'              => ! empty( $input['index_yoast'] ),
 			'index_acf'                => ! empty( $input['index_acf'] ),
-			'acf_public'               => ! empty( $input['acf_public'] ),
 			'meta_keys'                => $meta_keys,
-			'index_media'              => ! empty( $input['index_media'] ),
+			'field_scopes'             => self::sanitize_field_scopes( $input['field_scopes'] ?? array() ),
 			'chunk_size'               => $chunk_size,
 			'chunk_overlap'            => self::clamp( $input['chunk_overlap'] ?? $defaults['chunk_overlap'], 0, (int) floor( $chunk_size / 2 ) ),
 			'batch_size'               => self::clamp( $input['batch_size'] ?? $defaults['batch_size'], 1, 100 ),
@@ -342,6 +379,99 @@ final class Settings {
 			'summary_language'         => in_array( $summary_language, self::SUMMARY_LANGUAGES, true ) ? $summary_language : self::SUMMARY_LANGUAGES[0],
 			'summary_instructions'     => mb_substr( $summary_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
 		);
+	}
+
+	/**
+	 * Field rules from the Admin index and Public index sections. Each section sends the
+	 * keys it shows (`known[<scope>]`) and the checked ones (`<scope>`). Only choices that
+	 * differ from what the field would get anyway (the extractor's default or a wildcard
+	 * rule) are stored, so better defaults still reach fields nobody changed. Rules of
+	 * fields that are not shown (for example while their data source is off) are kept.
+	 * Already sanitized rules (field key => value) are kept as they are.
+	 *
+	 * @param mixed $input Raw input.
+	 * @return array<string, string> Field key => FieldPolicy value.
+	 */
+	private static function sanitize_field_scopes( $input ): array {
+		$input = is_array( $input ) ? $input : array();
+		$rules = array();
+
+		if ( ! isset( $input['known'] ) ) {
+			foreach ( $input as $key => $value ) {
+				$key = self::sanitize_field_key( $key );
+				if ( '' !== $key && in_array( $value, Indexing\FieldPolicy::VALUES, true ) ) {
+					$rules[ $key ] = $value;
+				}
+			}
+
+			return $rules;
+		}
+
+		$stored = get_option( self::OPTION, array() );
+		$stored = self::upgrade( is_array( $stored ) ? $stored : array() );
+		foreach ( (array) ( $stored['field_scopes'] ?? array() ) as $key => $value ) {
+			if ( in_array( $value, Indexing\FieldPolicy::VALUES, true ) ) {
+				$rules[ (string) $key ] = $value;
+			}
+		}
+
+		$catalog = array();
+		foreach ( Indexing\FieldPolicy::catalog() as $fields ) {
+			$catalog += $fields;
+		}
+
+		$known   = array();
+		$checked = array();
+		foreach ( Storage\Storage::SCOPES as $scope ) {
+			$known[ $scope ]   = array_map( array( self::class, 'sanitize_field_key' ), (array) ( $input['known'][ $scope ] ?? array() ) );
+			$checked[ $scope ] = array_map( array( self::class, 'sanitize_field_key' ), (array) ( $input[ $scope ] ?? array() ) );
+		}
+
+		$keys = array_values( array_intersect( array_unique( array_merge( ...array_values( $known ) ) ), array_keys( $catalog ) ) );
+
+		// Wildcards first: the other fields are compared with what the wildcards give them.
+		usort( $keys, static fn( $a, $b ) => ( str_ends_with( $b, '*' ) <=> str_ends_with( $a, '*' ) ) ?: strcmp( $a, $b ) );
+
+		foreach ( $keys as $key ) {
+			$default = (bool) $catalog[ $key ]['public'];
+			$current = new Indexing\FieldPolicy( $rules );
+			$without = $rules;
+			unset( $without[ $key ] );
+			$inherited = new Indexing\FieldPolicy( $without );
+
+			$want = array();
+			$same = true;
+			foreach ( Storage\Storage::SCOPES as $scope ) {
+				$want[ $scope ] = in_array( $key, $known[ $scope ], true )
+					? in_array( $key, $checked[ $scope ], true )
+					: $current->allows( $scope, $key, $default );
+				$same           = $same && $want[ $scope ] === $inherited->allows( $scope, $key, $default );
+			}
+
+			if ( $same ) {
+				unset( $rules[ $key ] );
+				continue;
+			}
+
+			$in_admin      = $want[ Storage\Storage::SCOPE_ADMIN ];
+			$in_public     = $want[ Storage\Storage::SCOPE_PUBLIC ];
+			$rules[ $key ] = $in_admin ? ( $in_public ? 'both' : 'admin' ) : ( $in_public ? 'public' : 'none' );
+		}
+
+		ksort( $rules );
+
+		return $rules;
+	}
+
+	/**
+	 * A field key ("source:name", the name may end in "*"), or an empty string when invalid.
+	 *
+	 * @param mixed $key Raw key.
+	 */
+	private static function sanitize_field_key( $key ): string {
+		$key = mb_substr( trim( sanitize_text_field( (string) $key ) ), 0, 200 );
+
+		return preg_match( '/^[a-z0-9_-]+:\S+$/', $key ) ? $key : '';
 	}
 
 	/**
