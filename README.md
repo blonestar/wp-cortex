@@ -41,7 +41,7 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 ## Installation and quick start
 
 1. Copy the plugin into `wp-content/plugins/wp-cortex` and activate it.
-2. (Recommended) Define `WP_CORTEX_DATA_DIR` in `wp-config.php` with a path outside the web root.
+2. Check the Storage card on **Cortex > Indexing**: the plugin stores its databases outside the web root when it can (see [Data directory](#data-directory)); if it falls back to uploads, define `WP_CORTEX_DATA_DIR` in `wp-config.php` with a path outside the web root.
 3. Add an OpenAI API key under Settings > Connectors (or via env/constant).
 4. Open **Cortex > Settings** (the last item of the Cortex menu), choose post types and sources on the Content tab, and save.
 5. Open **Cortex > Indexing** and click Sync (or run `wp cortex index`).
@@ -115,7 +115,16 @@ Settings are stored in the `wp_cortex_settings` option and edited under **Cortex
 
 ### Data directory
 
-By default the databases live in `wp-content/uploads/.wp-cortex-<random>/`. The random directory name is generated once and stored in the `wp_cortex_data_dir_name` option. The directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**. The name starts with a dot because most Nginx configurations for WordPress (Local, for example) refuse hidden paths; where the server has no such rule, the fallback relies only on the unguessable name. Directories created by earlier versions (`wp-cortex-<random>`) are renamed to the hidden name automatically. The Indexing screen warns when the fallback is used and, in the Storage card, shows a public access check: the server requests its own data directory URL without cookies and reports whether the directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded (a response only counts when it starts with the SQLite header). The result is green when nothing is reachable, red when something is and yellow when the server could not reach itself; it is cached for 12 hours (or until a database is created or deleted) and the Test again button runs it immediately. A `WP_CORTEX_DATA_DIR` outside the WordPress directory is not tested. If a file is downloadable, add a rule like this to the Nginx server block (or ask the host to):
+The databases live in a hidden directory with a random name, `.wp-cortex-<random>/`, generated once and stored in the `wp_cortex_data_dir_name` option. On first use the plugin picks its parent from these locations, the first one PHP can actually write to (tested by writing a file), and stores the choice in the `wp_cortex_data_location` option:
+
+1. **WP Engine:** `_wpeprivate/` in the site root, which WP Engine never serves.
+2. **Pantheon:** `wp-content/uploads/private/`, which Pantheon never serves (created when missing).
+3. **Outside the web root:** the directory above the one that serves the site (for example `/home/user/` above `public_html/`), unless it is inside the server's document root.
+4. **Uploads (fallback):** `wp-content/uploads/`.
+
+The location is stored as a key, not a path, so a copy of the site on another environment resolves it again (its index starts empty there; re-run an index). `WP_CORTEX_DATA_DIR` overrides the automatic choice. Data that earlier versions stored in uploads is moved to the first writable private location once, the first time an administrator opens the admin while no index run is running (renamed, or copied and deleted across file systems); if no private location is writable, it stays in uploads. The Storage card on the Indexing screen shows the location next to the data directory.
+
+In uploads, the directory receives `index.php`, `.htaccess` and `web.config` deny rules, but **Nginx ignores `.htaccess`**. The name starts with a dot because most Nginx configurations for WordPress (Local, for example) refuse hidden paths; where the server has no such rule, the fallback relies only on the unguessable name. Directories created by earlier versions (`wp-cortex-<random>`) are renamed to the hidden name automatically. The Indexing screen warns when the fallback is used and, in the Storage card, shows a public access check: the server requests its own data directory URL without cookies and reports whether the directory lists its files and whether `public.sqlite` and `admin.sqlite` can be downloaded (a response only counts when it starts with the SQLite header). The check also runs for private locations inside the WordPress directory (WP Engine, Pantheon), so it confirms that the host really blocks them. The result is green when nothing is reachable, red when something is and yellow when the server could not reach itself; it is cached for 12 hours (or until a database is created or deleted) and the Test again button runs it immediately. A location outside the WordPress directory is not tested. If a file is downloadable, add a rule like this to the Nginx server block (or ask the host to):
 
 ```nginx
 location ~ /\. { deny all; }
@@ -127,7 +136,7 @@ For real protection, put the data outside the web root:
 define( 'WP_CORTEX_DATA_DIR', '/var/lib/wp-cortex' );
 ```
 
-The directory must be writable by the web server user. Changing the location does not move existing databases; re-run an index.
+The directory must be writable by the web server user. Changing `WP_CORTEX_DATA_DIR` does not move existing databases; move them by hand or re-run an index.
 
 Images visitors attach in the visitor chat are stored in the same directory under `visitor-images/<conversation ID>/` with random file names, served to administrators only through the REST API and deleted with their conversation (manually, by the retention cron or on uninstall).
 

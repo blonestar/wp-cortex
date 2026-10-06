@@ -48,11 +48,11 @@ final class IndexingPage {
 		echo '<code id="wp-cortex-data-dir-path" hidden>' . esc_html( Storage::data_dir() ) . '</code> ';
 		echo '<button type="button" class="button-link wp-cortex-data-dir-toggle" id="wp-cortex-data-dir-toggle" aria-controls="wp-cortex-data-dir-path" aria-expanded="false" aria-label="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '" title="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '">';
 		echo '<span class="dashicons dashicons-visibility" aria-hidden="true"></span>';
-		echo '</button></p>';
+		echo '</button> <span class="wp-cortex-data-dir-location">(' . esc_html( Storage::location_label() ) . ')</span></p>';
 
 		if ( Storage::is_in_uploads() ) {
 			echo '<div class="notice notice-warning inline"><p>';
-			echo esc_html__( 'The index is stored inside the uploads directory. For better protection, define WP_CORTEX_DATA_DIR in wp-config.php with a path outside the web root.', 'wp-cortex' );
+			echo esc_html__( 'The index is stored inside the uploads directory because no private location outside the web root is writable. For better protection, define WP_CORTEX_DATA_DIR in wp-config.php with a writable path outside the web root.', 'wp-cortex' );
 			echo '</p></div>';
 		}
 
