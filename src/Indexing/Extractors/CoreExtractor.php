@@ -14,12 +14,34 @@ use WPCortex\Indexing\Indexer;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Title, URL, dates, author, excerpt and rendered content.
+ * Title, URL, dates, author, excerpt and rendered content (always in every index the
+ * post belongs to) and a few structured fields (admin index only by default).
  */
-final class CoreExtractor implements Extractor {
+final class CoreExtractor implements Extractor, DescribesFields {
 
 	public function is_available(): bool {
 		return true;
+	}
+
+	public function fields_label(): string {
+		return __( 'Post details', 'wp-cortex' );
+	}
+
+	public function fields(): array {
+		return array(
+			'core:parent_id'      => array(
+				'label'  => __( 'Parent post ID', 'wp-cortex' ),
+				'public' => false,
+			),
+			'core:template'       => array(
+				'label'  => __( 'Page template', 'wp-cortex' ),
+				'public' => false,
+			),
+			'core:featured_image' => array(
+				'label'  => __( 'Featured image URL', 'wp-cortex' ),
+				'public' => false,
+			),
+		);
 	}
 
 	public function extract( WP_Post $post, Document $doc ): void {
@@ -37,7 +59,7 @@ final class CoreExtractor implements Extractor {
 		$doc->body_html    = $this->render_content( $post );
 
 		if ( $post->post_parent ) {
-			$doc->add_field( 'core', 'parent_id', $post->post_parent, true );
+			$doc->add_field( 'core', 'parent_id', $post->post_parent );
 		}
 
 		$template = get_page_template_slug( $post );
@@ -46,7 +68,7 @@ final class CoreExtractor implements Extractor {
 		}
 
 		if ( has_post_thumbnail( $post ) ) {
-			$doc->add_field( 'core', 'featured_image', (string) get_the_post_thumbnail_url( $post, 'full' ), true );
+			$doc->add_field( 'core', 'featured_image', (string) get_the_post_thumbnail_url( $post, 'full' ) );
 		}
 	}
 

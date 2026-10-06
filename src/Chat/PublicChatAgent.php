@@ -998,17 +998,12 @@ final class PublicChatAgent {
 	}
 
 	/**
-	 * Indexed post types that can be in the public index.
+	 * Post types of the public index, without media.
 	 *
 	 * @return string[]
 	 */
 	private function post_types(): array {
-		return array_values(
-			array_filter(
-				Settings::post_types(),
-				static fn( $type ) => 'attachment' !== $type && is_post_type_viewable( $type )
-			)
-		);
+		return array_values( array_diff( Settings::post_types( self::SCOPE ), array( 'attachment' ) ) );
 	}
 
 	/**

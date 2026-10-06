@@ -481,8 +481,112 @@
 		} );
 	}
 
+	// "Select all" / "Select none" links under the field lists of the Admin and Public index sections.
+	function initFieldToggles() {
+		document.querySelectorAll( '[data-wp-cortex-check]' ).forEach( function ( button ) {
+			button.addEventListener( 'click', function () {
+				var control = button.closest( '.wp-cortex-scope-fieldset' );
+				var checked = button.getAttribute( 'data-wp-cortex-check' ) === '1';
+
+				if ( ! control ) {
+					return;
+				}
+
+				control.querySelectorAll( '.wp-cortex-scope-fields label:not([hidden]) input[type="checkbox"]' ).forEach( function ( input ) {
+					input.checked = checked;
+					input.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+				} );
+			} );
+		} );
+	}
+
+	// Filter box of the Admin index and Public index sections: hides fields that do not
+	// match and opens the field groups that have matches.
+	function initFieldFilters() {
+		document.querySelectorAll( '.wp-cortex-field-filter' ).forEach( function ( input ) {
+			var card = input.closest( '.wp-cortex-settings-card' );
+			var empty = card ? card.querySelector( '.wp-cortex-field-filter-empty' ) : null;
+
+			if ( ! card ) {
+				return;
+			}
+
+			// Remembers which groups were open before filtering, to restore them afterwards.
+			card.querySelectorAll( '.wp-cortex-scope-group' ).forEach( function ( group ) {
+				group.setAttribute( 'data-was-open', group.open ? '1' : '' );
+				group.addEventListener( 'toggle', function () {
+					if ( ! input.value.trim() ) {
+						group.setAttribute( 'data-was-open', group.open ? '1' : '' );
+					}
+				} );
+			} );
+
+			input.addEventListener( 'input', function () {
+				var query = input.value.trim().toLowerCase();
+				var total = 0;
+
+				card.querySelectorAll( '.wp-cortex-field-source' ).forEach( function ( source ) {
+					var sourceName = source.querySelector( '.wp-cortex-field-label' ).textContent.toLowerCase();
+					var sourceHits = 0;
+
+					source.querySelectorAll( '.wp-cortex-scope-fieldset' ).forEach( function ( set ) {
+						var group = set.closest( '.wp-cortex-scope-group' );
+						var groupName = group ? group.querySelector( 'summary' ).textContent.toLowerCase() : '';
+						var hits = 0;
+
+						set.querySelectorAll( '.wp-cortex-scope-fields label' ).forEach( function ( label ) {
+							var match = ! query || ( sourceName + ' ' + groupName + ' ' + label.textContent.toLowerCase() ).indexOf( query ) !== -1;
+
+							label.hidden = ! match;
+							hits += match ? 1 : 0;
+						} );
+
+						set.querySelector( '.wp-cortex-scope-toggle' ).hidden = !! query;
+						if ( group ) {
+							group.hidden = ! hits;
+							group.open = query ? hits > 0 : group.getAttribute( 'data-was-open' ) === '1';
+						} else {
+							set.hidden = ! hits;
+						}
+						sourceHits += hits;
+					} );
+
+					source.hidden = ! sourceHits;
+					total += sourceHits;
+				} );
+
+				if ( empty ) {
+					empty.hidden = total > 0;
+				}
+			} );
+		} );
+	}
+
+	// A field listed in several field groups has one shared choice: keeps its checkboxes
+	// in the same section in step.
+	function initSharedFields() {
+		document.addEventListener( 'change', function ( event ) {
+			var input = event.target;
+			var fields = input.closest ? input.closest( '.wp-cortex-scope-fields' ) : null;
+			var card = fields ? fields.closest( '.wp-cortex-settings-card' ) : null;
+
+			if ( ! card || input.type !== 'checkbox' ) {
+				return;
+			}
+
+			card.querySelectorAll( '.wp-cortex-scope-fields input[type="checkbox"]' ).forEach( function ( other ) {
+				if ( other !== input && other.value === input.value && other.name === input.name ) {
+					other.checked = input.checked;
+				}
+			} );
+		} );
+	}
+
 	initTabs();
 	initChangelog();
+	initFieldToggles();
+	initSharedFields();
+	initFieldFilters();
 	initEmbeddings();
 	initModelPickers();
 	initChatPreview();
