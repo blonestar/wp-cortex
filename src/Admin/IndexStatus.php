@@ -132,11 +132,12 @@ final class IndexStatus {
 			<p class="wp-cortex-actions">
 				<button type="button" class="button button-primary" id="wp-cortex-sync" disabled><?php esc_html_e( 'Sync index', 'wp-cortex' ); ?></button>
 				<button type="button" class="button button-secondary" id="wp-cortex-rebuild" disabled><?php esc_html_e( 'Rebuild from scratch', 'wp-cortex' ); ?></button>
+				<button type="button" class="button" id="wp-cortex-pause" hidden><?php esc_html_e( 'Pause', 'wp-cortex' ); ?></button>
 				<button type="button" class="button" id="wp-cortex-resume" hidden><?php esc_html_e( 'Resume', 'wp-cortex' ); ?></button>
 				<button type="button" class="button" id="wp-cortex-cancel" hidden><?php esc_html_e( 'Cancel', 'wp-cortex' ); ?></button>
 			</p>
 			<p class="description">
-				<?php esc_html_e( 'Sync only re-processes content that has changed. Rebuild deletes both databases and indexes everything again.', 'wp-cortex' ); ?>
+				<?php esc_html_e( 'Sync only re-processes content that has changed. Rebuild deletes both databases and indexes everything again. Indexing runs in the background on the server: you can leave this page and come back later. A paused run continues where it stopped.', 'wp-cortex' ); ?>
 			</p>
 
 			<div class="notice notice-error inline" id="wp-cortex-request-error" hidden><p></p></div>

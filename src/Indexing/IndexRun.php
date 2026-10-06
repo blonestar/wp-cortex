@@ -15,7 +15,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Tracks a resumable, batch-based run over all eligible posts. State lives in an
- * option so the admin UI, WP-CLI and cron all see the same progress.
+ * option so the admin UI, WP-CLI and the background worker (IndexWorker) all see the
+ * same progress.
  */
 final class IndexRun {
 
@@ -72,6 +73,9 @@ final class IndexRun {
 			'cursor'          => 0,
 			'errors'          => array(),
 			'started_at'      => time(),
+			'updated_at'      => time(),
+			'paused_at'       => 0,
+			'paused_seconds'  => 0,
 			'finished_at'     => 0,
 		);
 
@@ -147,7 +151,8 @@ final class IndexRun {
 			}
 
 			// The total can change while running (posts added or removed).
-			$state['total'] = max( (int) $state['total'], (int) $state['processed'] );
+			$state['total']      = max( (int) $state['total'], (int) $state['processed'] );
+			$state['updated_at'] = time();
 
 			// Do not overwrite a cancel (or restart) issued while this batch was running.
 			$current = self::state();
@@ -164,18 +169,70 @@ final class IndexRun {
 	}
 
 	/**
-	 * Cancels the running run, if any.
+	 * Cancels the running or paused run, if any.
 	 */
 	public static function cancel(): void {
+		$state = self::state();
+
+		if ( ! $state || ! in_array( $state['status'], array( 'running', 'paused' ), true ) ) {
+			return;
+		}
+
+		$state                = self::end_pause( $state );
+		$state['status']      = 'cancelled';
+		$state['finished_at'] = time();
+		update_option( self::OPTION, $state, false );
+	}
+
+	/**
+	 * Pauses the running run. A batch in progress finishes, but its result is discarded
+	 * and those posts are processed again on resume.
+	 */
+	public static function pause(): void {
 		$state = self::state();
 
 		if ( ! $state || 'running' !== $state['status'] ) {
 			return;
 		}
 
-		$state['status']      = 'cancelled';
-		$state['finished_at'] = time();
+		$state['status']    = 'paused';
+		$state['paused_at'] = time();
 		update_option( self::OPTION, $state, false );
+	}
+
+	/**
+	 * Resumes the paused run.
+	 *
+	 * @return bool Whether a paused run was resumed.
+	 */
+	public static function resume(): bool {
+		$state = self::state();
+
+		if ( ! $state || 'paused' !== $state['status'] ) {
+			return false;
+		}
+
+		$state               = self::end_pause( $state );
+		$state['status']     = 'running';
+		$state['updated_at'] = time();
+		update_option( self::OPTION, $state, false );
+
+		return true;
+	}
+
+	/**
+	 * Adds the time spent paused to the total and clears the pause start.
+	 *
+	 * @param array $state Run state.
+	 * @return array Updated state.
+	 */
+	private static function end_pause( array $state ): array {
+		if ( ! empty( $state['paused_at'] ) ) {
+			$state['paused_seconds'] = (int) ( $state['paused_seconds'] ?? 0 ) + max( 0, time() - (int) $state['paused_at'] );
+			$state['paused_at']      = 0;
+		}
+
+		return $state;
 	}
 
 	/**
@@ -185,6 +242,19 @@ final class IndexRun {
 		$state = self::state();
 
 		return $state && 'running' === $state['status'];
+	}
+
+	/**
+	 * Whether a batch holds the lock (locks older than the TTL do not count).
+	 */
+	public static function is_locked(): bool {
+		wp_cache_delete( self::LOCK_OPTION, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+
+		$taken = (int) get_option( self::LOCK_OPTION, 0 );
+
+		return $taken > 0 && time() - $taken < self::LOCK_TTL;
 	}
 
 	/**

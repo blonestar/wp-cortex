@@ -4,6 +4,18 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Pause and Resume buttons for a running index run (Settings > Indexing > Status & stats, `POST /index/pause` and `/index/resume`). A paused run continues where it stopped; the time spent paused is not counted in the elapsed time.
+
+### Changed
+
+- Sync and Rebuild (Settings > Indexing > Status & stats) run in the background on the server and continue after the page is closed. The page only shows the progress, refreshes it every few seconds (also in other tabs and when you come back) and can cancel the run. A WP-Cron watchdog restarts a run that stopped; where the host blocks loopback requests, an open status page keeps the run going as before.
+
+### Removed
+
+- The warning when leaving the page during indexing, which is no longer needed. The old Resume button (which continued a run in the browser) is replaced by Pause and Resume.
+
 ## [0.7.0] - 2026-10-06
 
 ### Added

@@ -18,7 +18,7 @@ WP Cortex is a memory layer for WordPress. It indexes site content into a local 
 - **Front-end-equivalent content**: blocks (including dynamic ones) are rendered as an anonymous visitor, so the index matches what the public sees and logged-in-only content never leaks into it. Forms, navigation, scripts and styles are stripped.
 - **Heading-aware chunking**: HTML is split at headings; consecutive short sections are packed together and long ones split at paragraph/sentence boundaries into chunks of roughly N characters with configurable overlap.
 - **OpenAI embeddings** with reuse by chunk hash: unchanged text is never re-embedded, even across documents and scopes.
-- **Batch indexing with progress UI**: resumable and cancellable, with stats for both indexes (Cortex > Settings > Indexing > Status & stats).
+- **Batch indexing in the background**: Sync and Rebuild run on the server, so they continue after the admin page is closed; the page (in any tab) only shows the live progress and can pause, resume or cancel the run. Stats for both indexes are shown next to it (Cortex > Settings > Indexing > Status & stats).
 - **Incremental auto-sync** via WP-Cron when content, terms or relevant meta change.
 - **Hybrid search service** (`WPCortex\Search\SearchService`): FTS5 BM25 keyword search, brute-force cosine semantic search, merged with Reciprocal Rank Fusion and grouped per document. Structured filters on post type, status, modified date and any indexed field (`eq`, `neq`, `contains`, `not_contains`, `empty`, `not_empty`, `missing`, `exists`). Degrades to keyword search when embeddings are unavailable. Also offers `get_document()` and `field_catalog()`.
 - **Admin chat assistant**: a floating chat panel on every admin screen for administrators. An LLM (through the WordPress AI Client, any configured provider) answers questions about site content by calling tools over the admin index, shows the posts cited in its answer (as `#ID`) as cards below it and on request can open a post in the editor or go to any admin screen from the user's admin menu or any tab and section of Cortex > Settings (optionally straight to a named tab, including a nested tab given as a path such as "Visitor chat › Appearance") and switch tabs on the current screen. Conversations are stored per user in the `{prefix}wp_cortex_conversations` table. Needs an AI provider API key under Settings > Connectors.
@@ -163,6 +163,7 @@ Images visitors attach in the visitor chat are stored in the same directory unde
 - **Stale removal**: documents not seen by a run (deleted posts, changed status, deselected post types) are deleted when the run finishes. Posts that become ineligible are also removed immediately when processed.
 - **Auto-sync**: on save, trash/untrash/delete, status transition, term changes and changes of `_yoast_wpseo_*` or configured meta keys (with media indexing also alt text, attachment metadata, attach/detach, and the media attached to a post whose status or password changes), post IDs are queued (option `wp_cortex_sync_queue`) and processed by a single WP-Cron event ~15 seconds later, 50 posts at a time. It pauses while a full run is active.
 - Run state is kept in the `wp_cortex_index_run` option and shared by the admin UI, REST and WP-CLI; a lock option prevents concurrent batches (stale after 300 s).
+- **Background worker**: a run started from the admin is processed by worker requests to `admin-ajax.php` (action `wp_cortex_index_worker`, authorized by a token derived from the run ID and the site salts). Each one processes batches for about 20 seconds and then starts the next one with a non-blocking loopback request. If no batch finishes for 10 seconds, the run is restarted by the `wp_cortex_index_watchdog` WP-Cron event (checked every minute while a run is active; it processes batches in the cron request itself) and by the status requests of the admin page, which also process one batch each when loopback requests are blocked. The admin page polls `GET /index` every 3 seconds while a run is active (every 15 seconds otherwise, paused while the tab is hidden).
 
 ## WP-CLI
 
@@ -180,10 +181,12 @@ Namespace `wp-cortex/v1`. All routes require the `manage_options` capability (an
 
 | Method | Route | Description |
 | --- | --- | --- |
-| GET | `/index` | Run state, per-scope stats, eligible post count. |
-| POST | `/index/start` | Start a run. Param `mode`: `sync` (default) or `rebuild`. |
-| POST | `/index/batch` | Process one batch of the running run. Response includes `locked: true` if another request holds the lock. |
-| POST | `/index/cancel` | Cancel the running run. |
+| GET | `/index` | Run state, per-scope stats, eligible post count. Restarts a stalled background run. |
+| POST | `/index/start` | Start a run in the background. Param `mode`: `sync` (default) or `rebuild`. |
+| POST | `/index/batch` | Process one batch of the running run in this request (not needed with the background worker). Response includes `locked: true` if another request holds the lock. |
+| POST | `/index/pause` | Pause the running run (a batch in progress is discarded and processed again on resume). |
+| POST | `/index/resume` | Resume the paused run in the background. |
+| POST | `/index/cancel` | Cancel the running or paused run. |
 | GET | `/index/storage-check` | Public access check of the data directory (cached for 12 hours, run when nothing is cached). |
 | POST | `/index/storage-check` | Run the public access check again. |
 | GET | `/chat/conversations` | The current user's conversations: `{ conversations: [ { id, title, updated_at } ] }`. |
