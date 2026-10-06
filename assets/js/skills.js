@@ -1,5 +1,5 @@
 /**
- * Cortex Skills screen: lists, adds, edits, toggles and deletes chat skills.
+ * Settings > Skills tab: lists, adds, edits, toggles and deletes chat skills.
  */
 ( function () {
 	'use strict';
@@ -10,7 +10,7 @@
 	var PATH = '/wp-cortex/v1/skills';
 
 	var root = document.getElementById( 'wp-cortex-skills' );
-	if ( ! root ) {
+	if ( ! root || ! document.getElementById( 'wp-cortex-skill-form' ) ) {
 		return;
 	}
 
@@ -18,6 +18,7 @@
 		add: document.getElementById( 'wp-cortex-skill-add' ),
 		notice: document.getElementById( 'wp-cortex-skills-notice' ),
 		form: document.getElementById( 'wp-cortex-skill-form' ),
+		editor: document.getElementById( 'wp-cortex-skill-editor' ),
 		formTitle: document.getElementById( 'wp-cortex-skill-form-title' ),
 		cancel: document.getElementById( 'wp-cortex-skill-cancel' ),
 		list: document.getElementById( 'wp-cortex-skills-list' )
@@ -132,12 +133,12 @@
 		f.instructions.value = skill ? skill.instructions : '';
 		f.active.checked = skill ? !! skill.active : true;
 		els.formTitle.textContent = skill ? sprintf( __( 'Edit skill “%s”', 'wp-cortex' ), skill.name ) : __( 'Add skill', 'wp-cortex' );
-		els.form.hidden = false;
+		els.editor.hidden = false;
 		f.name.focus();
 	}
 
 	function closeForm() {
-		els.form.hidden = true;
+		els.editor.hidden = true;
 		els.form.reset();
 	}
 

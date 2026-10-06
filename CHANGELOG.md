@@ -6,7 +6,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Changed
 
-- Cortex > Skills is now listed second to last in the Cortex menu, just above Settings.
+- Chat skills moved from the Cortex > Skills screen to a new Skills tab under Cortex > Settings, with a Saved skills section (the skills list and editor) and a Settings section (the skills settings formerly under Settings > Admin chat > Skills). The Cortex > Skills menu item is removed, and the chat's "Manage skills" link opens the new tab.
 
 ## [0.5.0] - 2026-10-05
 
