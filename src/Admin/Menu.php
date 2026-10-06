@@ -74,7 +74,7 @@ final class Menu {
 	 * Adds the top-level menu and its submenus.
 	 */
 	public function add_menu(): void {
-		// Indexing is the landing screen; Settings is listed last.
+		// Indexing is the landing screen; Skills comes second to last, Settings last.
 		$this->indexing_hook = (string) add_menu_page(
 			__( 'Cortex', 'wp-cortex' ),
 			__( 'Cortex', 'wp-cortex' ),
@@ -95,17 +95,6 @@ final class Menu {
 			self::SLUG_INDEXING
 		);
 
-		if ( Settings::skills_enabled() ) {
-			$this->skills_hook = (string) add_submenu_page(
-				self::SLUG_INDEXING,
-				__( 'Cortex Skills', 'wp-cortex' ),
-				__( 'Skills', 'wp-cortex' ),
-				'manage_options',
-				self::SLUG_SKILLS,
-				array( new SkillsPage(), 'render' )
-			);
-		}
-
 		$can = current_user_can( 'manage_options' );
 
 		$this->visitors_hook = (string) add_submenu_page(
@@ -125,6 +114,17 @@ final class Menu {
 			self::SLUG_REPORTS,
 			array( new IssueReportsPage(), 'render' )
 		);
+
+		if ( Settings::skills_enabled() ) {
+			$this->skills_hook = (string) add_submenu_page(
+				self::SLUG_INDEXING,
+				__( 'Cortex Skills', 'wp-cortex' ),
+				__( 'Skills', 'wp-cortex' ),
+				'manage_options',
+				self::SLUG_SKILLS,
+				array( new SkillsPage(), 'render' )
+			);
+		}
 
 		$this->settings_hook = (string) add_submenu_page(
 			self::SLUG_INDEXING,

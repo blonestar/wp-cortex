@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+
+- Cortex > Skills is now listed second to last in the Cortex menu, just above Settings.
+
 ## [0.5.0] - 2026-10-05
 
 ### Added
