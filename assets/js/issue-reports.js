@@ -14,6 +14,10 @@
 	var PATH = '/wp-cortex/v1/issue-reports';
 	var PER_PAGE = 20;
 	var STATUSES = cfg.statuses || {};
+	var CHATS_PATH = '/wp-cortex/v1/visitor-chats';
+
+	// Data and blob URLs of loaded report images, by conversation ID and file name.
+	var imageUrls = {};
 
 	var root = document.getElementById( 'wp-cortex-issue-reports' );
 	if ( ! root ) {
@@ -125,6 +129,53 @@
 		}
 		bubble.className = 'awaiting-mod count-' + count;
 		bubble.querySelector( '.pending-count' ).textContent = String( count );
+	}
+
+	/* ---------- Images ---------- */
+
+	function loadImage( chatId, name ) {
+		var key = chatId + '/' + name;
+		if ( ! imageUrls[ key ] ) {
+			imageUrls[ key ] = apiFetch( { path: CHATS_PATH + '/' + chatId + '/images/' + encodeURIComponent( name ) } ).then( function ( res ) {
+				var bin = window.atob( res.data );
+				var bytes = new Uint8Array( bin.length );
+				for ( var i = 0; i < bin.length; i++ ) {
+					bytes[ i ] = bin.charCodeAt( i );
+				}
+				return {
+					src: 'data:' + res.mime + ';base64,' + res.data,
+					href: URL.createObjectURL( new Blob( [ bytes ], { type: res.mime } ) )
+				};
+			} );
+			imageUrls[ key ].catch( function () {
+				delete imageUrls[ key ];
+			} );
+		}
+		return imageUrls[ key ];
+	}
+
+	// Images live with the conversation and are loaded through the REST API, as on the
+	// Visitor chats screen: shown from a data: URL, opened full size from a blob: URL.
+	function renderImages( report ) {
+		var wrap = el( 'div', 'wp-cortex-report-images' );
+		report.images.forEach( function ( name ) {
+			var a = el( 'a', 'wp-cortex-report-image', __( 'Loading image…', 'wp-cortex' ) );
+			a.target = '_blank';
+			a.rel = 'noopener';
+			loadImage( report.chat_id, name ).then( function ( urls ) {
+				var img = el( 'img' );
+				img.src = urls.src;
+				img.alt = __( 'Image attached by the visitor', 'wp-cortex' );
+				a.textContent = '';
+				a.href = urls.href;
+				a.title = __( 'Open the full image', 'wp-cortex' );
+				a.appendChild( img );
+			} ).catch( function () {
+				a.textContent = __( 'The image is no longer available.', 'wp-cortex' );
+			} );
+			wrap.appendChild( a );
+		} );
+		return wrap;
 	}
 
 	/* ---------- List ---------- */
@@ -247,6 +298,9 @@
 		main.appendChild( el( 'p', 'wp-cortex-report-description', report.description ) );
 		if ( report.excerpt ) {
 			main.appendChild( el( 'blockquote', 'wp-cortex-report-excerpt', report.excerpt ) );
+		}
+		if ( report.chat_id && report.images && report.images.length ) {
+			main.appendChild( renderImages( report ) );
 		}
 		if ( report.admin_note ) {
 			main.appendChild( el( 'p', 'wp-cortex-vchat-row-note', report.admin_note ) );

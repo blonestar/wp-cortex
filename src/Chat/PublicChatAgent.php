@@ -31,7 +31,8 @@ defined( 'ABSPATH' ) || exit;
  * there. When the
  * conversation log is on, the controller stores the turn (VisitorChatStore); the agent
  * may only save contact details to the visitor's own conversation and add issue reports
- * (IssueReportStore), and never reads stored conversations or reports.
+ * (IssueReportStore) or add to the open reports of that conversation, and never reads
+ * stored conversations or other reports.
  */
 final class PublicChatAgent {
 
@@ -102,11 +103,25 @@ final class PublicChatAgent {
 	private string $page_url = '';
 
 	/**
-	 * IDs of the issue reports added in this turn.
+	 * Issue reports added or updated in this turn: report ID => whether it was updated.
 	 *
-	 * @var int[]
+	 * @var array<int, bool>
 	 */
 	private array $reports = array();
+
+	/**
+	 * Open issue reports of the visitor's stored conversation, loaded once per turn.
+	 *
+	 * @var array|null
+	 */
+	private ?array $open_reports = null;
+
+	/**
+	 * Name of the image attached to this message, stored with the conversation; "" for none.
+	 *
+	 * @var string
+	 */
+	private string $image_name = '';
 
 	/**
 	 * Handles one visitor message.
@@ -117,13 +132,15 @@ final class PublicChatAgent {
 	 * @param int        $chat_id  Stored conversation (VisitorChatStore), 0 when the log is off.
 	 * @param array|null $image    Attached image processed by VisitorImages::process().
 	 * @param string     $page_url URL of the page the visitor is viewing, used for issue reports.
+	 * @param string     $stored   Name of the attached image stored with the conversation, attached to issue reports of this turn.
 	 * @return array{items: array}|WP_Error
 	 */
-	public function respond( string $message, array $history, int $post_id, int $chat_id = 0, ?array $image = null, string $page_url = '' ) {
-		$message        = trim( $message );
-		$this->chat_id  = $chat_id;
-		$this->post_id  = $post_id;
-		$this->page_url = IssueReportStore::sanitize_page_url( $page_url );
+	public function respond( string $message, array $history, int $post_id, int $chat_id = 0, ?array $image = null, string $page_url = '', string $stored = '' ) {
+		$message          = trim( $message );
+		$this->chat_id    = $chat_id;
+		$this->post_id    = $post_id;
+		$this->page_url   = IssueReportStore::sanitize_page_url( $page_url );
+		$this->image_name = $image && $chat_id > 0 ? $stored : '';
 
 		if ( '' === $message && ! $image ) {
 			return new WP_Error( 'wp_cortex_empty_message', __( 'The message is empty.', 'wp-cortex' ), array( 'status' => 400 ) );
@@ -215,11 +232,14 @@ final class PublicChatAgent {
 					);
 				}
 
-				foreach ( $this->reports as $report_id ) {
+				foreach ( $this->reports as $report_id => $updated ) {
 					$items[] = array(
 						'role'      => 'notice',
-						/* translators: %d: issue report ID. */
-						'text'      => sprintf( __( 'Issue report #%d saved.', 'wp-cortex' ), $report_id ),
+						'text'      => $updated
+							/* translators: %d: issue report ID. */
+							? sprintf( __( 'Issue report #%d updated.', 'wp-cortex' ), $report_id )
+							/* translators: %d: issue report ID. */
+							: sprintf( __( 'Issue report #%d saved.', 'wp-cortex' ), $report_id ),
 						'report_id' => $report_id,
 					);
 				}
@@ -414,10 +434,14 @@ final class PublicChatAgent {
 		if ( $this->reports_enabled() ) {
 			$declarations[] = new FunctionDeclaration(
 				self::REPORT_FUNCTION,
-				'Reports a problem the visitor found on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work) to the site team. Call it once per problem.',
+				'Reports a problem the visitor found on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work) to the site team. Call it once per problem. When the visitor adds details, a correction or a screenshot about a problem already reported in this conversation, pass its report_id to update that report instead of adding a new one.',
 				array(
 					'type'       => 'object',
 					'properties' => array(
+						'report_id'   => array(
+							'type'        => 'integer',
+							'description' => 'Optional. ID of an already reported problem of this conversation (from the list in your instructions) to update with the new details; any image attached to the visitor\'s latest message is added to it. Omit it for a new problem.',
+						),
 						'category'    => array(
 							'type'        => 'string',
 							'description' => 'Kind of problem.',
@@ -425,7 +449,7 @@ final class PublicChatAgent {
 						),
 						'description' => array(
 							'type'        => 'string',
-							'description' => 'What is wrong and where on the page, in a few sentences, in the language of this website\'s content (it is read by the site team). Include the correction when the visitor gave one.',
+							'description' => 'What is wrong and where on the page, in a few sentences, in the language of this website\'s content (it is read by the site team). Include the correction when the visitor gave one. When updating a report, this replaces its description: keep what is still true and add the new details.',
 						),
 						'excerpt'     => array(
 							'type'        => 'string',
@@ -682,6 +706,35 @@ final class PublicChatAgent {
 			return array( 'error' => 'Describe the problem.' );
 		}
 
+		$images    = '' !== $this->image_name ? array( $this->image_name ) : array();
+		$report_id = (int) ( $args['report_id'] ?? 0 );
+
+		if ( $report_id > 0 ) {
+			// Only open reports of the visitor's own conversation can be updated.
+			$updated = in_array( $report_id, array_column( $this->open_reports(), 'id' ), true )
+				&& ( new IssueReportStore() )->amend(
+					$report_id,
+					$this->chat_id,
+					array(
+						'category'    => (string) ( $args['category'] ?? '' ),
+						'description' => (string) $args['description'],
+						'excerpt'     => (string) ( $args['excerpt'] ?? '' ),
+						'images'      => $images,
+					)
+				);
+
+			if ( ! $updated ) {
+				return array( 'error' => 'This report cannot be updated. Omit report_id to add a new report.' );
+			}
+
+			$this->reports[ $report_id ] = $this->reports[ $report_id ] ?? true;
+
+			return array(
+				'updated' => true,
+				'note'    => 'In one short sentence, thank the visitor and tell them the details were added to their report. Do not promise when or whether it will be fixed.',
+			);
+		}
+
 		$post_id  = (int) ( $args['post_id'] ?? 0 );
 		$page_url = $this->page_url;
 
@@ -707,6 +760,7 @@ final class PublicChatAgent {
 				'category'    => (string) ( $args['category'] ?? '' ),
 				'description' => (string) $args['description'],
 				'excerpt'     => (string) ( $args['excerpt'] ?? '' ),
+				'images'      => $images,
 			)
 		);
 
@@ -714,17 +768,32 @@ final class PublicChatAgent {
 			return array( 'error' => 'The report could not be saved.' );
 		}
 
-		$this->reports[] = $id;
-		$report          = $store->get( $id );
+		$this->reports[ $id ] = false;
+		$this->open_reports   = null;
+		$report               = $store->get( $id );
 
 		if ( $report ) {
 			( new IssueReportMailer() )->notify( $report );
 		}
 
 		return array(
-			'reported' => true,
-			'note'     => 'In one or two short sentences, thank the visitor and tell them the problem was passed on to the site team. Do not promise when or whether it will be fixed.',
+			'reported'  => true,
+			'report_id' => $id,
+			'note'      => 'In one or two short sentences, thank the visitor and tell them the problem was passed on to the site team. Do not promise when or whether it will be fixed.',
 		);
+	}
+
+	/**
+	 * Open issue reports of the visitor's stored conversation (none when the log is off).
+	 *
+	 * @return array<int, array{id: int, category: string, description: string, excerpt: string}>
+	 */
+	private function open_reports(): array {
+		if ( null === $this->open_reports ) {
+			$this->open_reports = $this->chat_id > 0 ? ( new IssueReportStore() )->open_for_chat( $this->chat_id ) : array();
+		}
+
+		return $this->open_reports;
 	}
 
 	/**
@@ -968,7 +1037,23 @@ final class PublicChatAgent {
 		}
 
 		if ( $this->reports_enabled() ) {
-			$lines[] = 'If the visitor points out a problem on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work), report it with report_issue so the site team can fix it. Unless the visitor says otherwise, the problem is on the page they are viewing. Ask one short question only when it is unclear what is wrong or on which page; otherwise report it right away, without asking for confirmation or contact details. Quote the affected text exactly when the visitor gives it. Report each problem once and never report something the visitor did not point out.';
+			$lines[] = 'If the visitor points out a problem on this website (for example a typo, a broken or missing image, a broken link, wrong or outdated information, a display problem or something that does not work), report it with report_issue so the site team can fix it. Unless the visitor says otherwise, the problem is on the page they are viewing. Ask one short question only when it is unclear what is wrong or on which page; otherwise report it right away, without asking for confirmation or contact details. Quote the affected text exactly when the visitor gives it. Report each problem once and never report something the visitor did not point out. When the visitor follows up on a problem already reported in this conversation (more details, a correction or a screenshot of it), update that report with report_id instead of reporting it again; report a new problem only when it is a different one.';
+
+			$open = $this->open_reports();
+
+			if ( $open ) {
+				$lines[] = 'Problems already reported in this conversation (update them with report_id):';
+
+				foreach ( $open as $report ) {
+					$lines[] = sprintf(
+						'- report_id %1$d (%2$s): %3$s%4$s',
+						$report['id'],
+						$report['category'],
+						str_replace( array( "\r", "\n" ), ' ', mb_substr( $report['description'], 0, 300 ) ),
+						'' !== $report['excerpt'] ? ' Quoted: «' . str_replace( array( "\r", "\n" ), ' ', mb_substr( $report['excerpt'], 0, 150 ) ) . '»' : ''
+					);
+				}
+			}
 		}
 
 		if ( $current ) {

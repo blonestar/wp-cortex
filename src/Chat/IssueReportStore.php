@@ -12,13 +12,15 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Stores the problems visitors report through the visitor chat (typos, broken images
  * or links, wrong information, display problems) in a custom MySQL table, with the page
- * they are about, the conversation they came from and their handling status.
+ * they are about, the conversation they came from, the images the visitor attached
+ * while reporting them and their handling status.
  *
- * The visitor chat only adds reports; it never reads them.
+ * The visitor chat adds reports and may add to the open reports of the visitor's own
+ * conversation (open_for_chat(), amend()); it never reads other reports or admin fields.
  */
 final class IssueReportStore {
 
-	public const DB_VERSION        = '1';
+	public const DB_VERSION        = '2';
 	public const DB_VERSION_OPTION = 'wp_cortex_issue_reports_db_version';
 	public const TABLE_SUFFIX      = 'wp_cortex_issue_reports';
 
@@ -36,6 +38,7 @@ final class IssueReportStore {
 	public const MAX_EXCERPT     = 500;
 	public const MAX_URL         = 2000;
 	public const MAX_NOTE        = 4000;
+	public const MAX_IMAGES      = 10;
 
 	/**
 	 * Full table name.
@@ -66,6 +69,7 @@ final class IssueReportStore {
 			category varchar(20) NOT NULL DEFAULT 'other',
 			description text NOT NULL,
 			excerpt text NOT NULL,
+			images text NOT NULL,
 			status varchar(20) NOT NULL DEFAULT 'open',
 			admin_note text NOT NULL,
 			created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
@@ -140,9 +144,35 @@ final class IssueReportStore {
 	}
 
 	/**
+	 * Valid stored image names (VisitorImages), without duplicates.
+	 *
+	 * @param mixed $images List of file names.
+	 * @return string[]
+	 */
+	private static function sanitize_images( $images ): array {
+		$names = array_filter(
+			array_map( 'strval', is_array( $images ) ? $images : array() ),
+			static fn( string $name ) => (bool) preg_match( '/^' . VisitorImages::NAME_PATTERN . '$/', $name )
+		);
+
+		return array_slice( array_values( array_unique( $names ) ), 0, self::MAX_IMAGES );
+	}
+
+	/**
+	 * Image names stored in a row.
+	 *
+	 * @param array $row Database row.
+	 * @return string[]
+	 */
+	private static function row_images( array $row ): array {
+		return self::sanitize_images( json_decode( (string) ( $row['images'] ?? '' ), true ) );
+	}
+
+	/**
 	 * Adds a report.
 	 *
-	 * @param array $data chat_id, post_id, page_url, category, description and excerpt.
+	 * @param array $data chat_id, post_id, page_url, category, description, excerpt and images
+	 *                    (names of images stored with the conversation).
 	 * @return int Report ID, 0 on failure.
 	 */
 	public function add( array $data ): int {
@@ -165,15 +195,90 @@ final class IssueReportStore {
 				'category'    => in_array( $category, self::CATEGORIES, true ) ? $category : 'other',
 				'description' => $description,
 				'excerpt'     => trim( mb_substr( sanitize_textarea_field( (string) ( $data['excerpt'] ?? '' ) ), 0, self::MAX_EXCERPT ) ),
+				'images'      => (string) wp_json_encode( self::sanitize_images( $data['images'] ?? array() ) ),
 				'status'      => self::STATUS_OPEN,
 				'admin_note'  => '',
 				'created_at'  => $now,
 				'updated_at'  => $now,
 			),
-			array( '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
+			array( '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s' )
 		);
 
 		return $inserted ? (int) $wpdb->insert_id : 0;
+	}
+
+	/**
+	 * Open reports of a stored visitor conversation, oldest first: only what the visitor
+	 * chat itself saved (no status, note or page details).
+	 *
+	 * @param int $chat_id Conversation ID.
+	 * @return array<int, array{id: int, category: string, description: string, excerpt: string}>
+	 */
+	public function open_for_chat( int $chat_id ): array {
+		global $wpdb;
+
+		if ( $chat_id < 1 ) {
+			return array();
+		}
+
+		$table = self::table();
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT id, category, description, excerpt FROM {$table} WHERE chat_id = %d AND status = %s ORDER BY id ASC LIMIT 20", $chat_id, self::STATUS_OPEN ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		return array_map(
+			static fn( array $row ) => array(
+				'id'          => (int) $row['id'],
+				'category'    => (string) $row['category'],
+				'description' => (string) $row['description'],
+				'excerpt'     => (string) $row['excerpt'],
+			),
+			(array) $rows
+		);
+	}
+
+	/**
+	 * Adds details to an open report of a stored visitor conversation: a new description,
+	 * category or quoted text replaces the old one, images are added.
+	 *
+	 * @param int   $id      Report ID.
+	 * @param int   $chat_id Conversation the report must belong to.
+	 * @param array $data    category, description, excerpt and images; empty values are ignored.
+	 * @return bool Whether the report was found (open, in this conversation) and updated.
+	 */
+	public function amend( int $id, int $chat_id, array $data ): bool {
+		global $wpdb;
+
+		if ( $id < 1 || $chat_id < 1 ) {
+			return false;
+		}
+
+		$table = self::table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT id, images FROM {$table} WHERE id = %d AND chat_id = %d AND status = %s", $id, $chat_id, self::STATUS_OPEN ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		if ( ! $row ) {
+			return false;
+		}
+
+		$category    = (string) ( $data['category'] ?? '' );
+		$description = trim( mb_substr( sanitize_textarea_field( (string) ( $data['description'] ?? '' ) ), 0, self::MAX_DESCRIPTION ) );
+		$excerpt     = trim( mb_substr( sanitize_textarea_field( (string) ( $data['excerpt'] ?? '' ) ), 0, self::MAX_EXCERPT ) );
+		$update      = array(
+			'images'     => (string) wp_json_encode( self::sanitize_images( array_merge( self::row_images( $row ), (array) ( $data['images'] ?? array() ) ) ) ),
+			'updated_at' => current_time( 'mysql', true ),
+		);
+
+		if ( in_array( $category, self::CATEGORIES, true ) ) {
+			$update['category'] = $category;
+		}
+
+		if ( '' !== $description ) {
+			$update['description'] = $description;
+		}
+
+		if ( '' !== $excerpt ) {
+			$update['excerpt'] = $excerpt;
+		}
+
+		return false !== $wpdb->update( $table, $update, array( 'id' => $id ), '%s', '%d' );
 	}
 
 	/**
@@ -365,13 +470,17 @@ final class IssueReportStore {
 				$post    = $post_id > 0 ? get_post( $post_id ) : null;
 				$user    = (int) $row['resolved_by'] > 0 ? get_userdata( (int) $row['resolved_by'] ) : null;
 
+				$chat_id = isset( $chats[ (int) $row['chat_id'] ] ) ? (int) $row['chat_id'] : 0;
+
 				return array(
 					'id'             => (int) $row['id'],
-					'chat_id'        => isset( $chats[ (int) $row['chat_id'] ] ) ? (int) $row['chat_id'] : 0,
+					'chat_id'        => $chat_id,
 					'category'       => (string) $row['category'],
 					'category_label' => $categories[ $row['category'] ] ?? $categories['other'],
 					'description'    => (string) $row['description'],
 					'excerpt'        => (string) $row['excerpt'],
+					// Images are stored with the conversation and deleted with it.
+					'images'         => $chat_id ? self::row_images( $row ) : array(),
 					'page_url'       => (string) $row['page_url'],
 					'page'           => $post ? array(
 						'id'       => $post_id,

@@ -1267,6 +1267,27 @@
 	white-space: pre-line;
 }
 
+.wp-cortex-report-images {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 8px 0;
+}
+
+.wp-cortex-report-image {
+	display: block;
+	font-style: italic;
+}
+
+.wp-cortex-report-image img {
+	display: block;
+	max-width: 240px;
+	max-height: 160px;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #fff;
+}
+
 .wp-cortex-report-note-form {
 	margin-top: 8px;
 	max-width: 600px;
