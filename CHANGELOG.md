@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-06
+
 ### Added
 
 - The index databases and visitor images are stored outside the web root by default when the site allows it: in WP Engine's `_wpeprivate/` directory, in Pantheon's `wp-content/uploads/private/`, or in the directory above the web root. The plugin uses the first location it can actually write to and falls back to uploads otherwise. The choice is stored in the new `wp_cortex_data_location` option, and Settings > Advanced > Storage shows it next to the data directory. `WP_CORTEX_DATA_DIR` still takes precedence.
