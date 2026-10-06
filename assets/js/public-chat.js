@@ -3,8 +3,9 @@
  *
  * Conversations are kept in the browser session; the previous text turns are sent with
  * every message. When the site allows images, visitors can paste a screenshot, drop an
- * image on the chat or pick one; it is scaled down in the browser, sent with the next
- * message only and kept in the session as a small preview. A random session token
+ * image on the chat or pick one with the attach button (when the site shows it); it is
+ * scaled down in the browser, sent with the next message only and kept in the session as
+ * a small preview. A random session token
  * identifies the conversation in the server log (when the site keeps one). While the
  * window is open and the tab visible, the widget pings the presence endpoint every minute
  * (and once when the window is closed, the tab hidden or the page left), so the site can
@@ -366,27 +367,28 @@
 		attachBox.hidden = true;
 		panel.insertBefore( attachBox, form );
 
-		fileInput = el( 'input' );
-		fileInput.type = 'file';
-		fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
-		fileInput.hidden = true;
-		fileInput.addEventListener( 'change', function () {
-			attachImage( fileInput.files && fileInput.files[ 0 ] );
-			fileInput.value = '';
-		} );
+		if ( cfg.attachIcon ) {
+			fileInput = el( 'input' );
+			fileInput.type = 'file';
+			fileInput.accept = 'image/png,image/jpeg,image/webp,image/gif';
+			fileInput.hidden = true;
+			fileInput.addEventListener( 'change', function () {
+				attachImage( fileInput.files && fileInput.files[ 0 ] );
+				fileInput.value = '';
+			} );
 
-		attachBtn = el( 'button', P + 'attach' );
-		attachBtn.type = 'button';
-		attachBtn.setAttribute( 'aria-label', __( 'Attach an image', 'wp-cortex' ) );
-		attachBtn.title = __( 'Attach an image (you can also paste a screenshot)', 'wp-cortex' );
-		attachBtn.appendChild( icon( 'attach' ) );
-		attachBtn.addEventListener( 'click', function () {
-			fileInput.click();
-		} );
-		form.insertBefore( attachBtn, form.firstChild );
-		form.appendChild( fileInput );
+			attachBtn = el( 'button', P + 'attach' );
+			attachBtn.type = 'button';
+			attachBtn.setAttribute( 'aria-label', __( 'Attach an image', 'wp-cortex' ) );
+			attachBtn.title = __( 'Attach an image (you can also paste a screenshot)', 'wp-cortex' );
+			attachBtn.appendChild( icon( 'attach' ) );
+			attachBtn.addEventListener( 'click', function () {
+				fileInput.click();
+			} );
+			form.insertBefore( attachBtn, form.firstChild );
+			form.appendChild( fileInput );
+		}
 
-		input.placeholder = __( 'Ask or paste a screenshot…', 'wp-cortex' );
 		input.addEventListener( 'paste', onPaste );
 
 		panel.addEventListener( 'dragover', function ( e ) {
@@ -617,7 +619,7 @@
 		input = el( 'textarea', P + 'input' );
 		input.rows = 1;
 		input.maxLength = cfg.maxLength || 2000;
-		input.placeholder = __( 'Type your question…', 'wp-cortex' );
+		input.placeholder = cfg.placeholder || __( 'Type your question…', 'wp-cortex' );
 		input.setAttribute( 'aria-label', __( 'Message', 'wp-cortex' ) );
 		sendBtn = el( 'button', P + 'send', __( 'Send', 'wp-cortex' ) );
 		sendBtn.type = 'submit';

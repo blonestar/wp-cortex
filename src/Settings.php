@@ -55,6 +55,11 @@ final class Settings {
 	public const PUBLIC_CHAT_LABEL_MAX = 30;
 
 	/**
+	 * Maximum length of the visitor chat message box placeholder, in characters.
+	 */
+	public const PUBLIC_CHAT_PLACEHOLDER_MAX = 80;
+
+	/**
 	 * Visitor chat appearance choices: setting key => allowed values (the first is the default).
 	 */
 	public const PUBLIC_CHAT_CHOICES = array(
@@ -114,12 +119,14 @@ final class Settings {
 			'public_chat_enabled'        => false,
 			'public_chat_title'          => '',
 			'public_chat_welcome'        => '',
+			'public_chat_placeholder'    => '',
 			'public_chat_instructions'   => '',
 			'public_chat_provider'       => '',
 			'public_chat_model'          => '',
 			'public_chat_reasoning'      => '',
 			'public_chat_rate_limit'     => 20,
 			'public_chat_images'         => false,
+			'public_chat_attach_icon'    => false,
 			'public_chat_image_limit'    => 10,
 			'public_chat_log'            => true,
 			'public_chat_retention'      => 0,
@@ -259,6 +266,7 @@ final class Settings {
 		$public_instructions = trim( sanitize_textarea_field( (string) ( $input['public_chat_instructions'] ?? '' ) ) );
 		$public_welcome      = trim( sanitize_textarea_field( (string) ( $input['public_chat_welcome'] ?? '' ) ) );
 		$public_title        = trim( sanitize_text_field( (string) ( $input['public_chat_title'] ?? '' ) ) );
+		$public_placeholder  = trim( sanitize_text_field( (string) ( $input['public_chat_placeholder'] ?? '' ) ) );
 
 		$public_provider = sanitize_key( (string) ( $input['public_chat_provider'] ?? '' ) );
 		$public_custom   = '' !== $public_provider && self::PUBLIC_CHAT_PROVIDER_AUTO !== $public_provider;
@@ -311,12 +319,14 @@ final class Settings {
 			'public_chat_enabled'      => ! empty( $input['public_chat_enabled'] ),
 			'public_chat_title'        => mb_substr( $public_title, 0, self::PUBLIC_CHAT_TITLE_MAX ),
 			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),
+			'public_chat_placeholder'  => mb_substr( $public_placeholder, 0, self::PUBLIC_CHAT_PLACEHOLDER_MAX ),
 			'public_chat_instructions' => mb_substr( $public_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
 			'public_chat_provider'     => $public_provider,
 			'public_chat_model'        => $public_custom ? self::sanitize_model( $input['public_chat_model'] ?? '' ) : '',
 			'public_chat_reasoning'    => $public_custom ? sanitize_key( (string) ( $input['public_chat_reasoning'] ?? '' ) ) : '',
 			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
 			'public_chat_images'       => ! empty( $input['public_chat_images'] ),
+			'public_chat_attach_icon'  => ! empty( $input['public_chat_attach_icon'] ),
 			'public_chat_image_limit'  => self::clamp( $input['public_chat_image_limit'] ?? $defaults['public_chat_image_limit'], 1, 1000 ),
 			'public_chat_log'          => ! empty( $input['public_chat_log'] ),
 			'public_chat_retention'    => self::clamp( $input['public_chat_retention'] ?? $defaults['public_chat_retention'], 0, 3650 ),

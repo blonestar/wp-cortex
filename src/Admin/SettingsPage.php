@@ -706,6 +706,16 @@ final class SettingsPage {
 		);
 		$this->row_end( __( 'The first message visitors see when they open the chat.', 'wp-cortex' ) );
 
+		$this->row_start( __( 'Message box placeholder', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" maxlength="%3$d" placeholder="%4$s" />',
+			$this->name( 'public_chat_placeholder' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'public_chat_placeholder' ) ),
+			(int) Settings::PUBLIC_CHAT_PLACEHOLDER_MAX,
+			esc_attr__( 'Type your question…', 'wp-cortex' )
+		);
+		$this->row_end( __( 'The hint shown in the empty message box.', 'wp-cortex' ) );
+
 		$this->row_start( __( 'Message limit', 'wp-cortex' ) );
 		$this->number( 'public_chat_rate_limit', 1, 1000 );
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
@@ -716,10 +726,12 @@ final class SettingsPage {
 		echo '<br /><label>' . esc_html__( 'At most', 'wp-cortex' ) . ' ';
 		$this->number( 'public_chat_image_limit', 1, 1000 );
 		echo ' ' . esc_html__( 'images per visitor per hour', 'wp-cortex' ) . '</label>';
+		echo '<br />';
+		$this->checkbox( 'public_chat_attach_icon', __( 'Show the attach button next to the message box', 'wp-cortex' ), (bool) Settings::get( 'public_chat_attach_icon' ) );
 		if ( ! VisitorImages::is_supported() ) {
 			echo '<p class="description"><strong>' . esc_html__( 'Images are not available: the PHP GD extension with PNG and JPEG support is required.', 'wp-cortex' ) . '</strong></p>';
 		}
-		$this->row_end( __( 'Visitors can paste a screenshot, drop an image on the chat or pick one with the attach button. Images are scaled down to 1600 pixels, stripped of metadata and sent to the AI model, which must support image input (for example current OpenAI, Anthropic and Google models). While the conversation log is on, they are stored with the conversation in the protected data directory, shown under Cortex > Visitor chats, attached to forwarded emails and deleted with the conversation.', 'wp-cortex' ) );
+		$this->row_end( __( 'Visitors can paste a screenshot or drop an image on the chat, and pick one with the attach button when it is shown. Images are scaled down to 1600 pixels, stripped of metadata and sent to the AI model, which must support image input (for example current OpenAI, Anthropic and Google models). While the conversation log is on, they are stored with the conversation in the protected data directory, shown under Cortex > Visitor chats, attached to forwarded emails and deleted with the conversation.', 'wp-cortex' ) );
 
 	}
 
