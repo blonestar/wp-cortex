@@ -82,7 +82,7 @@ final class DashboardWidget {
 			'<p class="wp-cortex-dash-footer"><a href="%1$s">%2$s</a> | <a href="%7$s">%8$s</a> | <a href="%3$s">%4$s</a> | <a href="%5$s">%6$s</a></p>',
 			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_VISITORS ) ),
 			esc_html__( 'Visitor chats', 'wp-cortex' ),
-			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_INDEXING ) ),
+			esc_url( SettingsPage::status_url() ),
 			esc_html__( 'Indexing', 'wp-cortex' ),
 			esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ),
 			esc_html__( 'Settings', 'wp-cortex' ),

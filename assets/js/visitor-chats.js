@@ -225,7 +225,8 @@
 	}
 
 	function menuLink() {
-		return document.querySelector( '#adminmenu a[href$="page=wp-cortex-visitor-chats"]' );
+		// The submenu item: the top-level Cortex item links to the same screen.
+		return document.querySelector( '#adminmenu .wp-submenu a[href$="page=wp-cortex-visitor-chats"]' );
 	}
 
 	function menuCount() {
