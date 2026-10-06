@@ -4,6 +4,15 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Settings > Visitor chat > General: a message box placeholder (`public_chat_placeholder`, empty by default, which shows "Type your question…").
+- Settings > Visitor chat > General > Images: a switch to show the attach button next to the message box (`public_chat_attach_icon`, off by default). Visitors can still paste or drop images without it.
+
+### Changed
+
+- The visitor chat no longer shows the attach button by default, and the message box placeholder no longer mentions screenshots when images are allowed.
+
 ## [0.6.0] - 2026-10-06
 
 ### Added
