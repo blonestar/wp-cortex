@@ -29,7 +29,7 @@ final class IndexingPage {
 		echo '<div class="wrap wp-cortex-wrap" id="wp-cortex-indexing">';
 		echo '<h1>' . esc_html__( 'Cortex Indexing', 'wp-cortex' ) . '</h1>';
 
-		$this->render_storage();
+		$this->render_storage_alert();
 		$this->render_embeddings();
 		$this->render_progress();
 		$this->render_stats();
@@ -39,37 +39,23 @@ final class IndexingPage {
 	}
 
 	/**
-	 * Storage card with location, warnings and the public access check (filled in by indexing.js).
+	 * Alert when the last public access check found the data directory reachable; the
+	 * details and the check live in Settings > Advanced > Storage.
 	 */
-	private function render_storage(): void {
-		echo '<div class="wp-cortex-card"><h2>' . esc_html__( 'Storage', 'wp-cortex' ) . '</h2>';
-		echo '<p class="wp-cortex-data-dir">' . esc_html__( 'Data directory:', 'wp-cortex' ) . ' ';
-		echo '<code class="wp-cortex-data-dir-mask" aria-hidden="true">&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;</code>';
-		echo '<code id="wp-cortex-data-dir-path" hidden>' . esc_html( Storage::data_dir() ) . '</code> ';
-		echo '<button type="button" class="button-link wp-cortex-data-dir-toggle" id="wp-cortex-data-dir-toggle" aria-controls="wp-cortex-data-dir-path" aria-expanded="false" aria-label="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '" title="' . esc_attr__( 'Show data directory', 'wp-cortex' ) . '">';
-		echo '<span class="dashicons dashicons-visibility" aria-hidden="true"></span>';
-		echo '</button></p>';
-
-		if ( Storage::is_in_uploads() ) {
-			echo '<div class="notice notice-warning inline"><p>';
-			echo esc_html__( 'The index is stored inside the uploads directory. For better protection, define WP_CORTEX_DATA_DIR in wp-config.php with a path outside the web root.', 'wp-cortex' );
-			echo '</p></div>';
+	private function render_storage_alert(): void {
+		if ( true !== Storage::is_exposed() ) {
+			return;
 		}
 
-		echo '<div class="wp-cortex-storage-check is-checking" id="wp-cortex-storage-check">';
-		echo '<p class="wp-cortex-storage-check-summary" aria-live="polite"><span class="dashicons dashicons-update" aria-hidden="true"></span> <strong data-check-summary>' . esc_html__( 'Checking public access…', 'wp-cortex' ) . '</strong></p>';
-		echo '<ul class="wp-cortex-storage-check-list" data-check-list></ul>';
-		echo '<div class="wp-cortex-storage-check-help" data-check-help hidden><p>';
-		echo esc_html__( 'Block access to the data directory in your web server configuration, or move it outside the web root with WP_CORTEX_DATA_DIR.', 'wp-cortex' );
-		echo '</p><p>';
-		echo esc_html__( 'On Nginx, refusing hidden paths (names starting with a dot) protects it:', 'wp-cortex' );
-		echo ' <code>location ~ /\\. { deny all; }</code>';
+		echo '<div class="notice notice-error inline"><p><strong>';
+		echo esc_html__( 'The index databases are publicly downloadable!', 'wp-cortex' );
+		echo '</strong> ';
+		printf(
+			'<a href="%1$s">%2$s</a>',
+			esc_url( SettingsPage::storage_url() ),
+			esc_html__( 'See the storage check and how to protect them.', 'wp-cortex' )
+		);
 		echo '</p></div>';
-		echo '<p class="wp-cortex-storage-check-meta"><span data-check-time></span> ';
-		echo '<button type="button" class="button button-small" id="wp-cortex-storage-recheck" disabled>' . esc_html__( 'Test again', 'wp-cortex' ) . '</button></p>';
-		echo '</div>';
-
-		echo '</div>';
 	}
 
 	/**
