@@ -96,8 +96,9 @@ final class FrontendChat {
 			return;
 		}
 
-		$title   = (string) Settings::get( 'public_chat_title' );
-		$welcome = (string) Settings::get( 'public_chat_welcome' );
+		$title       = (string) Settings::get( 'public_chat_title' );
+		$welcome     = (string) Settings::get( 'public_chat_welcome' );
+		$placeholder = (string) Settings::get( 'public_chat_placeholder' );
 
 		wp_enqueue_style( 'wp-cortex-public-chat', WP_CORTEX_URL . 'assets/css/public-chat.css', array(), Plugin::asset_version( 'assets/css/public-chat.css' ) );
 		wp_add_inline_style( 'wp-cortex-public-chat', '#wp-cortex-public-chat-root{' . ChatAppearance::declarations() . '}' );
@@ -110,16 +111,18 @@ final class FrontendChat {
 			'wp-cortex-public-chat',
 			'window.wpCortexPublicChat = ' . wp_json_encode(
 				array(
-					'endpoint'  => rest_url( 'wp-cortex/v1/public-chat/message' ),
-					'presence'  => Settings::get( 'public_chat_log' ) ? rest_url( 'wp-cortex/v1/public-chat/presence' ) : '',
-					'postId'    => $this->current_post_id(),
-					'title'     => '' !== $title ? $title : __( 'Ask a question', 'wp-cortex' ),
-					'welcome'   => '' !== $welcome ? $welcome : __( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
-					'label'     => (string) Settings::get( 'public_chat_launcher_label' ),
-					'maxLength' => PublicChatAgent::MAX_MESSAGE_LENGTH,
-					'images'    => VisitorImages::enabled(),
-					'imageSide' => VisitorImages::MAX_SIDE,
-					'imageMax'  => VisitorImages::MAX_UPLOAD_BYTES,
+					'endpoint'    => rest_url( 'wp-cortex/v1/public-chat/message' ),
+					'presence'    => Settings::get( 'public_chat_log' ) ? rest_url( 'wp-cortex/v1/public-chat/presence' ) : '',
+					'postId'      => $this->current_post_id(),
+					'title'       => '' !== $title ? $title : __( 'Ask a question', 'wp-cortex' ),
+					'welcome'     => '' !== $welcome ? $welcome : __( 'Hi! Ask me anything about this website.', 'wp-cortex' ),
+					'placeholder' => $placeholder,
+					'label'       => (string) Settings::get( 'public_chat_launcher_label' ),
+					'maxLength'   => PublicChatAgent::MAX_MESSAGE_LENGTH,
+					'images'      => VisitorImages::enabled(),
+					'attachIcon'  => (bool) Settings::get( 'public_chat_attach_icon' ),
+					'imageSide'   => VisitorImages::MAX_SIDE,
+					'imageMax'    => VisitorImages::MAX_UPLOAD_BYTES,
 				)
 			) . ';',
 			'before'
