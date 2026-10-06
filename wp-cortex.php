@@ -3,7 +3,7 @@
  * Plugin Name:       WP Cortex
  * Description:       Memory layer for WordPress: indexes site content into a local SQLite store (structured fields, full-text and vector embeddings) for AI search and chat.
  * Plugin URI:        https://github.com/blonestar/wp-cortex/
- * Version:           0.7.0
+ * Version:           0.8.0
  * Requires at least: 7.0
  * Requires PHP:      8.1
  * Author:            Bojan
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'WP_CORTEX_VERSION', '0.7.0' );
+define( 'WP_CORTEX_VERSION', '0.8.0' );
 define( 'WP_CORTEX_FILE', __FILE__ );
 define( 'WP_CORTEX_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_CORTEX_URL', plugin_dir_url( __FILE__ ) );
