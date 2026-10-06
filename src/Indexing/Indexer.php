@@ -26,7 +26,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Turns posts into documents and chunks, embeds them in a single call per batch and
- * writes them to the public and admin databases.
+ * writes them to the public and admin databases. Each index has its own post types,
+ * and FieldPolicy decides which fields go into which index.
  */
 final class Indexer {
 
@@ -41,6 +42,8 @@ final class Indexer {
 
 	private Chunker $chunker;
 
+	private FieldPolicy $policy;
+
 	/**
 	 * Indexer constructor.
 	 *
@@ -48,7 +51,18 @@ final class Indexer {
 	 */
 	public function __construct( ?EmbeddingProvider $embeddings = null ) {
 		$this->embeddings = $embeddings ?? new OpenAIEmbeddings();
+		$this->extractors = self::extractors();
+		$this->policy     = FieldPolicy::from_settings();
 
+		$this->chunker = new Chunker( (int) Settings::get( 'chunk_size' ), (int) Settings::get( 'chunk_overlap' ) );
+	}
+
+	/**
+	 * Extractors that build documents.
+	 *
+	 * @return Extractor[]
+	 */
+	public static function extractors(): array {
 		$extractors = array(
 			new CoreExtractor(),
 			new TaxonomyExtractor(),
@@ -63,13 +77,11 @@ final class Indexer {
 		 *
 		 * @param Extractor[] $extractors Extractor instances.
 		 */
-		$this->extractors = array_values( array_filter( (array) apply_filters( 'wp_cortex_extractors', $extractors ), static fn( $e ) => $e instanceof Extractor ) );
-
-		$this->chunker = new Chunker( (int) Settings::get( 'chunk_size' ), (int) Settings::get( 'chunk_overlap' ) );
+		return array_values( array_filter( (array) apply_filters( 'wp_cortex_extractors', $extractors ), static fn( $e ) => $e instanceof Extractor ) );
 	}
 
 	/**
-	 * Number of posts that belong in the admin index.
+	 * Number of posts that belong in at least one index.
 	 */
 	public static function count_eligible(): int {
 		global $wpdb;
@@ -216,9 +228,10 @@ final class Indexer {
 		$status = $post instanceof WP_Post ? self::effective_status( $post ) : '';
 
 		$admin_ok  = $post instanceof WP_Post
-			&& in_array( $post->post_type, Settings::post_types(), true )
+			&& in_array( $post->post_type, Settings::post_types( Storage::SCOPE_ADMIN ), true )
 			&& in_array( $status, Settings::admin_statuses(), true );
-		$public_ok = $admin_ok
+		$public_ok = $post instanceof WP_Post
+			&& in_array( $post->post_type, Settings::post_types( Storage::SCOPE_PUBLIC ), true )
 			&& 'publish' === $status
 			&& ! self::is_password_protected( $post )
 			&& is_post_type_viewable( $post->post_type );
@@ -234,7 +247,7 @@ final class Indexer {
 			}
 		}
 
-		if ( ! $admin_ok ) {
+		if ( ! $admin_ok && ! $public_ok ) {
 			return array();
 		}
 
@@ -248,7 +261,7 @@ final class Indexer {
 		$writes = array();
 
 		foreach ( array_keys( array_filter( $eligible ) ) as $scope ) {
-			$doc    = $full->for_scope( Storage::SCOPE_PUBLIC === $scope );
+			$doc    = $full->for_scope( $scope, $this->policy );
 			$chunks = array();
 
 			foreach ( $this->chunker->chunk( $doc ) as $chunk ) {
@@ -394,29 +407,39 @@ final class Indexer {
 	}
 
 	/**
-	 * SQL condition (without WHERE) matching posts that belong in the admin index.
+	 * SQL condition (without WHERE) matching posts that belong in at least one index:
+	 * admin post types with the admin statuses and published posts of the public post types.
 	 *
-	 * Attachments are matched by their stored status only; the inherited status is
-	 * checked per post in prepare_post(), which removes the ineligible ones.
+	 * Attachments are matched by their stored status only; the inherited status, the
+	 * password and the post type's visibility are checked per post in prepare_post(),
+	 * which removes the ineligible ones.
 	 *
 	 * @return string Empty string when no post type is selected.
 	 */
 	private static function eligible_post_where(): string {
 		global $wpdb;
 
-		$types    = array_values( array_diff( Settings::post_types(), array( 'attachment' ) ) );
-		$statuses = Settings::admin_statuses();
-		$clauses  = array();
+		$admin   = array_values( array_diff( Settings::post_types( Storage::SCOPE_ADMIN ), array( 'attachment' ) ) );
+		$public  = array_values( array_diff( Settings::post_types( Storage::SCOPE_PUBLIC ), array( 'attachment' ), $admin ) );
+		$clauses = array();
 
-		if ( $types && $statuses ) {
-			$type_sql   = implode( ',', array_fill( 0, count( $types ), '%s' ) );
+		$statuses = Settings::admin_statuses();
+		if ( $admin ) {
+			$type_sql   = implode( ',', array_fill( 0, count( $admin ), '%s' ) );
 			$status_sql = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-			$clauses[] = $wpdb->prepare( "(post_type IN ($type_sql) AND post_status IN ($status_sql))", array_merge( $types, $statuses ) );
+			$clauses[] = $wpdb->prepare( "(post_type IN ($type_sql) AND post_status IN ($status_sql))", array_merge( $admin, $statuses ) );
 		}
 
-		if ( in_array( 'attachment', Settings::post_types(), true ) ) {
+		if ( $public ) {
+			$type_sql = implode( ',', array_fill( 0, count( $public ), '%s' ) );
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+			$clauses[] = $wpdb->prepare( "(post_type IN ($type_sql) AND post_status = 'publish')", $public );
+		}
+
+		if ( Settings::index_media() ) {
 			$clauses[] = "(post_type = 'attachment' AND post_status IN ('inherit', 'private'))";
 		}
 

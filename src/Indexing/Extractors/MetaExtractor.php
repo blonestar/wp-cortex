@@ -14,12 +14,29 @@ use WPCortex\Settings;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Meta keys explicitly listed in the settings (admin index only).
+ * Meta keys explicitly listed in the settings (admin index only by default).
  */
-final class MetaExtractor implements Extractor {
+final class MetaExtractor implements Extractor, DescribesFields {
 
 	public function is_available(): bool {
 		return ! empty( Settings::get( 'meta_keys' ) );
+	}
+
+	public function fields_label(): string {
+		return __( 'Custom meta keys', 'wp-cortex' );
+	}
+
+	public function fields(): array {
+		$fields = array();
+
+		foreach ( (array) Settings::get( 'meta_keys' ) as $key ) {
+			$fields[ 'meta:' . $key ] = array(
+				'label'  => (string) $key,
+				'public' => false,
+			);
+		}
+
+		return $fields;
 	}
 
 	public function extract( WP_Post $post, Document $doc ): void {

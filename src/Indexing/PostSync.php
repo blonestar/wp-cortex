@@ -112,7 +112,7 @@ final class PostSync {
 	public function on_meta_change( $meta_id, $post_id, $key ): void {
 		if ( str_starts_with( (string) $key, '_yoast_wpseo_' )
 			|| in_array( $key, (array) Settings::get( 'meta_keys' ), true )
-			|| ( Settings::get( 'index_media' ) && in_array( $key, self::MEDIA_META_KEYS, true ) )
+			|| ( Settings::index_media() && in_array( $key, self::MEDIA_META_KEYS, true ) )
 		) {
 			$this->queue( (int) $post_id );
 		}
@@ -125,7 +125,7 @@ final class PostSync {
 	 * @param int $post_id Parent post ID.
 	 */
 	private function queue_attachments( int $post_id ): void {
-		if ( ! Settings::get( 'index_media' ) || $post_id <= 0 || 'attachment' === get_post_type( $post_id ) ) {
+		if ( ! Settings::index_media() || $post_id <= 0 || 'attachment' === get_post_type( $post_id ) ) {
 			return;
 		}
 

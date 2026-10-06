@@ -7,11 +7,14 @@
 
 namespace WPCortex\Indexing;
 
+use WPCortex\Storage\Storage;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
- * What extractors produce and the store persists. Fields and extra sections carry a
- * "public" flag; the public index only receives the ones marked public.
+ * What extractors produce and the store persists. Fields and extra sections carry the
+ * extractor's "public" default; FieldPolicy (the field_scopes setting) decides which
+ * index each one actually goes into, and for_scope() is the only place that applies it.
  */
 final class Document {
 
@@ -35,14 +38,14 @@ final class Document {
 	/**
 	 * Structured fields.
 	 *
-	 * @var array<int, array{source: string, name: string, value: string, public: bool}>
+	 * @var array<int, array{source: string, name: string, value: string, public: bool, public_value?: string|null}>
 	 */
 	public array $fields = array();
 
 	/**
 	 * Additional text sections (e.g. long ACF text fields) that are chunked alongside the body.
 	 *
-	 * @var array<int, array{heading: string, text: string, public: bool}>
+	 * @var array<int, array{heading: string, text: string, public: bool, field: string}>
 	 */
 	public array $sections = array();
 
@@ -52,7 +55,7 @@ final class Document {
 	 * @param string $source Origin, e.g. "taxonomy", "yoast", "acf", "meta".
 	 * @param string $name   Field name.
 	 * @param mixed  $value  Scalar value.
-	 * @param bool   $public Whether the field may appear in the public index.
+	 * @param bool   $public Whether the field goes into the public index unless the field_scopes setting says otherwise.
 	 */
 	public function add_field( string $source, string $name, $value, bool $public = false ): void {
 		$this->fields[] = array(
@@ -64,33 +67,81 @@ final class Document {
 	}
 
 	/**
-	 * Adds a text section.
+	 * Adds a structured field whose value in the public index differs from the admin one,
+	 * for example a list of related posts where only the published ones may be named
+	 * publicly. A null public value keeps the field out of the public index whatever the
+	 * field_scopes setting says.
 	 *
-	 * @param string $heading Section heading.
-	 * @param string $text    Plain text or HTML.
-	 * @param bool   $public  Whether the section may appear in the public index.
+	 * @param string      $source       Origin, e.g. "acf".
+	 * @param string      $name         Field name.
+	 * @param string      $value        Value in the admin index.
+	 * @param string|null $public_value Value in the public index, or null for none.
+	 * @param bool        $public       Whether the field goes into the public index unless the field_scopes setting says otherwise.
 	 */
-	public function add_section( string $heading, string $text, bool $public = false ): void {
-		$this->sections[] = array(
-			'heading' => $heading,
-			'text'    => $text,
-			'public'  => $public,
+	public function add_scoped_field( string $source, string $name, string $value, ?string $public_value, bool $public = false ): void {
+		$this->fields[] = array(
+			'source'       => $source,
+			'name'         => $name,
+			'value'        => $value,
+			'public'       => $public,
+			'public_value' => $public_value,
 		);
 	}
 
 	/**
-	 * Copy that only contains data allowed in the given scope.
+	 * Adds a text section.
 	 *
-	 * @param bool $public Whether the copy is for the public index.
+	 * @param string $heading Section heading.
+	 * @param string $text    Plain text or HTML.
+	 * @param bool   $public  Whether the section goes into the public index unless its field's rule says otherwise.
+	 * @param string $field   Key ("source:name") of the field the section comes from; its rule applies
+	 *                        to the section. Empty for sections that are not tied to a field.
 	 */
-	public function for_scope( bool $public ): self {
-		if ( ! $public ) {
-			return clone $this;
+	public function add_section( string $heading, string $text, bool $public = false, string $field = '' ): void {
+		$this->sections[] = array(
+			'heading' => $heading,
+			'text'    => $text,
+			'public'  => $public,
+			'field'   => $field,
+		);
+	}
+
+	/**
+	 * Copy that only contains the fields and sections allowed in the given scope.
+	 *
+	 * @param string      $scope  Storage::SCOPE_PUBLIC or Storage::SCOPE_ADMIN.
+	 * @param FieldPolicy $policy Field rules.
+	 */
+	public function for_scope( string $scope, FieldPolicy $policy ): self {
+		$copy         = clone $this;
+		$copy->fields = array();
+
+		foreach ( $this->fields as $field ) {
+			if ( ! $policy->allows( $scope, $field['source'] . ':' . $field['name'], $field['public'] ) ) {
+				continue;
+			}
+
+			if ( array_key_exists( 'public_value', $field ) ) {
+				if ( Storage::SCOPE_PUBLIC === $scope ) {
+					if ( null === $field['public_value'] ) {
+						continue;
+					}
+					$field['value'] = $field['public_value'];
+				}
+				unset( $field['public_value'] );
+			}
+
+			$copy->fields[] = $field;
 		}
 
-		$copy           = clone $this;
-		$copy->fields   = array_values( array_filter( $this->fields, static fn( $f ) => $f['public'] ) );
-		$copy->sections = array_values( array_filter( $this->sections, static fn( $s ) => $s['public'] ) );
+		$copy->sections = array_values(
+			array_filter(
+				$this->sections,
+				static fn( $s ) => '' === $s['field']
+					? ( Storage::SCOPE_PUBLIC !== $scope || $s['public'] )
+					: $policy->allows( $scope, $s['field'], $s['public'] )
+			)
+		);
 
 		return $copy;
 	}
