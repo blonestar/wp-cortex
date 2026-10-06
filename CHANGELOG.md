@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-06
+
 ### Added
 
 - Separate configuration of the admin and public indexes under Settings > Indexing > Admin index and Public index, shown as two clearly marked sections. Each index has its own post types (`admin_post_types`, `public_post_types`), including media, and its own fields: every field of the core data, taxonomies, Yoast SEO, ACF (grouped by field group), custom meta keys and media can go into the admin index, the public index, both or neither (`field_scopes`). ACF content fields (text, dates, links to other posts and terms, repeaters...) of the public post types are chosen for the public index by default; settings-like fields (switches, numbers, choices, URLs, images) and fields named like internal data (`id`, `code`, `note`, `email`...) are not. For example, a post type can be indexed only for visitors. The field lists have a filter box; ACF fields are grouped by field group and only groups stored on posts of the index's post types are listed. A field name used in several field groups is listed in each of them with one shared choice.
