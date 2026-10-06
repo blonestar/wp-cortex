@@ -21,7 +21,6 @@ final class Menu {
 
 	public const SLUG_SETTINGS = 'wp-cortex';
 	public const SLUG_INDEXING = 'wp-cortex-indexing';
-	public const SLUG_SKILLS   = 'wp-cortex-skills';
 	public const SLUG_VISITORS = 'wp-cortex-visitor-chats';
 	public const SLUG_REPORTS  = 'wp-cortex-issue-reports';
 
@@ -38,13 +37,6 @@ final class Menu {
 	 * @var string
 	 */
 	private string $indexing_hook = '';
-
-	/**
-	 * Hook suffix of the Skills screen.
-	 *
-	 * @var string
-	 */
-	private string $skills_hook = '';
 
 	/**
 	 * Hook suffix of the Visitor chats screen.
@@ -74,7 +66,7 @@ final class Menu {
 	 * Adds the top-level menu and its submenus.
 	 */
 	public function add_menu(): void {
-		// Indexing is the landing screen; Skills comes second to last, Settings last.
+		// Indexing is the landing screen; Settings is listed last.
 		$this->indexing_hook = (string) add_menu_page(
 			__( 'Cortex', 'wp-cortex' ),
 			__( 'Cortex', 'wp-cortex' ),
@@ -115,17 +107,6 @@ final class Menu {
 			array( new IssueReportsPage(), 'render' )
 		);
 
-		if ( Settings::skills_enabled() ) {
-			$this->skills_hook = (string) add_submenu_page(
-				self::SLUG_INDEXING,
-				__( 'Cortex Skills', 'wp-cortex' ),
-				__( 'Skills', 'wp-cortex' ),
-				'manage_options',
-				self::SLUG_SKILLS,
-				array( new SkillsPage(), 'render' )
-			);
-		}
-
 		$this->settings_hook = (string) add_submenu_page(
 			self::SLUG_INDEXING,
 			__( 'Cortex Settings', 'wp-cortex' ),
@@ -158,11 +139,10 @@ final class Menu {
 	public function enqueue( string $hook_suffix ): void {
 		$is_settings = '' !== $this->settings_hook && $hook_suffix === $this->settings_hook;
 		$is_indexing = '' !== $this->indexing_hook && $hook_suffix === $this->indexing_hook;
-		$is_skills   = '' !== $this->skills_hook && $hook_suffix === $this->skills_hook;
 		$is_visitors = '' !== $this->visitors_hook && $hook_suffix === $this->visitors_hook;
 		$is_reports  = '' !== $this->reports_hook && $hook_suffix === $this->reports_hook;
 
-		if ( ! $is_settings && ! $is_indexing && ! $is_skills && ! $is_visitors && ! $is_reports ) {
+		if ( ! $is_settings && ! $is_indexing && ! $is_visitors && ! $is_reports ) {
 			return;
 		}
 
@@ -190,7 +170,8 @@ final class Menu {
 			);
 		}
 
-		if ( $is_skills ) {
+		if ( $is_settings && Settings::skills_enabled() ) {
+			// The saved skills list on the Skills tab.
 			wp_enqueue_script( 'wp-cortex-skills', WP_CORTEX_URL . 'assets/js/skills.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/skills.js' ), true );
 			wp_set_script_translations( 'wp-cortex-skills', 'wp-cortex' );
 		}
