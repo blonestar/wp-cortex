@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-06
+
 ### Added
 
 - Settings > Visitor chat > General: a message box placeholder (`public_chat_placeholder`, empty by default, which shows "Type your question…").
