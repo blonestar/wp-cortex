@@ -8,6 +8,7 @@
 namespace WPCortex\Rest;
 
 use WPCortex\Indexing\IndexRun;
+use WPCortex\Indexing\IndexWorker;
 use WPCortex\Indexing\Indexer;
 use WPCortex\Storage\Database;
 use WPCortex\Storage\Storage;
@@ -92,6 +93,18 @@ final class IndexController {
 			)
 		);
 
+		foreach ( array( 'pause', 'resume' ) as $action ) {
+			register_rest_route(
+				self::NAMESPACE,
+				'/index/' . $action,
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, $action ),
+					'permission_callback' => $permission,
+				)
+			);
+		}
+
 		register_rest_route(
 			self::NAMESPACE,
 			'/index/cancel',
@@ -111,12 +124,14 @@ final class IndexController {
 	}
 
 	/**
-	 * GET /index
+	 * GET /index. Also restarts a stalled background run (see IndexWorker::ensure()).
 	 *
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function status() {
 		try {
+			IndexWorker::ensure( true );
+
 			return rest_ensure_response( $this->payload() );
 		} catch ( \Throwable $e ) {
 			return $this->error( $e );
@@ -132,6 +147,7 @@ final class IndexController {
 	public function start( WP_REST_Request $request ) {
 		try {
 			IndexRun::start( (string) $request->get_param( 'mode' ) );
+			IndexWorker::dispatch();
 
 			return rest_ensure_response( $this->payload() );
 		} catch ( \Throwable $e ) {
@@ -140,7 +156,8 @@ final class IndexController {
 	}
 
 	/**
-	 * POST /index/batch
+	 * POST /index/batch processes one batch in this request (the admin page relies on the
+	 * background worker instead).
 	 *
 	 * @return WP_REST_Response|WP_Error
 	 */
@@ -154,6 +171,38 @@ final class IndexController {
 			}
 
 			return rest_ensure_response( $payload );
+		} catch ( \Throwable $e ) {
+			return $this->error( $e );
+		}
+	}
+
+	/**
+	 * POST /index/pause
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function pause() {
+		try {
+			IndexRun::pause();
+
+			return rest_ensure_response( $this->payload() );
+		} catch ( \Throwable $e ) {
+			return $this->error( $e );
+		}
+	}
+
+	/**
+	 * POST /index/resume continues the paused run in the background.
+	 *
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function resume() {
+		try {
+			if ( IndexRun::resume() ) {
+				IndexWorker::dispatch();
+			}
+
+			return rest_ensure_response( $this->payload() );
 		} catch ( \Throwable $e ) {
 			return $this->error( $e );
 		}

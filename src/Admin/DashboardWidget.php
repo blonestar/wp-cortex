@@ -399,6 +399,10 @@ final class DashboardWidget {
 			return '<span class="wp-cortex-dash-badge is-running">' . esc_html( $label ) . '</span>';
 		}
 
+		if ( 'paused' === $status ) {
+			return '<span class="wp-cortex-dash-badge is-warn">' . esc_html__( 'Indexing paused', 'wp-cortex' ) . '</span>';
+		}
+
 		if ( 'failed' === $status ) {
 			return '<span class="wp-cortex-dash-badge is-failed">' . esc_html__( 'Last run failed', 'wp-cortex' ) . '</span>';
 		}
