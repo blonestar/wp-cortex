@@ -203,7 +203,7 @@ final class Command {
 		foreach ( $state as $key => $value ) {
 			if ( 'errors' === $key ) {
 				$value = count( $value );
-			} elseif ( in_array( $key, array( 'started_at', 'finished_at' ), true ) ) {
+			} elseif ( in_array( $key, array( 'started_at', 'updated_at', 'paused_at', 'finished_at' ), true ) ) {
 				$value = $value ? gmdate( 'Y-m-d H:i:s', (int) $value ) . ' UTC' : '-';
 			}
 			$run[] = array(

@@ -19,6 +19,7 @@ use WPCortex\Chat\VisitorImages;
 use WPCortex\Cli\Command;
 use WPCortex\Frontend\FrontendChat;
 use WPCortex\Indexing\IndexRun;
+use WPCortex\Indexing\IndexWorker;
 use WPCortex\Indexing\PostSync;
 use WPCortex\Rest\ChatController;
 use WPCortex\Rest\IndexController;
@@ -40,6 +41,7 @@ final class Plugin {
 	 */
 	public static function boot(): void {
 		( new PostSync() )->register();
+		( new IndexWorker() )->register();
 		( new IndexController() )->register();
 		( new ChatController() )->register();
 		( new PublicChatController() )->register();
@@ -149,6 +151,7 @@ final class Plugin {
 	 */
 	public static function deactivate(): void {
 		wp_clear_scheduled_hook( PostSync::CRON_HOOK );
+		wp_clear_scheduled_hook( IndexWorker::CRON_HOOK );
 		wp_clear_scheduled_hook( VisitorChatStore::PURGE_HOOK );
 		IndexRun::cancel();
 	}

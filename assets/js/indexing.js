@@ -20,6 +20,7 @@
 		eligible: document.getElementById( 'wp-cortex-eligible' ),
 		sync: document.getElementById( 'wp-cortex-sync' ),
 		rebuild: document.getElementById( 'wp-cortex-rebuild' ),
+		pause: document.getElementById( 'wp-cortex-pause' ),
 		resume: document.getElementById( 'wp-cortex-resume' ),
 		cancel: document.getElementById( 'wp-cortex-cancel' ),
 		requestError: document.getElementById( 'wp-cortex-request-error' ),
@@ -27,10 +28,18 @@
 		errors: document.getElementById( 'wp-cortex-errors' )
 	};
 
-	var looping = false;
-	var cancelRequested = false;
+	// The run is processed on the server; this page only polls its state.
+	var POLL_RUNNING = 3000;
+	var POLL_IDLE = 15000;
+
+	var busy = false;
+	var actionPending = false;
 	var lastRun = null;
-	var session = { startedAt: 0, startProcessed: 0 };
+	var pollTimer = null;
+	var polling = false;
+	var failures = 0;
+	// First progress seen for the current run, for the ETA.
+	var session = { runId: '', at: 0, processed: 0 };
 
 	function fmt( n ) {
 		return Number( n || 0 ).toLocaleString();
@@ -68,12 +77,6 @@
 			date = new Date( /[zZ]|[+-]\d\d:?\d\d$/.test( str ) ? str : str.replace( ' ', 'T' ) + 'Z' );
 		}
 		return isNaN( date.getTime() ) ? String( value ) : date.toLocaleString();
-	}
-
-	function sleep( ms ) {
-		return new Promise( function ( resolve ) {
-			setTimeout( resolve, ms );
-		} );
 	}
 
 	function post( action, data ) {
@@ -141,6 +144,7 @@
 	function statusLabel( status ) {
 		var labels = {
 			running: __( 'Running', 'wp-cortex' ),
+			paused: __( 'Paused', 'wp-cortex' ),
 			completed: __( 'Completed', 'wp-cortex' ),
 			cancelled: __( 'Cancelled', 'wp-cortex' ),
 			failed: __( 'Failed', 'wp-cortex' )
@@ -192,11 +196,16 @@
 		var elapsed = '–';
 		var eta = '–';
 		if ( run ) {
-			var end = run.finished_at || Math.floor( Date.now() / 1000 );
-			elapsed = fmtDuration( end - run.started_at );
-			if ( status === 'running' && looping && session.startedAt ) {
-				var done = processed - session.startProcessed;
-				var secs = ( Date.now() - session.startedAt ) / 1000;
+			var end = run.finished_at || run.paused_at || Math.floor( Date.now() / 1000 );
+			elapsed = fmtDuration( end - run.started_at - ( run.paused_seconds || 0 ) );
+			if ( status !== 'running' ) {
+				session.runId = ''; // Measure the speed again after a resume.
+			} else {
+				if ( session.runId !== run.id ) {
+					session = { runId: run.id, at: Date.now(), processed: processed };
+				}
+				var done = processed - session.processed;
+				var secs = ( Date.now() - session.at ) / 1000;
 				if ( done > 0 && total > processed ) {
 					eta = fmtDuration( ( secs / done ) * ( total - processed ) );
 				}
@@ -214,12 +223,16 @@
 	}
 
 	function updateButtons() {
-		var running = !! lastRun && lastRun.status === 'running';
-		els.sync.disabled = looping || running;
-		els.rebuild.disabled = looping || running;
-		els.cancel.hidden = ! running;
-		els.cancel.disabled = cancelRequested;
-		els.resume.hidden = ! ( running && ! looping );
+		var status = lastRun ? lastRun.status : '';
+		var active = status === 'running' || status === 'paused';
+		els.sync.disabled = busy || active;
+		els.rebuild.disabled = busy || active;
+		els.pause.hidden = status !== 'running';
+		els.resume.hidden = status !== 'paused';
+		els.cancel.hidden = ! active;
+		els.pause.disabled = actionPending;
+		els.resume.disabled = actionPending;
+		els.cancel.disabled = actionPending;
 	}
 
 	function applyResponse( res ) {
@@ -227,70 +240,60 @@
 		renderStats( res.stats, res.stats_errors );
 	}
 
-	function request( action, data ) {
-		var delays = [ 2000, 4000, 8000 ];
-		var attempt = 0;
-
-		function run() {
-			return post( action, data ).catch( function ( err ) {
-				if ( attempt >= delays.length ) {
-					throw err;
-				}
-				var delay = delays[ attempt++ ];
-				showRequestError( sprintf( __( 'Request failed (%1$s). Retrying in %2$d s…', 'wp-cortex' ), ( err && err.message ) || '', delay / 1000 ) );
-				return sleep( delay ).then( run );
-			} );
-		}
-
-		return run();
+	function isRunning() {
+		return !! lastRun && lastRun.status === 'running';
 	}
 
-	function loop() {
-		if ( looping ) {
-			return Promise.resolve();
+	function schedulePoll( delay ) {
+		clearTimeout( pollTimer );
+		pollTimer = null;
+		if ( document.hidden ) {
+			return; // Polling resumes when the tab becomes visible.
 		}
-		looping = true;
-		cancelRequested = false;
-		session.startedAt = Date.now();
-		session.startProcessed = lastRun ? lastRun.processed : 0;
-		updateButtons();
+		if ( typeof delay !== 'number' ) {
+			delay = isRunning() ? POLL_RUNNING : POLL_IDLE;
+		}
+		pollTimer = setTimeout( poll, delay );
+	}
 
-		function step() {
-			if ( cancelRequested ) {
-				return Promise.resolve();
+	function poll() {
+		if ( polling ) {
+			return;
+		}
+		polling = true;
+		clearTimeout( pollTimer );
+		pollTimer = null;
+
+		apiFetch( { path: restPath } ).then( function ( res ) {
+			failures = 0;
+			showRequestError( '' );
+			applyResponse( res );
+		} ).catch( function ( err ) {
+			failures++;
+			showRequestError( ( err && err.message ) || __( 'Could not load the indexing status.', 'wp-cortex' ) );
+			if ( ! lastRun ) {
+				els.sync.disabled = false;
+				els.rebuild.disabled = false;
 			}
-			return request( 'batch' ).then( function ( res ) {
-				showRequestError( '' );
-				applyResponse( res );
-				if ( ! res.run || res.run.status !== 'running' ) {
-					return null;
-				}
-				return ( res.locked ? sleep( 2000 ) : Promise.resolve() ).then( step );
-			} );
-		}
-
-		return step().catch( function ( err ) {
-			showRequestError( sprintf( __( 'Indexing stopped: %s', 'wp-cortex' ), ( err && err.message ) || __( 'Unknown error.', 'wp-cortex' ) ) );
 		} ).then( function () {
-			looping = false;
-			updateButtons();
+			polling = false;
+			// Back off while requests fail.
+			schedulePoll( failures ? Math.min( 60000, POLL_RUNNING * Math.pow( 2, failures ) ) : undefined );
 		} );
 	}
 
 	function start( mode ) {
 		showRequestError( '' );
-		cancelRequested = false;
-		lastRun = lastRun || {};
-		looping = true; // Lock the buttons while the start request is in flight.
+		busy = true; // Lock the buttons while the start request is in flight.
 		updateButtons();
 		post( 'start', { mode: mode } ).then( function ( res ) {
-			looping = false;
 			applyResponse( res );
-			return loop();
 		} ).catch( function ( err ) {
-			looping = false;
 			showRequestError( ( err && err.message ) || __( 'Could not start indexing.', 'wp-cortex' ) );
+		} ).then( function () {
+			busy = false;
 			updateButtons();
+			schedulePoll();
 		} );
 	}
 
@@ -304,32 +307,39 @@
 		}
 	} );
 
-	els.resume.addEventListener( 'click', function () {
+	function runAction( action, failMessage ) {
 		showRequestError( '' );
-		loop();
+		actionPending = true;
+		updateButtons();
+		post( action ).then( applyResponse ).catch( function ( err ) {
+			showRequestError( ( err && err.message ) || failMessage );
+		} ).then( function () {
+			actionPending = false;
+			updateButtons();
+			schedulePoll();
+		} );
+	}
+
+	els.pause.addEventListener( 'click', function () {
+		runAction( 'pause', __( 'Could not pause.', 'wp-cortex' ) );
+	} );
+
+	els.resume.addEventListener( 'click', function () {
+		runAction( 'resume', __( 'Could not resume.', 'wp-cortex' ) );
 	} );
 
 	els.cancel.addEventListener( 'click', function () {
-		cancelRequested = true;
-		els.cancel.disabled = true;
-		post( 'cancel' ).then( applyResponse ).catch( function ( err ) {
-			showRequestError( ( err && err.message ) || __( 'Could not cancel.', 'wp-cortex' ) );
-		} ).then( function () {
-			cancelRequested = false;
-			updateButtons();
-		} );
+		runAction( 'cancel', __( 'Could not cancel.', 'wp-cortex' ) );
 	} );
 
-	window.addEventListener( 'beforeunload', function ( event ) {
-		if ( looping ) {
-			event.preventDefault();
-			event.returnValue = '';
+	document.addEventListener( 'visibilitychange', function () {
+		if ( document.hidden ) {
+			clearTimeout( pollTimer );
+			pollTimer = null;
+		} else {
+			poll();
 		}
 	} );
 
-	apiFetch( { path: restPath } ).then( applyResponse ).catch( function ( err ) {
-		showRequestError( ( err && err.message ) || __( 'Could not load the indexing status.', 'wp-cortex' ) );
-		els.sync.disabled = false;
-		els.rebuild.disabled = false;
-	} );
+	poll();
 }() );
