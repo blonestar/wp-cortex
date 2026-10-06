@@ -19,7 +19,7 @@ use WP_REST_Server;
 defined( 'ABSPATH' ) || exit;
 
 /**
- * Endpoints under /wp-cortex/v1/index used by the Indexing admin screen.
+ * Endpoints under /wp-cortex/v1/index used by Settings > Indexing > Status & stats.
  */
 final class IndexController {
 

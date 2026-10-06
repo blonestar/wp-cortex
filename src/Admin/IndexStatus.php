@@ -1,6 +1,6 @@
 <?php
 /**
- * Indexing screen: storage info, stats and the batch-driven indexing UI.
+ * Status & stats section of Settings > Indexing: the batch-driven indexing UI and index stats.
  *
  * @package WPCortex
  */
@@ -16,18 +16,17 @@ defined( 'ABSPATH' ) || exit;
 /**
  * Server-rendered shell; assets/js/indexing.js fills in the data.
  */
-final class IndexingPage {
+final class IndexStatus {
 
 	/**
-	 * Renders the page.
+	 * Renders the section.
 	 */
 	public function render(): void {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
 
-		echo '<div class="wrap wp-cortex-wrap" id="wp-cortex-indexing">';
-		echo '<h1>' . esc_html__( 'Cortex Indexing', 'wp-cortex' ) . '</h1>';
+		echo '<div class="wp-cortex-index-status" id="wp-cortex-indexing">';
 
 		$this->render_storage_alert();
 		$this->render_embeddings();
@@ -86,7 +85,7 @@ final class IndexingPage {
 			}
 		}
 
-		echo ' &middot; <a href="' . esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_SETTINGS ) ) . '">' . esc_html__( 'Change settings', 'wp-cortex' ) . '</a>';
+		echo ' &middot; <a href="' . esc_url( SettingsPage::section_url( 'indexing', 'embeddings' ) ) . '">' . esc_html__( 'Change settings', 'wp-cortex' ) . '</a>';
 		echo '</p>';
 	}
 
@@ -95,11 +94,11 @@ final class IndexingPage {
 	 */
 	private function render_progress(): void {
 		?>
-		<div class="wp-cortex-card">
-			<h2>
-				<?php esc_html_e( 'Indexing', 'wp-cortex' ); ?>
+		<div class="wp-cortex-index-run">
+			<h3>
+				<?php esc_html_e( 'Index', 'wp-cortex' ); ?>
 				<span class="wp-cortex-badge wp-cortex-badge-idle" id="wp-cortex-status"><?php esc_html_e( 'Loading…', 'wp-cortex' ); ?></span>
-			</h2>
+			</h3>
 
 			<div class="wp-cortex-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="wp-cortex-progress-text" id="wp-cortex-progress">
 				<div class="wp-cortex-progress-bar" id="wp-cortex-progress-bar"></div>
@@ -143,7 +142,7 @@ final class IndexingPage {
 			<div class="notice notice-error inline" id="wp-cortex-request-error" hidden><p></p></div>
 
 			<div id="wp-cortex-errors-wrap" hidden>
-				<h3><?php esc_html_e( 'Errors', 'wp-cortex' ); ?></h3>
+				<h4><?php esc_html_e( 'Errors', 'wp-cortex' ); ?></h4>
 				<ul class="wp-cortex-errors" id="wp-cortex-errors"></ul>
 			</div>
 		</div>
@@ -170,8 +169,8 @@ final class IndexingPage {
 
 		echo '<div class="wp-cortex-stats-grid">';
 		foreach ( $scopes as $scope => $title ) {
-			echo '<div class="wp-cortex-card" data-stats-scope="' . esc_attr( $scope ) . '">';
-			echo '<h2>' . esc_html( $title ) . '</h2>';
+			echo '<div class="wp-cortex-stats-box" data-stats-scope="' . esc_attr( $scope ) . '">';
+			echo '<h3>' . esc_html( $title ) . '</h3>';
 			echo '<p class="wp-cortex-stats-error" data-stat-error hidden></p>';
 			echo '<dl class="wp-cortex-stats">';
 			foreach ( $rows as $key => $label ) {
@@ -182,7 +181,7 @@ final class IndexingPage {
 				);
 			}
 			echo '</dl>';
-			echo '<h3>' . esc_html__( 'By post type', 'wp-cortex' ) . '</h3>';
+			echo '<h4>' . esc_html__( 'By post type', 'wp-cortex' ) . '</h4>';
 			echo '<ul class="wp-cortex-by-type" data-stat="by_type"></ul>';
 			echo '</div>';
 		}

@@ -20,9 +20,13 @@ defined( 'ABSPATH' ) || exit;
 final class Menu {
 
 	public const SLUG_SETTINGS = 'wp-cortex';
-	public const SLUG_INDEXING = 'wp-cortex-indexing';
 	public const SLUG_VISITORS = 'wp-cortex-visitor-chats';
 	public const SLUG_REPORTS  = 'wp-cortex-issue-reports';
+
+	/**
+	 * Slug of the former Cortex > Indexing screen, now Settings > Indexing > Status & stats.
+	 */
+	private const LEGACY_SLUG_INDEXING = 'wp-cortex-indexing';
 
 	/**
 	 * Hook suffix of the Settings screen.
@@ -30,13 +34,6 @@ final class Menu {
 	 * @var string
 	 */
 	private string $settings_hook = '';
-
-	/**
-	 * Hook suffix of the Indexing screen.
-	 *
-	 * @var string
-	 */
-	private string $indexing_hook = '';
 
 	/**
 	 * Hook suffix of the Visitor chats screen.
@@ -57,6 +54,7 @@ final class Menu {
 	 */
 	public function register(): void {
 		add_action( 'admin_menu', array( $this, 'add_menu' ) );
+		add_action( 'admin_page_access_denied', array( $this, 'redirect_legacy' ) );
 		add_action( 'admin_init', array( SettingsPage::class, 'register_settings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( WP_CORTEX_FILE ), array( $this, 'action_links' ) );
@@ -66,13 +64,15 @@ final class Menu {
 	 * Adds the top-level menu and its submenus.
 	 */
 	public function add_menu(): void {
-		// Indexing is the landing screen; Settings is listed last.
-		$this->indexing_hook = (string) add_menu_page(
+		$can = current_user_can( 'manage_options' );
+
+		// Visitor chats is the landing screen; Settings is listed last.
+		$this->visitors_hook = (string) add_menu_page(
 			__( 'Cortex', 'wp-cortex' ),
 			__( 'Cortex', 'wp-cortex' ),
 			'manage_options',
-			self::SLUG_INDEXING,
-			array( new IndexingPage(), 'render' ),
+			self::SLUG_VISITORS,
+			array( new VisitorChatsPage(), 'render' ),
 			'dashicons-database',
 			81
 		);
@@ -80,26 +80,15 @@ final class Menu {
 		// Same slug as the parent: only renames the first submenu item. Passing a callback
 		// here would hook the render a second time and print the page twice.
 		add_submenu_page(
-			self::SLUG_INDEXING,
-			__( 'Cortex Indexing', 'wp-cortex' ),
-			__( 'Indexing', 'wp-cortex' ),
-			'manage_options',
-			self::SLUG_INDEXING
-		);
-
-		$can = current_user_can( 'manage_options' );
-
-		$this->visitors_hook = (string) add_submenu_page(
-			self::SLUG_INDEXING,
+			self::SLUG_VISITORS,
 			__( 'Cortex Visitor Chats', 'wp-cortex' ),
 			self::count_label( __( 'Visitor chats', 'wp-cortex' ), $can ? ( new VisitorChatStore() )->unread_count() : 0 ),
 			'manage_options',
-			self::SLUG_VISITORS,
-			array( new VisitorChatsPage(), 'render' )
+			self::SLUG_VISITORS
 		);
 
 		$this->reports_hook = (string) add_submenu_page(
-			self::SLUG_INDEXING,
+			self::SLUG_VISITORS,
 			__( 'Cortex Issue Reports', 'wp-cortex' ),
 			self::count_label( __( 'Issue reports', 'wp-cortex' ), $can ? ( new IssueReportStore() )->open_count() : 0 ),
 			'manage_options',
@@ -108,13 +97,25 @@ final class Menu {
 		);
 
 		$this->settings_hook = (string) add_submenu_page(
-			self::SLUG_INDEXING,
+			self::SLUG_VISITORS,
 			__( 'Cortex Settings', 'wp-cortex' ),
 			__( 'Settings', 'wp-cortex' ),
 			'manage_options',
 			self::SLUG_SETTINGS,
 			array( new SettingsPage(), 'render' )
 		);
+	}
+
+	/**
+	 * Sends the former Cortex > Indexing screen to Settings > Indexing > Status & stats.
+	 */
+	public function redirect_legacy(): void {
+		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Only redirects to another screen.
+
+		if ( self::LEGACY_SLUG_INDEXING === $page && current_user_can( 'manage_options' ) ) {
+			wp_safe_redirect( SettingsPage::status_url() );
+			exit;
+		}
 	}
 
 	/**
@@ -138,11 +139,10 @@ final class Menu {
 	 */
 	public function enqueue( string $hook_suffix ): void {
 		$is_settings = '' !== $this->settings_hook && $hook_suffix === $this->settings_hook;
-		$is_indexing = '' !== $this->indexing_hook && $hook_suffix === $this->indexing_hook;
 		$is_visitors = '' !== $this->visitors_hook && $hook_suffix === $this->visitors_hook;
 		$is_reports  = '' !== $this->reports_hook && $hook_suffix === $this->reports_hook;
 
-		if ( ! $is_settings && ! $is_indexing && ! $is_visitors && ! $is_reports ) {
+		if ( ! $is_settings && ! $is_visitors && ! $is_reports ) {
 			return;
 		}
 
@@ -158,7 +158,8 @@ final class Menu {
 			wp_set_script_translations( 'wp-cortex-storage', 'wp-cortex' );
 		}
 
-		if ( $is_indexing ) {
+		if ( $is_settings ) {
+			// Index runs and stats on Indexing > Status & stats.
 			wp_enqueue_script( 'wp-cortex-indexing', WP_CORTEX_URL . 'assets/js/indexing.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/indexing.js' ), true );
 			wp_set_script_translations( 'wp-cortex-indexing', 'wp-cortex' );
 			wp_add_inline_script(
