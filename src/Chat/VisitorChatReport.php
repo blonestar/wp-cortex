@@ -111,6 +111,10 @@ final class VisitorChatReport {
 					$lines[] = '  ' . __( 'Sources shown:', 'wp-cortex' ) . ' ' . implode( ', ', $titles );
 					break;
 				case 'navigate':
+					if ( ! empty( $item['reload'] ) ) {
+						$lines[] = '  ' . __( 'Page reloaded:', 'wp-cortex' ) . ' ' . ( $item['title'] ?? '' ) . ' (' . ( $item['url'] ?? '' ) . ')';
+						break;
+					}
 					$lines[] = '  ' . __( 'Visitor taken to:', 'wp-cortex' ) . ' ' . ( $item['title'] ?? '' ) . ' (' . ( $item['url'] ?? '' ) . ')';
 					break;
 				case 'notice':

@@ -27,9 +27,10 @@ final class PublicContext extends ToolContext {
 	private array $seen = array();
 
 	/**
-	 * Page the visitor is taken to after this turn.
+	 * Page the visitor is taken to after this turn; with reload set, the current page is
+	 * reloaded instead.
 	 *
-	 * @var array{id: int, title: string, url: string}|null
+	 * @var array{id: int, title: string, url: string, reload?: bool}|null
 	 */
 	private ?array $navigation = null;
 
@@ -219,9 +220,25 @@ final class PublicContext extends ToolContext {
 	}
 
 	/**
+	 * Reloads the page the visitor is on after this turn; replaces an earlier navigation.
+	 * The URL is only kept for the conversation log (the browser reloads whatever it shows)
+	 * and is already limited to the site's own host.
+	 */
+	public function reload(): void {
+		$current = $this->current();
+
+		$this->navigation = array(
+			'id'     => $current ? (int) $current['id'] : 0,
+			'title'  => $current ? wp_specialchars_decode( (string) $current['title'], ENT_QUOTES ) : '',
+			'url'    => $this->page_url,
+			'reload' => true,
+		);
+	}
+
+	/**
 	 * Page the visitor is taken to after this turn.
 	 *
-	 * @return array{id: int, title: string, url: string}|null
+	 * @return array{id: int, title: string, url: string, reload?: bool}|null
 	 */
 	public function navigation(): ?array {
 		return $this->navigation;
