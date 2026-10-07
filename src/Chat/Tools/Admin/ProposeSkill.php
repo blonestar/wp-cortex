@@ -37,6 +37,13 @@ final class ProposeSkill extends AdminTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Needs Skills > Settings > Use chat skills.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model.
 	 *
 	 * @param ToolContext $context Turn context.

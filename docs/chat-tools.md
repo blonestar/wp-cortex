@@ -9,12 +9,14 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
 
+Administrators manage the tools under **Cortex > Settings > Chat tools**: every tool of each chat (from Cortex, the theme or a plugin; an ability or a chat tool that only works inside the chat panel) has a switch and a per-message call limit, and the abilities registered by WordPress and other plugins can be allowed for the admin chat (see [Abilities of other plugins](#abilities-of-other-plugins)).
+
 ## How a turn uses tools
 
 1. The agent creates the turn context: `AdminContext` (screen, current post, posts seen, UI actions, skills) or `PublicContext` (the visitor's conversation, current page, pages seen, navigation). `$context->search()` reads the admin index in the admin chat and **only the public index** in the visitor chat.
-2. `ToolRegistry::build()` takes the built-in tools, applies the theme files, then the filter, and keeps the tools whose `is_available()` returns true.
+2. `ToolRegistry::build()` takes the built-in tools (in the admin chat also the allowed abilities of other plugins), applies the theme files, then the filter, leaves out the tools switched off under Settings > Chat tools and keeps the tools whose `is_available()` returns true.
 3. The model gets each tool's name, `description()` and `parameters()` (JSON schema); the system prompt gets each tool's `instructions()` lines.
-4. `AgentLoop` runs the model and calls `execute( $args, $context )` for every function call until the model answers.
+4. `AgentLoop` runs the model and calls `execute( $args, $context )` for every function call until the model answers. A call beyond the tool's per-message limit gets an error instead; calls that return an `error` do not count.
 
 Tools are created for each turn, so a tool can keep state of that turn in its properties.
 
@@ -100,6 +102,7 @@ To change an ability, use its function name, for example `wpab__wp-cortex__list-
 | Key | Type | Notes |
 |---|---|---|
 | `label` | string | Name shown in the admin. |
+| `note` | string | What else decides whether the tool is offered (for example a setting), shown under Settings > Chat tools. |
 | `description` | string or `Closure( $context, string $inherited )` | What the model reads to decide when to call the tool. |
 | `parameters` | array, null or `Closure( $context, ?array $inherited )` | JSON schema of the arguments (`type: object`). |
 | `instructions` | string, string[] or `Closure( $context, array $inherited )` | Lines added to the system prompt while the tool is offered. |
@@ -181,6 +184,14 @@ Both contexts:
 `AdminContext`: `screen()`, `is_frontend()`, `post_id()`, `user_id()`, `admin_pages()`, `tabs()`, `skills()`, `is_known_post()`, `add_known_posts()`, `navigate( array( 'url', 'title', ... ) )`, `add_action()`. Responses of every admin tool are scanned for posts (`results`, `groups`, or a single `id` with a `title`), so posts a custom tool returns can be cited as `#ID` cards and opened with `open_post`.
 
 `PublicContext`: `chat_id()`, `post_id()`, `page_url()`, `image_name()`, `current()`, `post_types()`, `get_public_document()`, `public_authors()`, `remember( $id, $title, $url, $snippet )` (lets the answer link the page as `[label](#ID)`), `navigate( $id, $title, $url )`.
+
+## Abilities of other plugins
+
+Settings > Chat tools > WordPress abilities lists every ability registered with the WordPress Abilities API (except the plugin's own `wp-cortex/*` abilities, which are built-in admin chat tools) with its category and kind. A checked ability becomes an admin chat tool named after the ability (`wpab__<namespace>__<name>`), with the ability's label, description and input schema; its permission callback still decides whether the current user may run it. Abilities whose function name is longer than 64 characters cannot be offered to models.
+
+Abilities annotated as read-only (`meta.annotations.readonly = true`) run when the model calls them. **Every other ability may change the site and never runs on the model's call**: `AbilityTool` validates the input and the permissions, then adds an action card (transcript item `ability_action`, with the ability, its input and `status: pending`) and tells the model to ask the user. The card shows the ability and its arguments with **Run** and **Cancel** buttons (destructive abilities are marked). The ability runs only when the user clicks Run (`POST /wp-cortex/v1/chat/conversations/<id>/actions/<action>`, `ChatAgent::resolve_action()`), with the input stored with the card (never values sent by the browser), if the ability is still allowed, within an hour of the proposal and only once; the assistant then answers with the outcome.
+
+The visitor chat never gets abilities.
 
 ## Rules for visitor tools
 

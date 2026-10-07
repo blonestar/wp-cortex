@@ -35,6 +35,13 @@ final class UseSkill extends AdminTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Needs Skills > Settings > Use chat skills and at least one active skill.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model; the skills are listed in the system instruction.
 	 *
 	 * @param ToolContext $context Turn context.

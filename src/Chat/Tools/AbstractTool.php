@@ -50,4 +50,12 @@ abstract class AbstractTool implements Tool {
 	public function instructions( ToolContext $context ): array {
 		return array();
 	}
+
+	/**
+	 * What else decides whether the tool is offered, shown under Settings > Chat tools
+	 * (for example another setting); empty when nothing does.
+	 */
+	public function availability_note(): string {
+		return '';
+	}
 }

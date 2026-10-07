@@ -10,6 +10,7 @@ namespace WPCortex\Chat\Tools;
 use WordPress\AiClient\Tools\DTO\FunctionCall;
 use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
 use WP_AI_Client_Ability_Function_Resolver;
+use WPCortex\Settings;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -24,6 +25,9 @@ defined( 'ABSPATH' ) || exit;
  * tool and returns a Tool, a definition array (see DefinedTool; for a built-in tool
  * of the same name it overrides only the keys it gives) or false to remove the tool.
  * Files starting with "_" are not loaded.
+ *
+ * Tools switched off under Settings > Chat tools are left out, and each tool may be
+ * called at most as often per message as its limit there allows.
  *
  * The visitor chat never gets abilities or admin tools, whatever the theme or the
  * filter return.
@@ -56,6 +60,27 @@ final class ToolRegistry {
 	private array $instructions = array();
 
 	/**
+	 * Who added each tool: "builtin", "theme" or "plugin" (the filter).
+	 *
+	 * @var array<string, string>
+	 */
+	private array $sources = array();
+
+	/**
+	 * Who changed a built-in tool: "theme" or "plugin".
+	 *
+	 * @var array<string, string>
+	 */
+	private array $changes = array();
+
+	/**
+	 * Successful calls per tool in this turn.
+	 *
+	 * @var array<string, int>
+	 */
+	private array $calls = array();
+
+	/**
 	 * Constructor.
 	 *
 	 * @param ToolContext $context Turn context.
@@ -70,15 +95,71 @@ final class ToolRegistry {
 	 */
 	public static function build( ToolContext $context, array $builtins ): self {
 		$registry = new self( $context );
-		$scope    = $context->scope();
-		$tools    = array();
+
+		foreach ( $registry->collect( $builtins ) as $name => $tool ) {
+			if ( Settings::tool_enabled( $context->scope(), $name ) ) {
+				$registry->add( $name, $tool );
+			}
+		}
+
+		return $registry;
+	}
+
+	/**
+	 * Every tool of a chat for Settings > Chat tools, whether or not it is available or
+	 * switched on: name, label, description, where it comes from and what else decides
+	 * whether it is offered.
+	 *
+	 * @param ToolContext $context  Context without a turn (no screen, no conversation).
+	 * @param Tool[]      $builtins Tools of the plugin.
+	 * @return array<string, array{name: string, label: string, description: string, source: string, changed: string, note: string, ability: bool}>
+	 */
+	public static function catalog( ToolContext $context, array $builtins ): array {
+		$registry = new self( $context );
+		$rows     = array();
+
+		foreach ( $registry->collect( $builtins ) as $name => $tool ) {
+			try {
+				$label       = $tool->label();
+				$description = $tool->description( $context );
+			} catch ( \Throwable $e ) {
+				unset( $e );
+				$label       = $name;
+				$description = '';
+			}
+
+			$rows[ $name ] = array(
+				'name'        => $name,
+				'label'       => $label,
+				'description' => $description,
+				'source'      => $registry->sources[ $name ] ?? 'builtin',
+				'changed'     => $registry->changes[ $name ] ?? '',
+				'note'        => $tool instanceof AbstractTool ? $tool->availability_note() : '',
+				'ability'     => $tool instanceof Admin\AbilityTool,
+			);
+		}
+
+		return $rows;
+	}
+
+	/**
+	 * The built-in tools changed by the theme and the filter, keyed by name.
+	 *
+	 * @param Tool[] $builtins Tools of the plugin.
+	 * @return array<string, Tool>
+	 */
+	private function collect( array $builtins ): array {
+		$context = $this->context;
+		$scope   = $context->scope();
+		$tools   = array();
 
 		foreach ( $builtins as $tool ) {
-			$tools[ $tool->name() ] = $tool;
+			$tools[ $tool->name() ]         = $tool;
+			$this->sources[ $tool->name() ] = 'builtin';
 		}
 
 		foreach ( self::theme_definitions( $scope ) as $name => $value ) {
-			$tools = $registry->apply( $tools, $name, $value );
+			$tools = $this->apply( $tools, $name, $value, 'theme' );
 		}
 
 		/**
@@ -99,17 +180,14 @@ final class ToolRegistry {
 
 			foreach ( $filtered as $name => $value ) {
 				$base   = isset( $tools[ $name ] ) ? array( $name => $tools[ $name ] ) : array();
-				$result = array_merge( $result, $registry->apply( $base, (string) $name, $value ) );
+				$same   = isset( $tools[ $name ] ) && $tools[ $name ] === $value;
+				$result = array_merge( $result, $same ? $base : $this->apply( $base, (string) $name, $value, 'plugin' ) );
 			}
 
 			$tools = $result;
 		}
 
-		foreach ( $tools as $name => $tool ) {
-			$registry->add( $name, $tool );
-		}
-
-		return $registry;
+		return $tools;
 	}
 
 	/**
@@ -164,14 +242,28 @@ final class ToolRegistry {
 	 * @return mixed Response, or null when no available tool has this name.
 	 */
 	public function execute( FunctionCall $call ) {
-		$tool = $this->tools[ (string) $call->getName() ] ?? null;
+		$name = (string) $call->getName();
+		$tool = $this->tools[ $name ] ?? null;
 
 		if ( null === $tool ) {
 			return null;
 		}
 
+		$limit = Settings::tool_limit( $this->context->scope(), $name );
+
+		if ( $limit > 0 && ( $this->calls[ $name ] ?? 0 ) >= $limit ) {
+			return array( 'error' => sprintf( 'The %1$s tool may be called at most %2$d times per message. Answer with what you have.', $name, $limit ) );
+		}
+
 		try {
-			return $tool->execute( (array) $call->getArgs(), $this->context );
+			$result = $tool->execute( (array) $call->getArgs(), $this->context );
+
+			// Failed calls (for example invalid arguments) do not count, so the model can correct them.
+			if ( ! is_array( $result ) || ! isset( $result['error'] ) ) {
+				$this->calls[ $name ] = ( $this->calls[ $name ] ?? 0 ) + 1;
+			}
+
+			return $result;
 		} catch ( \Throwable $e ) {
 			unset( $e );
 
@@ -203,18 +295,19 @@ final class ToolRegistry {
 
 		$this->tools[ $name ] = $tool;
 		$this->declarations[] = $declaration;
-		$this->instructions   = array_merge( $this->instructions, array_values( array_map( 'strval', $lines ) ) );
+		$this->instructions   = array_values( array_unique( array_merge( $this->instructions, array_map( 'strval', $lines ) ) ) );
 	}
 
 	/**
 	 * Applies one theme or filter value to the tool list.
 	 *
-	 * @param array<string, Tool> $tools Tools keyed by name.
-	 * @param string              $name  Key (file name or filter key).
-	 * @param mixed               $value Tool, definition array or false.
+	 * @param array<string, Tool> $tools  Tools keyed by name.
+	 * @param string              $name   Key (file name or filter key).
+	 * @param mixed               $value  Tool, definition array or false.
+	 * @param string              $source Where the value comes from: "theme" or "plugin".
 	 * @return array<string, Tool>
 	 */
-	private function apply( array $tools, string $name, $value ): array {
+	private function apply( array $tools, string $name, $value, string $source ): array {
 		$base = $tools[ $name ] ?? null;
 
 		if ( false === $value ) {
@@ -244,6 +337,12 @@ final class ToolRegistry {
 		}
 
 		$tools[ $tool->name() ] = $tool;
+
+		if ( 'builtin' === ( $this->sources[ $tool->name() ] ?? '' ) ) {
+			$this->changes[ $tool->name() ] = $source;
+		} elseif ( ! isset( $this->sources[ $tool->name() ] ) ) {
+			$this->sources[ $tool->name() ] = $source;
+		}
 
 		return $tools;
 	}

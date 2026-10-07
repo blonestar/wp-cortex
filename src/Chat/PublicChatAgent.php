@@ -112,7 +112,7 @@ final class PublicChatAgent {
 	 * @return array|WP_Error Transcript items of the answer.
 	 */
 	private function run_loop( array $messages, PublicContext $turn ) {
-		$tools   = ToolRegistry::build( $turn, $this->builtin_tools() );
+		$tools   = ToolRegistry::build( $turn, self::builtin_tools() );
 		$outcome = AgentLoop::run( $messages, $this->system_instruction( $turn, $tools ), $tools, ToolContext::PUBLIC, self::MAX_ITERATIONS );
 
 		if ( is_wp_error( $outcome ) ) {
@@ -146,12 +146,21 @@ final class PublicChatAgent {
 	}
 
 	/**
+	 * Every visitor chat tool for Settings > Chat tools.
+	 *
+	 * @return array<string, array<string, mixed>> See ToolRegistry::catalog().
+	 */
+	public static function tool_catalog(): array {
+		return ToolRegistry::catalog( new PublicContext( 0, 0, '', '' ), self::builtin_tools() );
+	}
+
+	/**
 	 * Built-in tools of the visitor chat, before the theme and the
 	 * wp_cortex_public_chat_tools filter change them.
 	 *
 	 * @return Tool[]
 	 */
-	private function builtin_tools(): array {
+	private static function builtin_tools(): array {
 		return array(
 			new SearchSite(),
 			new GetPage(),

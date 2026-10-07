@@ -36,6 +36,13 @@ final class GoToPage extends PublicTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Needs Visitor chat > Assistant actions > Take visitors to a page.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model.
 	 *
 	 * @param ToolContext $context Turn context.

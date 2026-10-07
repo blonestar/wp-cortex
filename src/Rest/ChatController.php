@@ -38,6 +38,30 @@ final class ChatController {
 	 */
 	public function register_routes(): void {
 		$permission = array( $this, 'permission' );
+		$context    = array(
+			'type'       => 'object',
+			'default'    => array(),
+			'properties' => array(
+				'screen'      => array( 'type' => 'string' ),
+				'post_id'     => array( 'type' => 'integer' ),
+				'admin_pages' => array(
+					'type'     => 'array',
+					'maxItems' => AdminPages::MAX_PAGES,
+					'items'    => array(
+						'type'       => 'object',
+						'properties' => array(
+							'path'  => array( 'type' => 'string' ),
+							'label' => array( 'type' => 'string' ),
+						),
+					),
+				),
+				'tabs'        => array(
+					'type'     => 'array',
+					'maxItems' => AdminPages::MAX_TABS,
+					'items'    => array( 'type' => 'string' ),
+				),
+			),
+		);
 
 		register_rest_route(
 			self::NAMESPACE,
@@ -91,6 +115,24 @@ final class ChatController {
 
 		register_rest_route(
 			self::NAMESPACE,
+			'/chat/conversations/(?P<id>\d+)/actions/(?P<action>[a-fA-F0-9-]{36})',
+			array(
+				'methods'             => WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'resolve_action' ),
+				'permission_callback' => $permission,
+				'args'                => array(
+					'decision' => array(
+						'type'     => 'string',
+						'required' => true,
+						'enum'     => array( 'run', 'cancel' ),
+					),
+					'context'  => $context,
+				),
+			)
+		);
+
+		register_rest_route(
+			self::NAMESPACE,
 			'/chat/models',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
@@ -130,30 +172,7 @@ final class ChatController {
 						'minLength' => 1,
 						'maxLength' => 4000,
 					),
-					'context'         => array(
-						'type'       => 'object',
-						'default'    => array(),
-						'properties' => array(
-							'screen'      => array( 'type' => 'string' ),
-							'post_id'     => array( 'type' => 'integer' ),
-							'admin_pages' => array(
-								'type'     => 'array',
-								'maxItems' => AdminPages::MAX_PAGES,
-								'items'    => array(
-									'type'       => 'object',
-									'properties' => array(
-										'path'  => array( 'type' => 'string' ),
-										'label' => array( 'type' => 'string' ),
-									),
-								),
-							),
-							'tabs'        => array(
-								'type'     => 'array',
-								'maxItems' => AdminPages::MAX_TABS,
-								'items'    => array( 'type' => 'string' ),
-							),
-						),
-					),
+					'context'         => $context,
 				),
 			)
 		);
@@ -285,22 +304,51 @@ final class ChatController {
 	 * @return WP_REST_Response|WP_Error
 	 */
 	public function message( WP_REST_Request $request ) {
-		$context = $request->get_param( 'context' );
-		$context = is_array( $context ) ? $context : array();
-
 		$result = ( new ChatAgent() )->respond(
 			(int) $request->get_param( 'conversation_id' ),
 			(string) $request->get_param( 'message' ),
-			array(
-				'screen'      => sanitize_text_field( (string) ( $context['screen'] ?? '' ) ),
-				'post_id'     => absint( $context['post_id'] ?? 0 ),
-				'admin_pages' => AdminPages::sanitize( $context['admin_pages'] ?? array() ),
-				'tabs'        => AdminPages::sanitize_tabs( $context['tabs'] ?? array() ),
-			),
+			$this->screen_context( $request ),
 			get_current_user_id()
 		);
 
 		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
+	 * POST /chat/conversations/<id>/actions/<action>: runs or cancels an action card
+	 * (an ability that may change the site) and returns the assistant's answer.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return WP_REST_Response|WP_Error
+	 */
+	public function resolve_action( WP_REST_Request $request ) {
+		$result = ( new ChatAgent() )->resolve_action(
+			(int) $request['id'],
+			strtolower( (string) $request['action'] ),
+			'run' === $request->get_param( 'decision' ),
+			$this->screen_context( $request ),
+			get_current_user_id()
+		);
+
+		return is_wp_error( $result ) ? $result : rest_ensure_response( $result );
+	}
+
+	/**
+	 * Sanitized screen context sent by the chat panel.
+	 *
+	 * @param WP_REST_Request $request Request.
+	 * @return array{screen: string, post_id: int, admin_pages: array, tabs: array}
+	 */
+	private function screen_context( WP_REST_Request $request ): array {
+		$context = $request->get_param( 'context' );
+		$context = is_array( $context ) ? $context : array();
+
+		return array(
+			'screen'      => sanitize_text_field( (string) ( $context['screen'] ?? '' ) ),
+			'post_id'     => absint( $context['post_id'] ?? 0 ),
+			'admin_pages' => AdminPages::sanitize( $context['admin_pages'] ?? array() ),
+			'tabs'        => AdminPages::sanitize_tabs( $context['tabs'] ?? array() ),
+		);
 	}
 
 	/**
