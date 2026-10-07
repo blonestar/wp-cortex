@@ -11,38 +11,45 @@ use WordPress\AiClient\AiClient;
 use WordPress\AiClient\Messages\DTO\Message;
 use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\UserMessage;
-use WordPress\AiClient\Tools\DTO\FunctionCall;
-use WordPress\AiClient\Tools\DTO\FunctionDeclaration;
-use WordPress\AiClient\Tools\DTO\FunctionResponse;
-use WPCortex\Admin\AdminPages;
+use WPCortex\Chat\Tools\Admin\AbilityTool;
+use WPCortex\Chat\Tools\Admin\AdminContext;
+use WPCortex\Chat\Tools\Admin\OpenAdminPage;
+use WPCortex\Chat\Tools\Admin\OpenPost;
+use WPCortex\Chat\Tools\Admin\ProposeSkill;
+use WPCortex\Chat\Tools\Admin\SelectTab;
+use WPCortex\Chat\Tools\Admin\UseSkill;
+use WPCortex\Chat\Tools\AgentLoop;
+use WPCortex\Chat\Tools\Tool;
+use WPCortex\Chat\Tools\ToolContext;
+use WPCortex\Chat\Tools\ToolRegistry;
 use WPCortex\Settings;
-use WP_AI_Client_Ability_Function_Resolver;
 use WP_Error;
 
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Runs one chat turn: loads history, loops model calls and tool calls, persists the result.
+ *
+ * The tools live in Chat\Tools\Admin; the theme (wp-cortex/tools/admin/) and the
+ * wp_cortex_admin_chat_tools filter can add, change or remove them (ToolRegistry).
  */
 final class ChatAgent {
 
-	private const MAX_ITERATIONS      = 8;
-	private const HISTORY_LIMIT       = 30;
-	private const MAX_PAYLOAD_CHARS   = 12000;
-	private const MAX_RESULT_ITEMS    = 12;
-	private const OPEN_POST_FUNCTION  = 'open_post';
-	private const OPEN_PAGE_FUNCTION  = 'open_admin_page';
-	private const SELECT_TAB_FUNCTION = 'select_tab';
-	private const USE_SKILL_FUNCTION  = 'use_skill';
-	private const PROPOSE_FUNCTION    = 'propose_skill';
-	private const MAX_PROMPT_SKILLS   = 50;
+	private const MAX_ITERATIONS    = 8;
+	private const HISTORY_LIMIT     = 30;
+	private const MAX_PAYLOAD_CHARS = 12000;
+	private const MAX_RESULT_ITEMS  = 12;
+	private const MAX_PROMPT_SKILLS = 50;
+
+	/**
+	 * Seconds an action card can be confirmed after the assistant proposed it.
+	 */
+	private const ACTION_TTL = HOUR_IN_SECONDS;
 
 	/**
 	 * Screen context value sent by the chat panel on the front end of the site.
 	 */
-	public const FRONTEND_SCREEN = 'frontend';
-
-	private const ABILITIES = array( 'wp-cortex/search-content', 'wp-cortex/find-duplicates', 'wp-cortex/get-document', 'wp-cortex/list-fields' );
+	public const FRONTEND_SCREEN = AdminContext::FRONTEND_SCREEN;
 
 	/**
 	 * Conversation store.
@@ -138,20 +145,137 @@ final class ChatAgent {
 			$conversation = $this->store->get( $conversation_id, $user_id );
 		}
 
-		$title      = '' !== $conversation['title'] ? $conversation['title'] : $this->make_title( $message );
-		$transcript = $conversation['transcript'];
-		$history    = $this->decode_messages( $conversation['messages'] );
-		$items      = array(
+		$title = '' !== $conversation['title'] ? $conversation['title'] : $this->make_title( $message );
+
+		return $this->turn(
+			$conversation,
+			$title,
+			$message,
 			array(
-				'role' => 'user',
-				'text' => $message,
+				array(
+					'role' => 'user',
+					'text' => $message,
+				),
 			),
+			$context,
+			$user_id
 		);
-		$actions    = array();
+	}
+
+	/**
+	 * Runs or cancels an action the assistant proposed (an ability that may change the
+	 * site), then lets the assistant answer with the outcome.
+	 *
+	 * Only the arguments stored with the action card are used, never values from the
+	 * browser; the ability must still be allowed under Settings > Chat tools and checks
+	 * its own permissions.
+	 *
+	 * @param int    $conversation_id Conversation ID.
+	 * @param string $action_id       Action ID from the card.
+	 * @param bool   $run             True to run the action, false to cancel it.
+	 * @param array  $context         Screen context: screen, post_id, admin_pages, tabs.
+	 * @param int    $user_id         Current user.
+	 * @return array{conversation_id: int, title: string, items: array, actions: array}|WP_Error
+	 */
+	public function resolve_action( int $conversation_id, string $action_id, bool $run, array $context, int $user_id ) {
+		$conversation = $this->store->get( $conversation_id, $user_id );
+
+		if ( null === $conversation ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Conversation not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		$index = null;
+
+		foreach ( $conversation['transcript'] as $key => $item ) {
+			if ( AbilityTool::ACTION_ROLE === ( $item['role'] ?? '' ) && $action_id === (string) ( $item['action']['id'] ?? '' ) ) {
+				$index = $key;
+				break;
+			}
+		}
+
+		if ( null === $index ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Action not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		$action = (array) $conversation['transcript'][ $index ]['action'];
+
+		if ( 'pending' !== ( $action['status'] ?? '' ) ) {
+			return new WP_Error( 'wp_cortex_action_resolved', __( 'This action was already run or cancelled.', 'wp-cortex' ), array( 'status' => 409 ) );
+		}
+
+		$name    = (string) ( $action['ability'] ?? '' );
+		$expired = time() - (int) ( $action['created'] ?? 0 ) > self::ACTION_TTL;
+		$allowed = in_array( $name, Settings::chat_abilities(), true ) && Settings::tool_enabled( ToolContext::ADMIN, ( new AbilityTool( $name ) )->name() );
+
+		if ( ! $run ) {
+			$action['status'] = 'cancelled';
+			$note             = sprintf( 'I cancelled the action "%1$s" (%2$s). Do not run it.', $action['label'] ?? $name, $name );
+		} elseif ( $expired || ! $allowed ) {
+			$action['status'] = 'failed';
+			$action['error']  = $expired ? __( 'The action expired. Ask the assistant again.', 'wp-cortex' ) : __( 'This ability is no longer allowed for the chat.', 'wp-cortex' );
+			$note             = sprintf( 'I tried to run the action "%1$s" (%2$s), but it was not run: %3$s', $action['label'] ?? $name, $name, $action['error'] );
+		} else {
+			// Mark the card first, so a second click cannot run the action twice.
+			$action['status'] = 'running';
+
+			$conversation['transcript'][ $index ]['action'] = $action;
+			$this->store->save( $conversation_id, $user_id, $conversation['title'], $conversation['messages'], $conversation['transcript'] );
+
+			$result = AbilityTool::run( $name, $action['input'] ?? null );
+			$failed = is_wp_error( $result );
+
+			$action['status'] = $failed ? 'failed' : 'done';
+
+			if ( $failed ) {
+				$action['error'] = $result->get_error_message();
+			}
+
+			$note = sprintf(
+				$failed ? 'I confirmed the action "%1$s" (%2$s); it failed. Error: %3$s' : 'I confirmed the action "%1$s" (%2$s) and it ran. Result (JSON): %3$s',
+				$action['label'] ?? $name,
+				$name,
+				$failed ? $action['error'] : (string) wp_json_encode( $this->limit_payload( $result ), JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE )
+			);
+		}
+
+		$conversation['transcript'][ $index ]['action'] = $action;
+
+		return $this->turn(
+			$conversation,
+			$conversation['title'],
+			$note . "\n(Sent by the chat interface after the user's choice on the action card. Tell the user the outcome in one or two sentences.)",
+			array(
+				array(
+					'role'   => AbilityTool::ACTION_ROLE,
+					'action' => $action,
+				),
+			),
+			$context,
+			$user_id
+		);
+	}
+
+	/**
+	 * Runs one model turn for a message and stores the conversation.
+	 *
+	 * @param array  $conversation Stored conversation (its transcript may already be updated).
+	 * @param string $title        Conversation title.
+	 * @param string $message      Message for the model.
+	 * @param array  $items        Items of this turn shown before the answer; a user item is
+	 *                             added to the transcript, an action item replaces its card.
+	 * @param array  $context      Screen context.
+	 * @param int    $user_id      Current user.
+	 * @return array{conversation_id: int, title: string, items: array, actions: array}
+	 */
+	private function turn( array $conversation, string $title, string $message, array $items, array $context, int $user_id ): array {
+		$conversation_id = (int) $conversation['id'];
+		$transcript      = $conversation['transcript'];
+		$history         = $this->decode_messages( $conversation['messages'] );
+		$actions         = array();
 
 		$history[] = new UserMessage( array( new MessagePart( $message ) ) );
 
-		$outcome = $this->run_loop( $history, $context, $items, $actions );
+		$outcome = $this->run_loop( $history, $context, $user_id, $items, $actions );
 
 		if ( is_wp_error( $outcome ) ) {
 			$items[]  = array(
@@ -165,7 +289,11 @@ final class ChatAgent {
 			$history = $outcome;
 		}
 
-		$transcript = $this->merge_skill_proposals( $transcript, $items );
+		// A resolved action card is already updated in place in the transcript.
+		$resolved   = array_filter( $items, static fn( $item ) => AbilityTool::ACTION_ROLE === ( $item['role'] ?? '' ) && 'pending' !== ( $item['action']['status'] ?? '' ) );
+		$new_items  = array_values( array_diff_key( $items, $resolved ) );
+		$transcript = $this->merge_skill_proposals( $transcript, $new_items );
+		$items      = array_merge( array_values( $resolved ), $new_items );
 		$stored     = null === $history ? $conversation['messages'] : array_map( static fn( Message $m ) => $m->toArray(), $this->trim_history( $history ) );
 
 		$this->store->save( $conversation_id, $user_id, $title, $stored, $transcript );
@@ -183,292 +311,172 @@ final class ChatAgent {
 	 *
 	 * @param Message[] $history Messages ending with the new user message.
 	 * @param array     $context Screen context.
+	 * @param int       $user_id Current user.
 	 * @param array     $items   Transcript items (by reference).
 	 * @param array     $actions UI actions (by reference).
 	 * @return Message[]|WP_Error Full history including the final model message.
 	 */
-	private function run_loop( array $history, array $context, array &$items, array &$actions ) {
-		PromptFactory::extend_time_limit();
+	private function run_loop( array $history, array $context, int $user_id, array &$items, array &$actions ) {
+		$skills = Settings::skills_enabled() ? $this->skills->all( true, self::MAX_PROMPT_SKILLS ) : array();
+		$turn   = new AdminContext( $context, $user_id, $skills, $this->skills );
 
-		$resolver  = new WP_AI_Client_Ability_Function_Resolver( ...self::ABILITIES );
-		$enabled   = Settings::skills_enabled();
-		$skills    = $enabled ? $this->skills->all( true, self::MAX_PROMPT_SKILLS ) : array();
-		$system    = $this->system_instruction( $context, $skills );
-		$pages     = AdminPages::sanitize( $context['admin_pages'] ?? array() );
-		$tabs      = AdminPages::sanitize_tabs( $context['tabs'] ?? array() );
-		$functions = $this->function_declarations( $pages, $tabs, $skills );
-		$known_ids = $this->known_post_ids( $history, $context );
-		$seen      = array();
-		$proposals = array();
+		$turn->add_known_posts( $this->history_post_ids( $history ) );
 
-		for ( $i = 0; $i < self::MAX_ITERATIONS; $i++ ) {
-			$builder = PromptFactory::builder( $history, $system, $functions );
+		$tools   = ToolRegistry::build( $turn, self::builtin_tools() );
+		$outcome = AgentLoop::run(
+			$history,
+			$this->system_instruction( $turn, $tools ),
+			$tools,
+			ToolContext::ADMIN,
+			self::MAX_ITERATIONS,
+			function ( string $name, $payload ) use ( $turn ) {
+				$turn->remember_response( $payload );
 
-			if ( is_wp_error( $builder ) ) {
-				return $builder;
+				return $this->limit_payload( $payload );
 			}
+		);
 
-			$result = $builder->generate_text_result();
-
-			if ( is_wp_error( $result ) ) {
-				return new WP_Error( 'wp_cortex_ai_error', $result->get_error_message() );
-			}
-
-			$model_message = $result->toMessage();
-			$history[]     = $model_message;
-			$reply         = PromptFactory::parse( $model_message );
-			$calls         = $reply['calls'];
-
-			if ( ! $calls ) {
-				$text = $reply['text'];
-
-				if ( '' === $text ) {
-					$text = __( 'I could not produce an answer. Please try rephrasing your question.', 'wp-cortex' );
-				}
-
-				$items[] = array(
-					'role' => 'assistant',
-					'text' => $text,
-				);
-
-				$cards = $this->cited_cards( $text, $known_ids, $seen );
-
-				if ( $cards ) {
-					$items[] = array(
-						'role'    => 'results',
-						'results' => $cards,
-					);
-				}
-
-				foreach ( $proposals as $proposal ) {
-					$items[] = array(
-						'role'  => 'skill_proposal',
-						'skill' => $proposal,
-					);
-				}
-
-				return $history;
-			}
-
-			foreach ( $calls as $call ) {
-				if ( self::OPEN_POST_FUNCTION === $call->getName() ) {
-					$response = $this->handle_open_post( $call, $known_ids, $actions );
-				} elseif ( self::OPEN_PAGE_FUNCTION === $call->getName() && $pages ) {
-					$response = $this->handle_open_admin_page( $call, $pages, $actions );
-				} elseif ( self::SELECT_TAB_FUNCTION === $call->getName() && $tabs ) {
-					$response = $this->handle_select_tab( $call, $tabs, $actions );
-				} elseif ( self::USE_SKILL_FUNCTION === $call->getName() && $skills ) {
-					$response = $this->handle_use_skill( $call );
-				} elseif ( self::PROPOSE_FUNCTION === $call->getName() && $enabled ) {
-					$response = $this->handle_propose_skill( $call, $proposals );
-				} elseif ( $resolver->is_ability_call( $call ) ) {
-					$response  = $resolver->execute_ability( $call );
-					$known_ids = array_merge( $known_ids, $this->response_post_ids( $response ) );
-					$this->collect_seen( $response, $seen );
-					$response = $this->limit_payload( $response );
-				} else {
-					$response = new FunctionResponse(
-						$call->getId(),
-						$call->getName(),
-						array( 'error' => __( 'Unknown function.', 'wp-cortex' ) )
-					);
-				}
-
-				// One message per response: OpenAI-compatible providers map a message to a
-				// "tool" role message only when the function response is its only part.
-				$history[] = new UserMessage( array( new MessagePart( $response ) ) );
-			}
+		if ( is_wp_error( $outcome ) ) {
+			return $outcome;
 		}
 
-		return new WP_Error( 'wp_cortex_too_many_steps', __( 'The assistant needed too many steps to answer. Please try a more specific question.', 'wp-cortex' ) );
+		$text = $outcome['text'];
+
+		if ( '' === $text ) {
+			$text = __( 'I could not produce an answer. Please try rephrasing your question.', 'wp-cortex' );
+		}
+
+		$items[] = array(
+			'role' => 'assistant',
+			'text' => $text,
+		);
+
+		$cards = $this->cited_cards( $text, $turn );
+
+		if ( $cards ) {
+			$items[] = array(
+				'role'    => 'results',
+				'results' => $cards,
+			);
+		}
+
+		$items   = array_merge( $items, $turn->items() );
+		$actions = $turn->actions();
+
+		return $outcome['messages'];
 	}
 
 	/**
-	 * Function declarations for the model: the abilities, open_post, open_admin_page,
-	 * select_tab, use_skill and propose_skill.
+	 * Every admin chat tool for Settings > Chat tools, without the abilities of other
+	 * plugins (those are listed by ability_catalog()).
 	 *
-	 * Mirrors WP_AI_Client_Prompt_Builder::using_abilities(), which cannot be
-	 * combined with custom declarations because both replace the list.
-	 *
-	 * @param array<int, array{path: string, label: string}> $pages  Admin screens the user can open.
-	 * @param string[]                                       $tabs   Tab labels on the screen the user is viewing.
-	 * @param array<int, array<string, mixed>>               $skills Active skills.
-	 * @return FunctionDeclaration[]
+	 * @return array<string, array<string, mixed>> See ToolRegistry::catalog().
 	 */
-	private function function_declarations( array $pages, array $tabs, array $skills ): array {
-		$declarations = array();
+	public static function tool_catalog(): array {
+		$context = new AdminContext( array(), get_current_user_id(), array(), new SkillStore() );
 
-		foreach ( self::ABILITIES as $name ) {
-			$ability = function_exists( 'wp_get_ability' ) ? wp_get_ability( $name ) : null;
+		return ToolRegistry::catalog( $context, self::builtin_tools( false ) );
+	}
 
-			if ( ! $ability ) {
+	/**
+	 * Registered abilities of other plugins and WordPress the admin chat can be allowed to
+	 * use, for Settings > Chat tools, ordered by category and label.
+	 *
+	 * @return array<string, array{name: string, function: string, label: string, description: string, category: string, read_only: bool, destructive: bool, usable: bool}>
+	 */
+	public static function ability_catalog(): array {
+		if ( ! function_exists( 'wp_get_abilities' ) ) {
+			return array();
+		}
+
+		$categories = function_exists( 'wp_get_ability_categories' ) ? wp_get_ability_categories() : array();
+		$rows       = array();
+
+		foreach ( wp_get_abilities() as $ability ) {
+			$name = $ability->get_name();
+
+			if ( str_starts_with( $name, 'wp-cortex/' ) ) {
 				continue;
 			}
 
-			$schema = wp_prepare_json_schema_for_client( $ability->get_input_schema() );
+			$tool     = new AbilityTool( $name );
+			$category = $ability->get_category();
 
-			$declarations[] = new FunctionDeclaration(
-				WP_AI_Client_Ability_Function_Resolver::ability_name_to_function_name( $name ),
-				$ability->get_description(),
-				! empty( $schema ) ? $schema : null
+			$rows[ $name ] = array(
+				'name'        => $name,
+				'function'    => $tool->name(),
+				'label'       => $ability->get_label(),
+				'description' => $ability->get_description(),
+				'category'    => isset( $categories[ $category ] ) ? $categories[ $category ]->get_label() : $category,
+				'read_only'   => AbilityTool::is_read_only( $ability ),
+				'destructive' => AbilityTool::is_destructive( $ability ),
+				'usable'      => strlen( $tool->name() ) <= 64,
 			);
 		}
 
-		$declarations[] = $this->open_post_declaration();
+		uasort( $rows, static fn( $a, $b ) => strcasecmp( $a['category'], $b['category'] ) ?: strcasecmp( $a['label'], $b['label'] ) );
 
-		if ( $pages ) {
-			$declarations[] = $this->open_admin_page_declaration( $pages );
-		}
-
-		if ( $tabs ) {
-			$declarations[] = $this->select_tab_declaration( $tabs );
-		}
-
-		if ( $skills ) {
-			$declarations[] = $this->use_skill_declaration( $skills );
-		}
-
-		if ( Settings::skills_enabled() ) {
-			$declarations[] = $this->propose_skill_declaration();
-		}
-
-		return $declarations;
+		return $rows;
 	}
 
 	/**
-	 * Declaration of the use_skill function; the active skills are listed in the system instruction.
+	 * Built-in tools of the admin chat, before the theme and the
+	 * wp_cortex_admin_chat_tools filter change them: the plugin's tools and abilities,
+	 * then the abilities of other plugins allowed under Settings > Chat tools.
 	 *
-	 * @param array<int, array<string, mixed>> $skills Active skills.
+	 * @param bool $with_abilities Whether to add the allowed abilities of other plugins.
+	 * @return Tool[]
 	 */
-	private function use_skill_declaration( array $skills ): FunctionDeclaration {
-		return new FunctionDeclaration(
-			self::USE_SKILL_FUNCTION,
-			'Loads the step-by-step instructions of a saved skill (a procedure learned on this site). Call it before doing a task that matches one of the skills listed in the system instruction, then follow the returned steps with your other tools.',
-			array(
-				'type'       => 'object',
-				'properties' => array(
-					'name' => array(
-						'type'        => 'string',
-						'description' => 'Name of the skill.',
-						'enum'        => wp_list_pluck( $skills, 'name' ),
-					),
-				),
-				'required'   => array( 'name' ),
-			)
+	private static function builtin_tools( bool $with_abilities = true ): array {
+		$tools = array(
+			new AbilityTool( 'wp-cortex/search-content', array( 'To find posts by an author, use the author filter of search-content, not a text query.' ) ),
+			new AbilityTool( 'wp-cortex/find-duplicates', array( 'For duplicate titles, meta descriptions or content, use find-duplicates.' ) ),
+			new AbilityTool( 'wp-cortex/get-document' ),
+			new AbilityTool( 'wp-cortex/list-fields', array( 'When you are unsure about field names for filters, call the list-fields tool first.' ) ),
+			new OpenPost(),
+			new OpenAdminPage(),
+			new SelectTab(),
+			new ProposeSkill(),
+			new UseSkill(),
 		);
-	}
 
-	/**
-	 * Handles the use_skill function: returns the instructions of an active skill and counts the use.
-	 *
-	 * @param FunctionCall $call Function call.
-	 */
-	private function handle_use_skill( FunctionCall $call ): FunctionResponse {
-		$args  = (array) $call->getArgs();
-		$skill = $this->skills->get_by_name( (string) ( $args['name'] ?? '' ) );
-
-		if ( null === $skill || ! $skill['active'] ) {
-			return new FunctionResponse(
-				$call->getId(),
-				$call->getName(),
-				array(
-					'ok'    => false,
-					'error' => __( 'Unknown skill. Use one of the listed skill names.', 'wp-cortex' ),
-				)
-			);
+		if ( ! $with_abilities ) {
+			return $tools;
 		}
 
-		$this->skills->record_use( $skill['id'] );
+		foreach ( Settings::chat_abilities() as $name ) {
+			$tool = new AbilityTool( $name );
 
-		return new FunctionResponse(
-			$call->getId(),
-			$call->getName(),
-			array(
-				'ok'           => true,
-				'name'         => $skill['name'],
-				'instructions' => $skill['instructions'],
-			)
-		);
-	}
-
-	/**
-	 * Declaration of the propose_skill function.
-	 */
-	private function propose_skill_declaration(): FunctionDeclaration {
-		$language = Settings::skills_language();
-
-		return new FunctionDeclaration(
-			self::PROPOSE_FUNCTION,
-			'Proposes saving a procedure as a reusable skill. Nothing is saved yet: the user sees the proposal as a card below your answer and confirms, edits or dismisses it. Call it only when the user asks you to remember or save how to do something, or accepts your offer to save it. Proposing an existing skill name proposes an update of that skill. Always write the name, description and instructions in ' . $language . ', whatever language the conversation is in.',
-			array(
-				'type'       => 'object',
-				'properties' => array(
-					'name'         => array(
-						'type'        => 'string',
-						'description' => 'Short identifier in lowercase words joined by hyphens, for example "open-chat-settings".',
-					),
-					'description'  => array(
-						'type'        => 'string',
-						'description' => 'One sentence in ' . $language . ' saying when to use the skill (what the user asks for). Maximum ' . SkillStore::MAX_DESCRIPTION . ' characters.',
-					),
-					'instructions' => array(
-						'type'        => 'string',
-						'description' => 'Concrete numbered steps in ' . $language . ' that worked, naming the tools and their exact arguments (for example the open_admin_page page value and tab, or search-content filters). Use placeholders such as <topic> for parts that change between requests. No secrets or personal data.',
-					),
-				),
-				'required'   => array( 'name', 'description', 'instructions' ),
-			)
-		);
-	}
-
-	/**
-	 * Handles the propose_skill function: validates the proposal and queues it for a
-	 * confirmation card. Skills are only saved by the user through the REST API.
-	 *
-	 * @param FunctionCall $call      Function call.
-	 * @param array        $proposals Proposals of this turn (by reference).
-	 */
-	private function handle_propose_skill( FunctionCall $call, array &$proposals ): FunctionResponse {
-		$args  = (array) $call->getArgs();
-		$clean = SkillStore::sanitize(
-			array(
-				'name'         => (string) ( $args['name'] ?? '' ),
-				'description'  => (string) ( $args['description'] ?? '' ),
-				'instructions' => (string) ( $args['instructions'] ?? '' ),
-				'source'       => SkillStore::SOURCE_AGENT,
-			)
-		);
-
-		if ( is_wp_error( $clean ) ) {
-			return new FunctionResponse(
-				$call->getId(),
-				$call->getName(),
-				array(
-					'ok'    => false,
-					'error' => $clean->get_error_message(),
-				)
-			);
+			// Function names longer than providers accept are left out (and marked in the settings).
+			if ( ! str_starts_with( $name, 'wp-cortex/' ) && strlen( $tool->name() ) <= 64 ) {
+				$tools[] = $tool;
+			}
 		}
 
-		$existing = $this->skills->get_by_name( $clean['name'] );
+		return $tools;
+	}
 
-		$proposals[ $clean['name'] ] = array(
-			'proposal_id'  => wp_generate_uuid4(),
-			'name'         => $clean['name'],
-			'description'  => $clean['description'],
-			'instructions' => $clean['instructions'],
-			'existing_id'  => null !== $existing ? $existing['id'] : 0,
-			'status'       => 'pending',
-		);
+	/**
+	 * Post IDs in the tool results of earlier turns: the model has seen them, so they can
+	 * be opened and cited.
+	 *
+	 * @param Message[] $history Messages.
+	 * @return int[]
+	 */
+	private function history_post_ids( array $history ): array {
+		$ids = array();
 
-		return new FunctionResponse(
-			$call->getId(),
-			$call->getName(),
-			array(
-				'ok'   => true,
-				'note' => 'The proposal is shown to the user, who must confirm it. Tell the user briefly that they can save, edit or dismiss it below.',
-			)
-		);
+		foreach ( $history as $message ) {
+			foreach ( $message->getParts() as $part ) {
+				$response = $part->getFunctionResponse();
+
+				if ( $response ) {
+					$ids = array_merge( $ids, AdminContext::post_ids_in( $response->getResponse() ) );
+				}
+			}
+		}
+
+		return $ids;
 	}
 
 	/**
@@ -526,411 +534,27 @@ final class ChatAgent {
 	}
 
 	/**
-	 * Declaration of the open_admin_page function; the screens are listed in the description.
-	 *
-	 * @param array<int, array{path: string, label: string}> $pages Admin screens the user can open.
-	 */
-	private function open_admin_page_declaration( array $pages ): FunctionDeclaration {
-		$lines = array();
-
-		foreach ( $pages as $page ) {
-			$lines[] = '- ' . $page['path'] . ': ' . $page['label'];
-		}
-
-		return new FunctionDeclaration(
-			self::OPEN_PAGE_FUNCTION,
-			"Navigates the user to a WordPress admin screen (menu item), for example Settings › Permalinks or Plugins. Not for posts or pages of the site: use open_post for those. Call it only when the user explicitly asks to open or go to an admin screen. Available screens (page: menu label):\n" . implode( "\n", $lines ),
-			array(
-				'type'       => 'object',
-				'properties' => array(
-					'page' => array(
-						'type'        => 'string',
-						'description' => 'The page value of one of the available screens.',
-						'enum'        => wp_list_pluck( $pages, 'path' ),
-					),
-					'tab'  => array(
-						'type'        => 'string',
-						'description' => 'Optional. The name of a tab to open on that screen after it loads. Use it when the user names a tab; tabs of other screens are not listed. For a tab nested inside another tab, give the path from the outer tab separated by " › ", for example "Visitor chat › Appearance".',
-					),
-				),
-				'required'   => array( 'page' ),
-			)
-		);
-	}
-
-	/**
-	 * Handles the open_admin_page function. Only screens from the user's admin menu
-	 * can be opened and the URL is built server-side.
-	 *
-	 * @param FunctionCall                                   $call    Function call.
-	 * @param array<int, array{path: string, label: string}> $pages   Admin screens the user can open.
-	 * @param array                                          $actions UI actions (by reference).
-	 */
-	private function handle_open_admin_page( FunctionCall $call, array $pages, array &$actions ): FunctionResponse {
-		$args  = (array) $call->getArgs();
-		$path  = (string) ( $args['page'] ?? '' );
-		$match = null;
-
-		foreach ( $pages as $page ) {
-			if ( $page['path'] === $path ) {
-				$match = $page;
-				break;
-			}
-		}
-
-		if ( null === $match ) {
-			return new FunctionResponse(
-				$call->getId(),
-				$call->getName(),
-				array(
-					'ok'    => false,
-					'error' => __( 'Unknown admin screen. Use one of the listed page values.', 'wp-cortex' ),
-				)
-			);
-		}
-
-		$action = array(
-			'type'  => 'navigate',
-			'url'   => admin_url( $match['path'] ),
-			'title' => $match['label'],
-		);
-
-		$tab = mb_substr( sanitize_text_field( (string) ( $args['tab'] ?? '' ) ), 0, AdminPages::MAX_TAB_LENGTH );
-
-		if ( '' !== $tab ) {
-			$action['tab'] = $tab;
-		}
-
-		self::add_navigation( $actions, $action );
-
-		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
-	}
-
-	/**
-	 * Adds a navigate action. The browser can only go to one page per reply, so a later
-	 * navigation (for example the model correcting itself with a more exact screen)
-	 * replaces an earlier one, and with it any tab queued for that page.
-	 *
-	 * @param array $actions UI actions (by reference).
-	 * @param array $action  The navigate action.
-	 */
-	private static function add_navigation( array &$actions, array $action ): void {
-		$actions = array_values(
-			array_filter(
-				$actions,
-				static function ( array $item ): bool {
-					return 'navigate' !== $item['type'];
-				}
-			)
-		);
-
-		$actions[] = $action;
-	}
-
-	/**
-	 * Declaration of the select_tab function; the tabs are the labels found on the current screen.
-	 *
-	 * @param string[] $tabs Tab labels on the screen the user is viewing.
-	 */
-	private function select_tab_declaration( array $tabs ): FunctionDeclaration {
-		return new FunctionDeclaration(
-			self::SELECT_TAB_FUNCTION,
-			'Switches to a tab on the admin screen the user is currently viewing (for example a tab of an options page). Call it only when the user explicitly asks to open or switch to a tab.',
-			array(
-				'type'       => 'object',
-				'properties' => array(
-					'tab' => array(
-						'type'        => 'string',
-						'description' => 'The label of a tab on the current screen.',
-						'enum'        => $tabs,
-					),
-				),
-				'required'   => array( 'tab' ),
-			)
-		);
-	}
-
-	/**
-	 * Handles the select_tab function. Only tabs reported for the current screen can be selected.
-	 *
-	 * After open_admin_page in the same reply, the browser leaves the current screen, so the
-	 * tab is appended to the tab path opened on the new screen instead (for example a saved
-	 * skill opening a settings tab and then its section).
-	 *
-	 * @param FunctionCall $call    Function call.
-	 * @param string[]     $tabs    Tab labels on the screen the user is viewing.
-	 * @param array        $actions UI actions (by reference).
-	 */
-	private function handle_select_tab( FunctionCall $call, array $tabs, array &$actions ): FunctionResponse {
-		$args  = (array) $call->getArgs();
-		$label = (string) ( $args['tab'] ?? '' );
-
-		foreach ( $actions as $index => $action ) {
-			if ( 'navigate' !== $action['type'] ) {
-				continue;
-			}
-
-			$label = sanitize_text_field( $label );
-			$path  = isset( $action['tab'] ) ? $action['tab'] . ' › ' . $label : $label;
-
-			if ( '' === $label || mb_strlen( $path ) > AdminPages::MAX_TAB_LENGTH ) {
-				break;
-			}
-
-			$actions[ $index ]['tab'] = $path;
-
-			return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
-		}
-
-		if ( ! in_array( $label, $tabs, true ) ) {
-			return new FunctionResponse(
-				$call->getId(),
-				$call->getName(),
-				array(
-					'ok'    => false,
-					'error' => __( 'Unknown tab. Use one of the listed tab values.', 'wp-cortex' ),
-				)
-			);
-		}
-
-		$actions[] = array(
-			'type'  => 'select_tab',
-			'label' => $label,
-		);
-
-		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
-	}
-
-	/**
-	 * Declaration of the open_post function.
-	 */
-	private function open_post_declaration(): FunctionDeclaration {
-		return new FunctionDeclaration(
-			self::OPEN_POST_FUNCTION,
-			'Opens a post in the admin: navigates the user to the post editor (target "edit", default) or to its public page (target "view"). Call it only when the user explicitly asks to open, go to, edit or show a specific post.',
-			array(
-				'type'       => 'object',
-				'properties' => array(
-					'post_id' => array(
-						'type'        => 'integer',
-						'description' => 'ID of the post to open, taken from search results.',
-					),
-					'target'  => array(
-						'type'    => 'string',
-						'enum'    => array( 'edit', 'view' ),
-						'default' => 'edit',
-					),
-				),
-				'required'   => array( 'post_id' ),
-			)
-		);
-	}
-
-	/**
-	 * Post IDs the model has legitimately seen: tool results in the history and the post being edited.
-	 *
-	 * @param Message[] $history Messages.
-	 * @param array     $context Screen context.
-	 * @return int[]
-	 */
-	private function known_post_ids( array $history, array $context ): array {
-		$ids = array();
-
-		if ( ! empty( $context['post_id'] ) ) {
-			$ids[] = (int) $context['post_id'];
-		}
-
-		foreach ( $history as $message ) {
-			foreach ( $message->getParts() as $part ) {
-				$response = $part->getFunctionResponse();
-
-				if ( $response ) {
-					$ids = array_merge( $ids, $this->response_post_ids( $response ) );
-				}
-			}
-		}
-
-		return $ids;
-	}
-
-	/**
-	 * Post IDs contained in an ability response (search results or a single document).
-	 *
-	 * @param FunctionResponse $response Response.
-	 * @return int[]
-	 */
-	private function response_post_ids( FunctionResponse $response ): array {
-		$payload = $response->getResponse();
-
-		if ( ! is_array( $payload ) ) {
-			return array();
-		}
-
-		if ( isset( $payload['partial_json'] ) && is_string( $payload['partial_json'] ) ) {
-			preg_match_all( '/"id":(\d+)/', $payload['partial_json'], $matches );
-
-			return array_map( 'intval', $matches[1] );
-		}
-
-		$ids = array();
-
-		if ( isset( $payload['results'] ) && is_array( $payload['results'] ) ) {
-			foreach ( $payload['results'] as $row ) {
-				if ( isset( $row['id'] ) ) {
-					$ids[] = (int) $row['id'];
-				}
-			}
-		}
-
-		if ( isset( $payload['groups'] ) && is_array( $payload['groups'] ) ) {
-			foreach ( $payload['groups'] as $group ) {
-				foreach ( (array) ( $group['posts'] ?? array() ) as $row ) {
-					if ( isset( $row['id'] ) ) {
-						$ids[] = (int) $row['id'];
-					}
-				}
-			}
-		}
-
-		if ( isset( $payload['id'] ) && is_numeric( $payload['id'] ) ) {
-			$ids[] = (int) $payload['id'];
-		}
-
-		return $ids;
-	}
-
-	/**
-	 * Handles the open_post function. URLs are always built server-side, and only
-	 * posts returned by tools (or the post being edited) can be opened.
-	 *
-	 * @param FunctionCall $call      Function call.
-	 * @param int[]        $known_ids Post IDs seen in tool results.
-	 * @param array        $actions   UI actions (by reference).
-	 */
-	private function handle_open_post( FunctionCall $call, array $known_ids, array &$actions ): FunctionResponse {
-		$args    = (array) $call->getArgs();
-		$post_id = (int) ( $args['post_id'] ?? 0 );
-		$target  = 'view' === ( $args['target'] ?? 'edit' ) ? 'view' : 'edit';
-		$post    = $post_id > 0 ? get_post( $post_id ) : null;
-		$url     = '';
-
-		if ( ! in_array( $post_id, $known_ids, true ) ) {
-			$error = __( 'Unknown post ID. Only open posts returned by search-content or get-document; search first.', 'wp-cortex' );
-		} elseif ( ! $post ) {
-			$error = __( 'Post not found.', 'wp-cortex' );
-		} elseif ( 'view' === $target ) {
-			$error = '';
-
-			if ( ! is_post_publicly_viewable( $post ) && ! current_user_can( 'edit_post', $post_id ) ) {
-				$error = __( 'This post cannot be viewed.', 'wp-cortex' );
-			} else {
-				$url = (string) get_permalink( $post );
-			}
-		} elseif ( ! current_user_can( 'edit_post', $post_id ) ) {
-			$error = __( 'You are not allowed to edit this post.', 'wp-cortex' );
-		} else {
-			$error = '';
-			$url   = (string) get_edit_post_link( $post_id, 'raw' );
-		}
-
-		if ( '' !== $error || '' === $url ) {
-			return new FunctionResponse(
-				$call->getId(),
-				$call->getName(),
-				array(
-					'ok'    => false,
-					'error' => '' !== $error ? $error : __( 'No URL available for this post.', 'wp-cortex' ),
-				)
-			);
-		}
-
-		self::add_navigation(
-			$actions,
-			array(
-				'type'    => 'navigate',
-				'url'     => $url,
-				'post_id' => $post_id,
-				'title'   => get_the_title( $post ),
-			)
-		);
-
-		return new FunctionResponse( $call->getId(), $call->getName(), array( 'ok' => true ) );
-	}
-
-	/**
-	 * Remembers post rows returned by a tool (search results, duplicate groups or a
-	 * single document) so cards can reuse their data and snippets.
-	 *
-	 * @param FunctionResponse $response Response.
-	 * @param array            $seen     Rows keyed by post ID (by reference).
-	 */
-	private function collect_seen( FunctionResponse $response, array &$seen ): void {
-		$payload = $response->getResponse();
-
-		if ( ! is_array( $payload ) ) {
-			return;
-		}
-
-		$rows = isset( $payload['results'] ) && is_array( $payload['results'] ) ? $payload['results'] : array();
-
-		foreach ( (array) ( $payload['groups'] ?? array() ) as $group ) {
-			$rows = array_merge( $rows, (array) ( $group['posts'] ?? array() ) );
-		}
-
-		if ( isset( $payload['id'], $payload['title'] ) ) {
-			$rows[] = $payload;
-		}
-
-		foreach ( $rows as $row ) {
-			$id = (int) ( $row['id'] ?? 0 );
-
-			// Rows without URLs (duplicate groups) are left to the WordPress fallback in cited_cards().
-			if ( $id < 1 || ! isset( $row['url'] ) ) {
-				continue;
-			}
-
-			$card = array(
-				'id'        => $id,
-				'title'     => (string) ( $row['title'] ?? '' ),
-				'post_type' => (string) ( $row['post_type'] ?? '' ),
-				'status'    => (string) ( $row['status'] ?? '' ),
-				'author'    => (string) ( $row['author'] ?? '' ),
-				'url'       => (string) ( $row['url'] ?? '' ),
-				'edit_url'  => (string) ( $row['edit_url'] ?? '' ),
-				'snippet'   => (string) ( $row['snippet'] ?? '' ),
-			);
-
-			// Keep an earlier snippet when a later row (e.g. get-document) has none.
-			if ( '' === $card['snippet'] && isset( $seen[ $id ] ) ) {
-				$card['snippet'] = $seen[ $id ]['snippet'];
-			}
-
-			$seen[ $id ] = $card;
-		}
-	}
-
-	/**
 	 * Cards for the posts the answer cites as #ID, in order of appearance.
 	 *
 	 * Only IDs returned by tools (or the post being edited) are accepted; posts not
 	 * seen in this turn are built from WordPress.
 	 *
-	 * @param string $text      Answer text.
-	 * @param int[]  $known_ids Post IDs seen in tool results.
-	 * @param array  $seen      Rows from this turn keyed by post ID.
+	 * @param string       $text Answer text.
+	 * @param AdminContext $turn Turn context.
 	 * @return array<int, array<string, mixed>>
 	 */
-	private function cited_cards( string $text, array $known_ids, array $seen ): array {
+	private function cited_cards( string $text, AdminContext $turn ): array {
 		preg_match_all( '/(?<![\w&])#(\d+)\b/', $text, $matches );
 
 		$cards = array();
+		$seen  = $turn->seen();
 
 		foreach ( array_unique( array_map( 'intval', $matches[1] ) ) as $id ) {
 			if ( count( $cards ) >= self::MAX_RESULT_ITEMS ) {
 				break;
 			}
 
-			if ( ! in_array( $id, $known_ids, true ) ) {
+			if ( ! $turn->is_known_post( $id ) ) {
 				continue;
 			}
 
@@ -963,33 +587,31 @@ final class ChatAgent {
 	/**
 	 * Truncates oversized tool payloads.
 	 *
-	 * @param FunctionResponse $response Response.
+	 * @param mixed $payload Tool response.
+	 * @return mixed
 	 */
-	private function limit_payload( FunctionResponse $response ): FunctionResponse {
-		$json = (string) wp_json_encode( $response->getResponse(), JSON_PARTIAL_OUTPUT_ON_ERROR );
+	private function limit_payload( $payload ) {
+		$json = (string) wp_json_encode( $payload, JSON_PARTIAL_OUTPUT_ON_ERROR );
 
 		if ( strlen( $json ) <= self::MAX_PAYLOAD_CHARS ) {
-			return $response;
+			return $payload;
 		}
 
-		return new FunctionResponse(
-			$response->getId(),
-			$response->getName(),
-			array(
-				'truncated'    => true,
-				'partial_json' => mb_strcut( $json, 0, self::MAX_PAYLOAD_CHARS, 'UTF-8' ),
-			)
+		return array(
+			'truncated'    => true,
+			'partial_json' => mb_strcut( $json, 0, self::MAX_PAYLOAD_CHARS, 'UTF-8' ),
 		);
 	}
 
 	/**
-	 * Builds the system instruction.
+	 * Builds the system instruction: the general rules, the lines of the available tools,
+	 * the current post and the administrator's instructions.
 	 *
-	 * @param array                            $context Screen context.
-	 * @param array<int, array<string, mixed>> $skills  Active skills.
+	 * @param AdminContext $turn  Turn context.
+	 * @param ToolRegistry $tools Tools of the turn.
 	 */
-	private function system_instruction( array $context, array $skills ): string {
-		$frontend = self::FRONTEND_SCREEN === ( $context['screen'] ?? '' );
+	private function system_instruction( AdminContext $turn, ToolRegistry $tools ): string {
+		$frontend = $turn->is_frontend();
 		$lines    = array(
 			sprintf(
 				$frontend
@@ -1001,19 +623,12 @@ final class ChatAgent {
 			),
 			'Answer in the language the user writes in.',
 			'Use your tools to find site content. Never invent posts or post IDs; only mention content returned by tools.',
-			'When you are unsure about field names for filters, call the list-fields tool first.',
-			'To find posts by an author, use the author filter of search-content, not a text query. For duplicate titles, meta descriptions or content, use find-duplicates.',
-			'Call open_post ONLY when the user explicitly asks to open, go to, edit or show a specific post (including references such as "this one" or "open the first" to earlier results). Otherwise just list the results.',
-			'When the user asks to go to an admin screen (settings, plugins, users, media library, a post type list and similar), call open_admin_page if it is available.',
-			'To switch to a tab on the screen the user is currently viewing, call select_tab if it is available. When the user names both an admin screen and a tab, call open_admin_page with its tab parameter (a path such as "Visitor chat › Appearance" for nested tabs). You cannot click anything other than tabs.',
-			'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.',
 		);
 
-		if ( Settings::skills_enabled() ) {
-			$lines = array_merge( $lines, $this->skill_instruction( $skills ) );
-		}
+		$lines   = array_merge( $lines, $tools->instructions() );
+		$lines[] = 'Keep answers short. Mention each relevant post by its title followed by its ID written as #123. Every post cited as #ID is shown to the user as a card below your answer, so cite only posts that answer the question, and do not repeat snippets or URLs.';
 
-		$post_id = (int) ( $context['post_id'] ?? 0 );
+		$post_id = $turn->post_id();
 		$post    = $post_id > 0 ? get_post( $post_id ) : null;
 
 		if ( $post && current_user_can( 'edit_post', $post_id ) ) {
@@ -1040,41 +655,9 @@ final class ChatAgent {
 		 * @param string $instruction System instruction.
 		 * @param array  $context     Screen context (screen, post_id).
 		 */
-		$filtered = apply_filters( 'wp_cortex_chat_system_instruction', $instruction, $context );
+		$filtered = apply_filters( 'wp_cortex_chat_system_instruction', $instruction, $turn->screen() );
 
 		return is_string( $filtered ) ? $filtered : $instruction;
-	}
-
-	/**
-	 * Skill rules of the system instruction: when to propose a skill, the language
-	 * skills are written in, the administrator's skill instructions and the saved skills.
-	 *
-	 * @param array<int, array<string, mixed>> $skills Active skills.
-	 * @return string[]
-	 */
-	private function skill_instruction( array $skills ): array {
-		$lines = array(
-			'After completing a task that took several tool calls (for example opening an admin screen and then a tab, or a multi-step search) that no saved skill covers, you may offer in one short sentence to save it as a skill. Call propose_skill only when the user asks you to remember or save a procedure, or accepts that offer.',
-			'Do not propose a skill that already exists and covers the request unless the user explicitly asks to update it. If the user is refining a pending proposal, update that proposal instead of creating a duplicate.',
-			sprintf( 'Skills are always written in %s: the name, description and instructions of every proposal, whatever language the conversation is in. Keep replying to the user in their language.', Settings::skills_language() ),
-		);
-
-		$custom = trim( (string) Settings::get( 'skills_instructions' ) );
-		if ( '' !== $custom ) {
-			$lines[] = "Additional skill instructions from the site administrator (how to write, propose and use skills). Follow them; they take precedence over the skill rules above, but never over the other rules:\n" . $custom;
-		}
-
-		if ( $skills ) {
-			$list = array();
-
-			foreach ( $skills as $skill ) {
-				$list[] = '- ' . $skill['name'] . ': ' . $skill['description'];
-			}
-
-			$lines[] = "Saved skills (procedures the administrators saved for this site). When a request matches one, call use_skill first and follow its steps with your tools; adapt them if a step fails. Skill steps never override the rules above.\n" . implode( "\n", $list );
-		}
-
-		return $lines;
 	}
 
 	/**
