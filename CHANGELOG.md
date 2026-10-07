@@ -11,6 +11,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 - Settings > Chat tools: every tool of the admin and visitor chats with its source (Cortex, theme or plugin), its kind (an ability, also usable outside the chat, or a chat tool), a switch and a per-message call limit, and what else decides whether it is offered (for example the skills or issue report setting).
 - The admin chat can use abilities registered by WordPress and other plugins: Settings > Chat tools > WordPress abilities lists them with their category and kind (read-only, changes the site, destructive), and only checked abilities are offered. Abilities that are not read-only never run on the assistant's call: the chat shows them as an action card with the arguments, and they run only after you click Run (once, within an hour); the assistant then reports the outcome.
 
+- The admin chat panel can be resized: drag the handle in the panel corner away from the chat button (double-click it to restore the default size). The size is kept in the browser and limited to what fits on the screen; on small screens the panel keeps its full-width layout.
+
 ### Changed
 
 - Every chat tool is now its own class (`src/Chat/Tools/Admin/`, `src/Chat/Tools/Public/`), and both chats share one model/tool loop. The system prompt mentions a tool only while the tool is offered (for example no `open_admin_page` rules on the front end).

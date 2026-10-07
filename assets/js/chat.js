@@ -8,15 +8,21 @@
 	var __ = wp.i18n.__;
 	var STORE_KEY = 'wpCortexChat';
 	var TAB_KEY = 'wpCortexChatTab';
+	var SIZE_KEY = 'wpCortexChatSize';
 	var MAX_TABS = 50;
 	var DRAG_THRESHOLD = 4;
 	var PANEL_GAP = 12;
+	var MIN_WIDTH = 320;
+	var MIN_HEIGHT = 320;
+	var MOBILE_WIDTH = 600;
 	var P = 'wp-cortex-chat-';
-	var root, toggle, panel, list, select, input, sendBtn, thinkingEl;
+	var root, toggle, panel, resizeHandle, list, select, input, sendBtn, thinkingEl;
 	var state = { open: false, conversationId: 0, position: null };
 	var busy = false;
 	var listLoaded = false;
 	var dragState = null;
+	var resizeState = null;
+	var panelSize = null;
 	var ignoreNextToggle = false;
 
 	function loadState() {
@@ -31,6 +37,26 @@
 	function saveState() {
 		try {
 			window.sessionStorage.setItem( STORE_KEY, JSON.stringify( state ) );
+		} catch ( e ) {}
+	}
+
+	// The panel size is kept across sessions, unlike the open state and the position.
+	function loadSize() {
+		try {
+			var s = JSON.parse( window.localStorage.getItem( SIZE_KEY ) || 'null' );
+			var width = s ? parseFloat( s.width ) : NaN;
+			var height = s ? parseFloat( s.height ) : NaN;
+			panelSize = isFinite( width ) && isFinite( height ) ? { width: width, height: height } : null;
+		} catch ( e ) {}
+	}
+
+	function saveSize() {
+		try {
+			if ( panelSize ) {
+				window.localStorage.setItem( SIZE_KEY, JSON.stringify( panelSize ) );
+			} else {
+				window.localStorage.removeItem( SIZE_KEY );
+			}
 		} catch ( e ) {}
 	}
 
@@ -98,6 +124,54 @@
 		return clampPosition( { left: rect.left, top: rect.top } );
 	}
 
+	function isMobile() {
+		return viewportSize().width <= MOBILE_WIDTH;
+	}
+
+	// Keep a size between the minimum and what fits in the viewport above or below the toggle.
+	function clampSize( size ) {
+		var viewport = viewportSize();
+		var toggleRect = toggle.getBoundingClientRect();
+		var room = Math.max( toggleRect.top, viewport.height - toggleRect.bottom ) - PANEL_GAP - 10;
+		var maxWidth = Math.max( MIN_WIDTH, viewport.width - 20 );
+		var maxHeight = Math.max( MIN_HEIGHT, room );
+
+		return {
+			width: Math.round( Math.max( MIN_WIDTH, Math.min( maxWidth, size.width ) ) ),
+			height: Math.round( Math.max( MIN_HEIGHT, Math.min( maxHeight, size.height ) ) ),
+		};
+	}
+
+	// Apply the chosen size; on small screens the stylesheet layout applies instead.
+	function applySize() {
+		if ( ! panel ) {
+			return;
+		}
+
+		if ( ! panelSize || isMobile() ) {
+			panel.style.width = '';
+			panel.style.height = '';
+			panel.style.maxWidth = '';
+			panel.style.maxHeight = '';
+			return;
+		}
+
+		var size = clampSize( panelSize );
+		panel.style.width = size.width + 'px';
+		panel.style.height = size.height + 'px';
+		panel.style.maxWidth = 'none';
+		panel.style.maxHeight = 'none';
+	}
+
+	// Put the resize handle in the panel corner away from the toggle.
+	function placeResizeHandle( panelLeft, panelTop, panelRect, toggleRect ) {
+		var left = panelLeft + panelRect.width / 2 < toggleRect.left + toggleRect.width / 2;
+		var top = panelTop + panelRect.height / 2 < toggleRect.top + toggleRect.height / 2;
+
+		panel.classList.toggle( P + 'handle-left', left );
+		panel.classList.toggle( P + 'handle-top', top );
+	}
+
 	// Align the panel to the same horizontal side as the toggle and keep it visible.
 	function positionPanel() {
 		if ( ! panel || ! panel.classList.contains( 'is-open' ) ) {
@@ -127,6 +201,9 @@
 		panel.style.top = Math.round( top ) + 'px';
 		panel.style.right = 'auto';
 		panel.style.bottom = 'auto';
+		if ( ! resizeState ) {
+			placeResizeHandle( left, top, panelRect, toggleRect );
+		}
 	}
 
 	function applyPosition() {
@@ -134,6 +211,7 @@
 			return;
 		}
 
+		applySize();
 		setTogglePosition( state.position ? clampPosition( state.position ) : defaultPosition() );
 		positionPanel();
 	}
@@ -177,6 +255,7 @@
 				left: dragState.left + deltaX,
 				top: dragState.top + deltaY,
 			} ) );
+			applySize();
 			positionPanel();
 			event.preventDefault();
 		} );
@@ -203,6 +282,70 @@
 
 		toggle.addEventListener( 'pointerup', endDrag );
 		toggle.addEventListener( 'pointercancel', endDrag );
+	}
+
+	function bindPanelResize() {
+		resizeHandle.addEventListener( 'pointerdown', function ( event ) {
+			if ( false === event.isPrimary || ( 0 !== event.button && -1 !== event.button ) ) {
+				return;
+			}
+
+			var rect = panel.getBoundingClientRect();
+			resizeState = {
+				pointerId: event.pointerId,
+				startX: event.clientX,
+				startY: event.clientY,
+				width: rect.width,
+				height: rect.height,
+				left: panel.classList.contains( P + 'handle-left' ),
+				top: panel.classList.contains( P + 'handle-top' ),
+			};
+			panel.classList.add( P + 'is-resizing' );
+			if ( resizeHandle.setPointerCapture ) {
+				try {
+					resizeHandle.setPointerCapture( event.pointerId );
+				} catch ( e ) {}
+			}
+			event.preventDefault();
+		} );
+
+		resizeHandle.addEventListener( 'pointermove', function ( event ) {
+			if ( ! resizeState || event.pointerId !== resizeState.pointerId ) {
+				return;
+			}
+
+			var deltaX = event.clientX - resizeState.startX;
+			var deltaY = event.clientY - resizeState.startY;
+			panelSize = clampSize( {
+				width: resizeState.width + ( resizeState.left ? -deltaX : deltaX ),
+				height: resizeState.height + ( resizeState.top ? -deltaY : deltaY ),
+			} );
+			applySize();
+			positionPanel();
+			event.preventDefault();
+		} );
+
+		function endResize( event ) {
+			if ( ! resizeState || event.pointerId !== resizeState.pointerId ) {
+				return;
+			}
+
+			resizeState = null;
+			panel.classList.remove( P + 'is-resizing' );
+			saveSize();
+			positionPanel();
+		}
+
+		resizeHandle.addEventListener( 'pointerup', endResize );
+		resizeHandle.addEventListener( 'pointercancel', endResize );
+
+		// Double click restores the default size.
+		resizeHandle.addEventListener( 'dblclick', function () {
+			panelSize = null;
+			saveSize();
+			applySize();
+			positionPanel();
+		} );
 	}
 
 	function el( tag, cls, text ) {
@@ -982,9 +1125,14 @@
 			}
 		} );
 
+		resizeHandle = el( 'div', P + 'resize-handle' );
+		resizeHandle.setAttribute( 'aria-hidden', 'true' );
+		resizeHandle.title = __( 'Drag to resize, double-click to reset', 'wp-cortex' );
+
 		panel.appendChild( header );
 		panel.appendChild( list );
 		panel.appendChild( form );
+		panel.appendChild( resizeHandle );
 
 		// Keep editor shortcuts from firing while typing in the panel.
 		panel.addEventListener( 'keydown', function ( e ) {
@@ -1005,8 +1153,10 @@
 
 		renderEmpty();
 		loadState();
+		loadSize();
 		applyPosition();
 		bindToggleDrag();
+		bindPanelResize();
 		window.addEventListener( 'resize', applyPosition );
 		if ( state.open ) {
 			openPanel();
