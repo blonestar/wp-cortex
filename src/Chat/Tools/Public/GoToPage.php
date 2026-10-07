@@ -14,7 +14,8 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Opens a page of the public index, or the author archive of an author with content in
- * the public index, in the visitor's browser. Offered while public_chat_navigation is on.
+ * the public index, in the visitor's browser, or reloads the page the visitor is on.
+ * Offered while public_chat_navigation is on.
  */
 final class GoToPage extends PublicTool {
 
@@ -48,7 +49,7 @@ final class GoToPage extends PublicTool {
 	 * @param ToolContext $context Turn context.
 	 */
 	public function description( ToolContext $context ): string {
-		return 'Opens a published page of this website in the visitor\'s browser (the chat stays open), or the author page listing all posts of an author (pass author instead of post_id; only for authors whose author_page is true in search_site results). Call it only when the visitor explicitly asks to be taken to a page or has just confirmed your offer to take them there.';
+		return 'Opens a published page of this website in the visitor\'s browser (the chat stays open), or the author page listing all posts of an author (pass author instead of post_id; only for authors whose author_page is true in search_site results). With reload true it only reloads the page the visitor is on (for example when the page did not load correctly); nothing else is opened. Call it only when the visitor explicitly asks to be taken to a page or to reload the page, or has just confirmed your offer to do so.';
 	}
 
 	/**
@@ -69,6 +70,10 @@ final class GoToPage extends PublicTool {
 					'type'        => 'string',
 					'description' => 'Author name, to open that author\'s page instead of a post.',
 				),
+				'reload'  => array(
+					'type'        => 'boolean',
+					'description' => 'True to reload the page the visitor is on instead of opening another one; post_id and author are ignored.',
+				),
 			),
 		);
 	}
@@ -80,13 +85,13 @@ final class GoToPage extends PublicTool {
 	 * @return string[]
 	 */
 	public function instructions( ToolContext $context ): array {
-		return array( 'When a page would help the visitor (for example the contact page for someone who wants to get in touch), you may offer to take them there. Call go_to_page only when the visitor explicitly asks to be taken to a page or has confirmed your offer in their last message; never open a page on your own initiative. After calling it, reply with one short sentence.' );
+		return array( 'When a page would help the visitor (for example the contact page for someone who wants to get in touch), you may offer to take them there. Call go_to_page only when the visitor explicitly asks to be taken to a page or has confirmed your offer in their last message; never open or reload a page on your own initiative. After calling it, reply with one short sentence.' );
 	}
 
 	/**
 	 * Queues the navigation.
 	 *
-	 * @param array       $args    Arguments: post_id or author.
+	 * @param array       $args    Arguments: post_id, author or reload.
 	 * @param ToolContext $context Turn context.
 	 * @return array<string, mixed>
 	 */
@@ -94,6 +99,15 @@ final class GoToPage extends PublicTool {
 		$visitor = $this->visitor( $context );
 		$post_id = (int) ( $args['post_id'] ?? 0 );
 		$author  = trim( (string) ( $args['author'] ?? '' ) );
+
+		if ( ! empty( $args['reload'] ) ) {
+			$visitor->reload();
+
+			return array(
+				'reloaded' => true,
+				'note'     => 'The page reloads right after your reply. In one short sentence, tell the visitor you are reloading the page.',
+			);
+		}
 
 		if ( $post_id < 1 && '' !== $author ) {
 			return $this->go_to_author_page( $visitor, $author );

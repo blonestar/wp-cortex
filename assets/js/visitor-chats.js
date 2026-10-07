@@ -534,6 +534,14 @@
 				els.transcript.appendChild( wrap );
 				break;
 			case 'navigate':
+				if ( item.reload ) {
+					var reloaded = el( 'div', 'wp-cortex-vchat-event', '↻ ' + __( 'Page reloaded', 'wp-cortex' ) + ( item.url ? ': ' : '' ) );
+					if ( item.url ) {
+						reloaded.appendChild( link( item.title || item.url, item.url ) );
+					}
+					els.transcript.appendChild( reloaded );
+					break;
+				}
 				var nav = el( 'div', 'wp-cortex-vchat-event', '→ ' + __( 'Visitor taken to', 'wp-cortex' ) + ' ' );
 				nav.appendChild( link( item.title || item.url, item.url ) );
 				els.transcript.appendChild( nav );
@@ -641,7 +649,7 @@
 		( chat.transcript || [] ).forEach( function ( item ) {
 			if ( 'user' === item.role && item.page ) {
 				add( 0, item.page.title, item.page.url );
-			} else if ( 'navigate' === item.role ) {
+			} else if ( 'navigate' === item.role && ! item.reload ) {
 				add( 1, item.title, item.url );
 			} else if ( 'sources' === item.role ) {
 				( item.sources || [] ).forEach( function ( s ) {
