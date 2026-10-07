@@ -436,6 +436,107 @@
 		placeSkillProposalCard( card );
 	}
 
+	function screenContext() {
+		return { screen: cfg.screen || '', post_id: cfg.postId || 0, admin_pages: cfg.adminPages || [], tabs: collectTabs() };
+	}
+
+	function actionStatusText( action ) {
+		switch ( action.status ) {
+			case 'done':
+				return __( 'Done.', 'wp-cortex' );
+			case 'cancelled':
+				return __( 'Cancelled.', 'wp-cortex' );
+			case 'running':
+				return __( 'Running…', 'wp-cortex' );
+			case 'failed':
+				/* translators: %s: error message */
+				return __( 'Failed: %s', 'wp-cortex' ).replace( '%s', function () {
+					return action.error || __( 'unknown error', 'wp-cortex' );
+				} );
+		}
+		return '';
+	}
+
+	function addAbilityAction( action ) {
+		if ( ! action || ! action.id ) {
+			return;
+		}
+		var pending = 'pending' === action.status;
+		var card = el( 'div', P + 'card ' + P + 'action' + ( action.destructive ? ' ' + P + 'action-destructive' : '' ) );
+		card.setAttribute( 'data-action-id', String( action.id ) );
+		card.appendChild( el( 'p', P + 'card-title', pending ? __( 'Run this action?', 'wp-cortex' ) : ( action.label || action.ability ) ) );
+
+		var badges = el( 'div', P + 'badges' );
+		if ( pending ) {
+			badges.appendChild( el( 'span', P + 'badge', action.label || action.ability ) );
+		}
+		badges.appendChild( el( 'code', P + 'author', action.ability || '' ) );
+		if ( action.destructive ) {
+			badges.appendChild( el( 'span', P + 'badge ' + P + 'badge-destructive', __( 'Destructive', 'wp-cortex' ) ) );
+		}
+		card.appendChild( badges );
+
+		if ( pending && action.description ) {
+			card.appendChild( el( 'p', P + 'snippet', action.description ) );
+		}
+		var input = action.input;
+		if ( input && 'object' === typeof input && Object.keys( input ).length ) {
+			card.appendChild( el( 'pre', P + 'action-input', JSON.stringify( input, null, 2 ) ) );
+		}
+
+		var statusEl = el( 'p', P + 'skill-status', pending ? '' : actionStatusText( action ) );
+
+		if ( pending ) {
+			var buttons = el( 'div', P + 'card-actions' );
+			var run = el( 'button', 'button button-small button-primary', __( 'Run', 'wp-cortex' ) );
+			run.type = 'button';
+			var cancel = el( 'button', 'button button-small', __( 'Cancel', 'wp-cortex' ) );
+			cancel.type = 'button';
+			buttons.appendChild( run );
+			buttons.appendChild( cancel );
+			card.appendChild( buttons );
+
+			var decide = function ( decision ) {
+				if ( busy ) {
+					return;
+				}
+				run.disabled = true;
+				cancel.disabled = true;
+				statusEl.textContent = 'run' === decision ? __( 'Running…', 'wp-cortex' ) : '';
+				setBusy( true );
+				wp.apiFetch( {
+					path: '/wp-cortex/v1/chat/conversations/' + state.conversationId + '/actions/' + encodeURIComponent( action.id ),
+					method: 'POST',
+					data: { decision: decision, context: screenContext() }
+				} ).then( function ( res ) {
+					setBusy( false );
+					( res.items || [] ).forEach( renderItem );
+					scrollBottom();
+					handleActions( res.actions );
+				} ).catch( function ( err ) {
+					setBusy( false );
+					run.disabled = false;
+					cancel.disabled = false;
+					statusEl.textContent = ( err && err.message ) || __( 'Something went wrong.', 'wp-cortex' );
+				} );
+			};
+			run.addEventListener( 'click', function () {
+				decide( 'run' );
+			} );
+			cancel.addEventListener( 'click', function () {
+				decide( 'cancel' );
+			} );
+		}
+		card.appendChild( statusEl );
+
+		var existing = list.querySelector( '[data-action-id="' + String( action.id ).replace( /[^a-fA-F0-9-]/g, '' ) + '"]' );
+		if ( existing && existing.parentNode ) {
+			existing.parentNode.replaceChild( card, existing );
+		} else {
+			list.appendChild( card );
+		}
+	}
+
 	function renderItem( item ) {
 		if ( ! item ) {
 			return;
@@ -452,6 +553,9 @@
 				break;
 			case 'skill_proposal':
 				addSkillProposal( item.skill );
+				break;
+			case 'ability_action':
+				addAbilityAction( item.action );
 				break;
 			case 'error':
 				addMessage( 'error', item.text || '', false );
@@ -744,7 +848,7 @@
 			data: {
 				conversation_id: state.conversationId || 0,
 				message: text,
-				context: { screen: cfg.screen || '', post_id: cfg.postId || 0, admin_pages: cfg.adminPages || [], tabs: collectTabs() }
+				context: screenContext()
 			}
 		} ).then( function ( res ) {
 			var isNew = res.conversation_id && res.conversation_id !== state.conversationId;

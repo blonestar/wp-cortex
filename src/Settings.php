@@ -80,6 +80,16 @@ final class Settings {
 		'public_chat_font_size'     => array( 12, 18 ),
 	);
 
+	/**
+	 * Highest per-message call limit of a chat tool (0 means no limit).
+	 */
+	public const TOOL_LIMIT_MAX = 20;
+
+	/**
+	 * Chats whose tools can be switched off and limited under Settings > Chat tools.
+	 */
+	public const TOOL_SCOPES = array( 'admin', 'public' );
+
 	public const EMBEDDING_MODELS = array(
 		'text-embedding-3-small' => array( 512, 1024, 1536 ),
 		'text-embedding-3-large' => array( 256, 1024, 3072 ),
@@ -116,6 +126,17 @@ final class Settings {
 			'skills_enabled'             => true,
 			'skills_language'            => self::SKILLS_LANGUAGE_DEFAULT,
 			'skills_instructions'        => '',
+			'chat_tools'                 => array(
+				'admin'  => array(
+					'off'    => array(),
+					'limits' => array(),
+				),
+				'public' => array(
+					'off'    => array(),
+					'limits' => array(),
+				),
+			),
+			'chat_abilities'             => array(),
 			'public_chat_enabled'        => false,
 			'public_chat_title'          => '',
 			'public_chat_welcome'        => '',
@@ -257,6 +278,42 @@ final class Settings {
 	}
 
 	/**
+	 * Whether a chat tool is switched on under Settings > Chat tools (tools are on
+	 * unless switched off). Its own setting, for example public_chat_reports, may still
+	 * keep it from being offered.
+	 *
+	 * @param string $scope Chat: "admin" or "public".
+	 * @param string $name  Function name of the tool.
+	 */
+	public static function tool_enabled( string $scope, string $name ): bool {
+		$tools = self::get( 'chat_tools' );
+
+		return ! in_array( $name, (array) ( $tools[ $scope ]['off'] ?? array() ), true );
+	}
+
+	/**
+	 * How many times a chat tool may be called per message, 0 for no limit.
+	 *
+	 * @param string $scope Chat: "admin" or "public".
+	 * @param string $name  Function name of the tool.
+	 */
+	public static function tool_limit( string $scope, string $name ): int {
+		$tools = self::get( 'chat_tools' );
+
+		return (int) ( $tools[ $scope ]['limits'][ $name ] ?? 0 );
+	}
+
+	/**
+	 * Registered abilities of other plugins (and WordPress) the admin chat may use. The
+	 * plugin's own abilities are built-in admin chat tools and are not listed here.
+	 *
+	 * @return string[] Ability names.
+	 */
+	public static function chat_abilities(): array {
+		return array_values( array_map( 'strval', (array) self::get( 'chat_abilities' ) ) );
+	}
+
+	/**
 	 * Identifier of the embedding configuration, stored next to every vector so a
 	 * model or dimension change marks existing vectors as stale.
 	 */
@@ -328,6 +385,9 @@ final class Settings {
 			$appearance[ $key ] = self::clamp( $input[ $key ] ?? $defaults[ $key ], $range[0], $range[1] );
 		}
 
+		$stored = get_option( self::OPTION, array() );
+		$stored = array_merge( $defaults, self::upgrade( is_array( $stored ) ? $stored : array() ) );
+
 		return $appearance + array(
 			'admin_post_types'         => array_values( array_unique( array_filter( $admin_types, 'post_type_exists' ) ) ),
 			'public_post_types'        => array_values( array_unique( array_filter( $public_types, 'post_type_exists' ) ) ),
@@ -353,6 +413,8 @@ final class Settings {
 			'skills_enabled'           => ! empty( $input['skills_enabled'] ),
 			'skills_language'          => '' !== $skills_language ? mb_substr( $skills_language, 0, self::SKILLS_LANGUAGE_MAX ) : self::SKILLS_LANGUAGE_DEFAULT,
 			'skills_instructions'      => mb_substr( $skills_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
+			'chat_tools'               => self::sanitize_chat_tools( $input['chat_tools'] ?? null, (array) $stored['chat_tools'] ),
+			'chat_abilities'           => self::sanitize_chat_abilities( $input['chat_abilities'] ?? null, (array) $stored['chat_abilities'] ),
 			'public_chat_enabled'      => ! empty( $input['public_chat_enabled'] ),
 			'public_chat_title'        => mb_substr( $public_title, 0, self::PUBLIC_CHAT_TITLE_MAX ),
 			'public_chat_welcome'      => mb_substr( $public_welcome, 0, self::PUBLIC_CHAT_WELCOME_MAX ),
@@ -461,6 +523,126 @@ final class Settings {
 		ksort( $rules );
 
 		return $rules;
+	}
+
+	/**
+	 * Tool switches and limits from Settings > Chat tools. Each chat sends the tools it
+	 * shows (`known`), the switched-on ones (`on`), the limits (`limit`) and the tools
+	 * that only have a limit there (`limit_known`, the abilities of other plugins); choices for
+	 * tools that are not shown (for example a theme tool while another theme is active)
+	 * are kept. Already sanitized values (`off`, `limits`) are kept as they are; without
+	 * input the stored value stays.
+	 *
+	 * @param mixed $input  Raw input.
+	 * @param array $stored Stored value.
+	 * @return array<string, array{off: string[], limits: array<string, int>}>
+	 */
+	private static function sanitize_chat_tools( $input, array $stored ): array {
+		$result = array();
+
+		foreach ( self::TOOL_SCOPES as $scope ) {
+			$old    = is_array( $stored[ $scope ] ?? null ) ? $stored[ $scope ] : array();
+			$off    = self::tool_names( $old['off'] ?? array() );
+			$limits = self::tool_limits( $old['limits'] ?? array() );
+			$value  = is_array( $input ) && is_array( $input[ $scope ] ?? null ) ? $input[ $scope ] : null;
+
+			if ( null !== $value && isset( $value['known'] ) ) {
+				$known  = self::tool_names( $value['known'] );
+				$on     = self::tool_names( $value['on'] ?? array() );
+				$shown  = array_flip( array_merge( $known, self::tool_names( $value['limit_known'] ?? array() ) ) );
+				$off    = array_merge( array_diff( $off, $known ), array_diff( $known, $on ) );
+				$limits = array_merge(
+					array_diff_key( $limits, $shown ),
+					array_intersect_key( self::tool_limits( $value['limit'] ?? array() ), $shown )
+				);
+			} elseif ( null !== $value ) {
+				$off    = self::tool_names( $value['off'] ?? array() );
+				$limits = self::tool_limits( $value['limits'] ?? array() );
+			}
+
+			$off = array_values( array_unique( $off ) );
+			sort( $off );
+			ksort( $limits );
+
+			$result[ $scope ] = array(
+				'off'    => $off,
+				'limits' => $limits,
+			);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Abilities the admin chat may use, from Settings > Chat tools (`known` and `on`, keeping
+	 * the choices of abilities that are not registered right now), or an already sanitized
+	 * list; without input the stored list stays.
+	 *
+	 * @param mixed $input  Raw input.
+	 * @param array $stored Stored list.
+	 * @return string[]
+	 */
+	private static function sanitize_chat_abilities( $input, array $stored ): array {
+		$stored = self::ability_names( $stored );
+
+		if ( ! is_array( $input ) ) {
+			$list = $stored;
+		} elseif ( isset( $input['known'] ) ) {
+			$known = self::ability_names( (array) $input['known'] );
+			$list  = array_merge( array_diff( $stored, $known ), array_intersect( self::ability_names( (array) ( $input['on'] ?? array() ) ), $known ) );
+		} else {
+			$list = self::ability_names( $input );
+		}
+
+		$list = array_values( array_unique( $list ) );
+		sort( $list );
+
+		return $list;
+	}
+
+	/**
+	 * Valid tool function names from a list.
+	 *
+	 * @param mixed $names Raw names.
+	 * @return string[]
+	 */
+	private static function tool_names( $names ): array {
+		return array_values( array_filter( array_map( 'strval', (array) $names ), static fn( string $name ) => (bool) preg_match( '/^[a-zA-Z_][a-zA-Z0-9_-]{0,63}$/', $name ) ) );
+	}
+
+	/**
+	 * Per-message limits keyed by tool function name, without the "no limit" (0) entries.
+	 *
+	 * @param mixed $limits Raw limits.
+	 * @return array<string, int>
+	 */
+	private static function tool_limits( $limits ): array {
+		$clean = array();
+
+		foreach ( (array) $limits as $name => $limit ) {
+			$limit = self::clamp( $limit, 0, self::TOOL_LIMIT_MAX );
+
+			if ( $limit > 0 && self::tool_names( array( (string) $name ) ) ) {
+				$clean[ (string) $name ] = $limit;
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Valid ability names ("namespace/name") from a list, without the plugin's own abilities.
+	 *
+	 * @param array $names Raw names.
+	 * @return string[]
+	 */
+	private static function ability_names( array $names ): array {
+		return array_values(
+			array_filter(
+				array_map( 'strval', $names ),
+				static fn( string $name ) => (bool) preg_match( '#^[a-z0-9-]+(/[a-z0-9-]+)+$#', $name ) && ! str_starts_with( $name, 'wp-cortex/' )
+			)
+		);
 	}
 
 	/**

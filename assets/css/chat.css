@@ -85,3 +85,8 @@ textarea.wp-cortex-chat-skill-input { resize: vertical; font-family: Consolas, M
 .wp-cortex-chat-skill-status:empty { display: none; }
 .wp-cortex-chat-skill .wp-cortex-chat-card-actions[hidden] { display: none; }
 .wp-cortex-chat-frontend .wp-cortex-chat-skill-input { padding: 4px 6px; border: 1px solid #8c8f94; border-radius: 4px; background: #fff; color: #1d2327; }
+.wp-cortex-chat-action { align-self: stretch; display: flex; flex-direction: column; gap: 6px; background: #fcf9e8; border-color: #dba617; }
+.wp-cortex-chat-action-destructive { background: #fcf0f1; border-color: #d63638; }
+.wp-cortex-chat-action .wp-cortex-chat-card-title, .wp-cortex-chat-action .wp-cortex-chat-badges, .wp-cortex-chat-action .wp-cortex-chat-snippet { margin: 0; }
+.wp-cortex-chat-badge-destructive { background: #d63638; color: #fff; }
+.wp-cortex-chat-action-input { margin: 0; max-height: 160px; overflow: auto; padding: 6px; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; font-size: 11px; white-space: pre-wrap; word-break: break-word; }

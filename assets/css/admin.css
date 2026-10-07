@@ -1296,3 +1296,29 @@
 .wp-cortex-report-note-form .wp-cortex-actions {
 	margin: 6px 0 0;
 }
+
+/* Chat tools tab */
+
+.wp-cortex-tools-table .wp-cortex-col-on {
+	width: 3em;
+}
+
+.wp-cortex-tools-table .wp-cortex-col-source {
+	width: 9em;
+}
+
+.wp-cortex-tools-table .wp-cortex-col-limit {
+	width: 9em;
+}
+
+.wp-cortex-tools-table td .description {
+	margin: 4px 0 0;
+}
+
+.wp-cortex-tools-table .wp-cortex-tool-note {
+	font-style: italic;
+}
+
+.wp-cortex-tools-table + .description {
+	margin-top: 8px;
+}

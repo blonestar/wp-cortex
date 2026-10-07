@@ -11,6 +11,7 @@ use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ClientIp;
 use WPCortex\Chat\IssueReportMailer;
 use WPCortex\Chat\ModelCatalog;
+use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\Reasoning;
 use WPCortex\Chat\VisitorChatSummarizer;
 use WPCortex\Chat\VisitorImages;
@@ -90,6 +91,15 @@ final class SettingsPage {
 					'privacy'    => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
 					'actions'    => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
 					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
+				),
+			),
+			'tools'      => array(
+				'label'    => __( 'Chat tools', 'wp-cortex' ),
+				'icon'     => 'dashicons-hammer',
+				'sections' => array(
+					'admin'     => array( __( 'Admin chat tools', 'wp-cortex' ), __( 'Tools the admin chat can use: those of Cortex and those added by the theme or plugins. Abilities are also available outside the chat (for example to MCP clients); chat tools only work inside the chat panel. A switched-off tool is never offered. The limit caps how often the assistant may call a tool for one message (0 = no limit).', 'wp-cortex' ), array( $this, 'fields_tools_admin' ) ),
+					'abilities' => array( __( 'WordPress abilities', 'wp-cortex' ), __( 'Abilities registered by WordPress and other plugins that the admin chat may use. Each ability still checks the permissions of the user. Abilities not marked as read-only may change the site: the assistant only proposes them, and they run after you confirm them in the chat.', 'wp-cortex' ), array( $this, 'fields_abilities' ) ),
+					'public'    => array( __( 'Visitor chat tools', 'wp-cortex' ), __( 'Tools the visitor chat can use. They only read the public index; abilities and admin tools are never offered to visitors.', 'wp-cortex' ), array( $this, 'fields_tools_public' ) ),
 				),
 			),
 			'skills'     => array(
@@ -1274,6 +1284,175 @@ final class SettingsPage {
 				IssueReportMailer::MAX_RECIPIENTS
 			)
 		);
+	}
+
+	/**
+	 * Admin chat tools section.
+	 */
+	public function fields_tools_admin(): void {
+		$this->tools_table( 'admin', ChatAgent::tool_catalog() );
+	}
+
+	/**
+	 * Visitor chat tools section.
+	 */
+	public function fields_tools_public(): void {
+		$this->tools_table( 'public', PublicChatAgent::tool_catalog() );
+	}
+
+	/**
+	 * Table of a chat's tools with a switch and a per-message limit for each.
+	 *
+	 * @param string $scope Chat: "admin" or "public".
+	 * @param array  $rows  Tools from ToolRegistry::catalog().
+	 */
+	private function tools_table( string $scope, array $rows ): void {
+		$field   = Settings::OPTION . '[chat_tools][' . $scope . ']';
+		$sources = array(
+			'builtin' => __( 'Cortex', 'wp-cortex' ),
+			'theme'   => __( 'Theme', 'wp-cortex' ),
+			'plugin'  => __( 'Plugin', 'wp-cortex' ),
+		);
+
+		echo '<table class="wp-list-table widefat fixed striped wp-cortex-tools-table"><thead><tr>';
+		echo '<th scope="col" class="wp-cortex-col-on">' . esc_html__( 'On', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col">' . esc_html__( 'Tool', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-source">' . esc_html__( 'Source', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-source">' . esc_html__( 'Kind', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-limit">' . esc_html__( 'Limit per message', 'wp-cortex' ) . '</th>';
+		echo '</tr></thead><tbody>';
+
+		foreach ( $rows as $name => $row ) {
+			$source = $sources[ $row['source'] ] ?? $row['source'];
+			$kind   = $row['ability']
+				? array( __( 'Ability', 'wp-cortex' ), __( 'A WordPress ability: also available outside the chat, for example to MCP clients.', 'wp-cortex' ) )
+				: array( __( 'Chat tool', 'wp-cortex' ), __( 'Only works inside the chat panel.', 'wp-cortex' ) );
+
+			echo '<tr>';
+			printf(
+				'<td class="wp-cortex-col-on"><input type="hidden" name="%1$s" value="%2$s" /><input type="checkbox" id="%3$s" name="%4$s" value="%2$s" %5$s /></td>',
+				esc_attr( $field . '[known][]' ),
+				esc_attr( $name ),
+				esc_attr( 'wp-cortex-tool-' . $scope . '-' . $name ),
+				esc_attr( $field . '[on][]' ),
+				checked( Settings::tool_enabled( $scope, $name ), true, false )
+			);
+			printf(
+				'<td><label for="%1$s"><strong>%2$s</strong></label> <code>%3$s</code>%4$s%5$s</td>',
+				esc_attr( 'wp-cortex-tool-' . $scope . '-' . $name ),
+				esc_html( $row['label'] ),
+				esc_html( $name ),
+				'' !== $row['description'] ? '<p class="description">' . esc_html( wp_trim_words( $row['description'], 30 ) ) . '</p>' : '',
+				'' !== $row['note'] ? '<p class="description wp-cortex-tool-note">' . esc_html( $row['note'] ) . '</p>' : ''
+			);
+			printf(
+				'<td class="wp-cortex-col-source"><span class="wp-cortex-badge">%1$s</span>%2$s</td>',
+				esc_html( $source ),
+				'' !== $row['changed'] ? '<br /><small>' . esc_html( sprintf( /* translators: %s: Theme or Plugin. */ __( 'changed by: %s', 'wp-cortex' ), strtolower( $sources[ $row['changed'] ] ?? $row['changed'] ) ) ) . '</small>' : ''
+			);
+			printf(
+				'<td class="wp-cortex-col-source"><span class="wp-cortex-badge" title="%2$s">%1$s</span></td>',
+				esc_html( $kind[0] ),
+				esc_attr( $kind[1] )
+			);
+			echo '<td class="wp-cortex-col-limit">';
+			$this->tool_limit_input( $scope, $name );
+			echo '</td></tr>';
+		}
+
+		echo '</tbody></table>';
+		echo '<p class="description">';
+		printf(
+			/* translators: %s: theme folder. */
+			esc_html__( 'A theme adds or changes tools with PHP files in %s; plugins use a filter. See docs/chat-tools.md in the plugin.', 'wp-cortex' ),
+			'<code>' . esc_html( 'wp-cortex/tools/' . $scope . '/' ) . '</code>'
+		);
+		echo '</p>';
+	}
+
+	/**
+	 * Per-message limit input of a tool.
+	 *
+	 * @param string $scope Chat: "admin" or "public".
+	 * @param string $name  Function name.
+	 */
+	private function tool_limit_input( string $scope, string $name ): void {
+		printf(
+			'<input type="number" class="small-text" name="%1$s" value="%2$d" min="0" max="%3$d" step="1" aria-label="%4$s" />',
+			esc_attr( Settings::OPTION . '[chat_tools][' . $scope . '][limit][' . $name . ']' ),
+			(int) Settings::tool_limit( $scope, $name ),
+			(int) Settings::TOOL_LIMIT_MAX,
+			/* translators: %s: tool function name. */
+			esc_attr( sprintf( __( 'Limit per message for %s', 'wp-cortex' ), $name ) )
+		);
+	}
+
+	/**
+	 * WordPress abilities section: every registered ability of other plugins with a switch,
+	 * its kind and a per-message limit.
+	 */
+	public function fields_abilities(): void {
+		$rows = ChatAgent::ability_catalog();
+
+		if ( ! function_exists( 'wp_get_abilities' ) ) {
+			echo '<p>' . esc_html__( 'The WordPress Abilities API is not available on this site.', 'wp-cortex' ) . '</p>';
+			return;
+		}
+
+		if ( ! $rows ) {
+			echo '<p>' . esc_html__( 'No other plugin has registered abilities yet. The abilities of Cortex itself are listed under Admin chat tools.', 'wp-cortex' ) . '</p>';
+			return;
+		}
+
+		$allowed = Settings::chat_abilities();
+		$field   = Settings::OPTION . '[chat_abilities]';
+
+		echo '<table class="wp-list-table widefat fixed striped wp-cortex-tools-table"><thead><tr>';
+		echo '<th scope="col" class="wp-cortex-col-on">' . esc_html__( 'On', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col">' . esc_html__( 'Ability', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-source">' . esc_html__( 'Category', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-source">' . esc_html__( 'Effect', 'wp-cortex' ) . '</th>';
+		echo '<th scope="col" class="wp-cortex-col-limit">' . esc_html__( 'Limit per message', 'wp-cortex' ) . '</th>';
+		echo '</tr></thead><tbody>';
+
+		foreach ( $rows as $name => $row ) {
+			$id = 'wp-cortex-ability-' . sanitize_html_class( str_replace( '/', '-', $name ) );
+
+			if ( $row['read_only'] ) {
+				$kind = '<span class="wp-cortex-badge wp-cortex-badge-ok">' . esc_html__( 'Read-only', 'wp-cortex' ) . '</span>';
+			} elseif ( $row['destructive'] ) {
+				$kind = '<span class="wp-cortex-badge wp-cortex-badge-failed">' . esc_html__( 'Destructive', 'wp-cortex' ) . '</span>';
+			} else {
+				$kind = '<span class="wp-cortex-badge wp-cortex-badge-warn">' . esc_html__( 'Changes the site', 'wp-cortex' ) . '</span>';
+			}
+
+			echo '<tr>';
+			printf(
+				'<td class="wp-cortex-col-on"><input type="hidden" name="%1$s" value="%2$s" /><input type="checkbox" id="%3$s" name="%4$s" value="%2$s" %5$s %6$s /></td>',
+				esc_attr( $field . '[known][]' ),
+				esc_attr( $name ),
+				esc_attr( $id ),
+				esc_attr( $field . '[on][]' ),
+				checked( in_array( $name, $allowed, true ), true, false ),
+				disabled( $row['usable'], false, false )
+			);
+			printf(
+				'<td><label for="%1$s"><strong>%2$s</strong></label> <code>%3$s</code>%4$s%5$s</td>',
+				esc_attr( $id ),
+				esc_html( $row['label'] ),
+				esc_html( $name ),
+				'' !== $row['description'] ? '<p class="description">' . esc_html( wp_trim_words( $row['description'], 30 ) ) . '</p>' : '',
+				$row['usable'] ? '' : '<p class="description wp-cortex-tool-note">' . esc_html__( 'The name is too long to be offered to AI models.', 'wp-cortex' ) . '</p>'
+			);
+			echo '<td class="wp-cortex-col-source">' . esc_html( $row['category'] ) . '</td>';
+			echo '<td class="wp-cortex-col-source">' . $kind . '</td>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Built above from escaped strings.
+			echo '<td class="wp-cortex-col-limit">';
+			printf( '<input type="hidden" name="%1$s" value="%2$s" />', esc_attr( Settings::OPTION . '[chat_tools][admin][limit_known][]' ), esc_attr( $row['function'] ) );
+			$this->tool_limit_input( 'admin', $row['function'] );
+			echo '</td></tr>';
+		}
+
+		echo '</tbody></table>';
 	}
 
 	/**
