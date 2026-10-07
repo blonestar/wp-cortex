@@ -42,6 +42,11 @@ final class ChatAgent {
 	private const MAX_PROMPT_SKILLS = 50;
 
 	/**
+	 * Seconds an action card can be confirmed after the assistant proposed it.
+	 */
+	private const ACTION_TTL = HOUR_IN_SECONDS;
+
+	/**
 	 * Screen context value sent by the chat panel on the front end of the site.
 	 */
 	public const FRONTEND_SCREEN = AdminContext::FRONTEND_SCREEN;
@@ -140,16 +145,133 @@ final class ChatAgent {
 			$conversation = $this->store->get( $conversation_id, $user_id );
 		}
 
-		$title      = '' !== $conversation['title'] ? $conversation['title'] : $this->make_title( $message );
-		$transcript = $conversation['transcript'];
-		$history    = $this->decode_messages( $conversation['messages'] );
-		$items      = array(
+		$title = '' !== $conversation['title'] ? $conversation['title'] : $this->make_title( $message );
+
+		return $this->turn(
+			$conversation,
+			$title,
+			$message,
 			array(
-				'role' => 'user',
-				'text' => $message,
+				array(
+					'role' => 'user',
+					'text' => $message,
+				),
 			),
+			$context,
+			$user_id
 		);
-		$actions    = array();
+	}
+
+	/**
+	 * Runs or cancels an action the assistant proposed (an ability that may change the
+	 * site), then lets the assistant answer with the outcome.
+	 *
+	 * Only the arguments stored with the action card are used, never values from the
+	 * browser; the ability must still be allowed under Settings > Chat tools and checks
+	 * its own permissions.
+	 *
+	 * @param int    $conversation_id Conversation ID.
+	 * @param string $action_id       Action ID from the card.
+	 * @param bool   $run             True to run the action, false to cancel it.
+	 * @param array  $context         Screen context: screen, post_id, admin_pages, tabs.
+	 * @param int    $user_id         Current user.
+	 * @return array{conversation_id: int, title: string, items: array, actions: array}|WP_Error
+	 */
+	public function resolve_action( int $conversation_id, string $action_id, bool $run, array $context, int $user_id ) {
+		$conversation = $this->store->get( $conversation_id, $user_id );
+
+		if ( null === $conversation ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Conversation not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		$index = null;
+
+		foreach ( $conversation['transcript'] as $key => $item ) {
+			if ( AbilityTool::ACTION_ROLE === ( $item['role'] ?? '' ) && $action_id === (string) ( $item['action']['id'] ?? '' ) ) {
+				$index = $key;
+				break;
+			}
+		}
+
+		if ( null === $index ) {
+			return new WP_Error( 'wp_cortex_not_found', __( 'Action not found.', 'wp-cortex' ), array( 'status' => 404 ) );
+		}
+
+		$action = (array) $conversation['transcript'][ $index ]['action'];
+
+		if ( 'pending' !== ( $action['status'] ?? '' ) ) {
+			return new WP_Error( 'wp_cortex_action_resolved', __( 'This action was already run or cancelled.', 'wp-cortex' ), array( 'status' => 409 ) );
+		}
+
+		$name    = (string) ( $action['ability'] ?? '' );
+		$expired = time() - (int) ( $action['created'] ?? 0 ) > self::ACTION_TTL;
+		$allowed = in_array( $name, Settings::chat_abilities(), true ) && Settings::tool_enabled( ToolContext::ADMIN, ( new AbilityTool( $name ) )->name() );
+
+		if ( ! $run ) {
+			$action['status'] = 'cancelled';
+			$note             = sprintf( 'I cancelled the action "%1$s" (%2$s). Do not run it.', $action['label'] ?? $name, $name );
+		} elseif ( $expired || ! $allowed ) {
+			$action['status'] = 'failed';
+			$action['error']  = $expired ? __( 'The action expired. Ask the assistant again.', 'wp-cortex' ) : __( 'This ability is no longer allowed for the chat.', 'wp-cortex' );
+			$note             = sprintf( 'I tried to run the action "%1$s" (%2$s), but it was not run: %3$s', $action['label'] ?? $name, $name, $action['error'] );
+		} else {
+			// Mark the card first, so a second click cannot run the action twice.
+			$action['status'] = 'running';
+
+			$conversation['transcript'][ $index ]['action'] = $action;
+			$this->store->save( $conversation_id, $user_id, $conversation['title'], $conversation['messages'], $conversation['transcript'] );
+
+			$result = AbilityTool::run( $name, $action['input'] ?? null );
+			$failed = is_wp_error( $result );
+
+			$action['status'] = $failed ? 'failed' : 'done';
+
+			if ( $failed ) {
+				$action['error'] = $result->get_error_message();
+			}
+
+			$note = sprintf(
+				$failed ? 'I confirmed the action "%1$s" (%2$s); it failed. Error: %3$s' : 'I confirmed the action "%1$s" (%2$s) and it ran. Result (JSON): %3$s',
+				$action['label'] ?? $name,
+				$name,
+				$failed ? $action['error'] : (string) wp_json_encode( $this->limit_payload( $result ), JSON_PARTIAL_OUTPUT_ON_ERROR | JSON_UNESCAPED_UNICODE )
+			);
+		}
+
+		$conversation['transcript'][ $index ]['action'] = $action;
+
+		return $this->turn(
+			$conversation,
+			$conversation['title'],
+			$note . "\n(Sent by the chat interface after the user's choice on the action card. Tell the user the outcome in one or two sentences.)",
+			array(
+				array(
+					'role'   => AbilityTool::ACTION_ROLE,
+					'action' => $action,
+				),
+			),
+			$context,
+			$user_id
+		);
+	}
+
+	/**
+	 * Runs one model turn for a message and stores the conversation.
+	 *
+	 * @param array  $conversation Stored conversation (its transcript may already be updated).
+	 * @param string $title        Conversation title.
+	 * @param string $message      Message for the model.
+	 * @param array  $items        Items of this turn shown before the answer; a user item is
+	 *                             added to the transcript, an action item replaces its card.
+	 * @param array  $context      Screen context.
+	 * @param int    $user_id      Current user.
+	 * @return array{conversation_id: int, title: string, items: array, actions: array}
+	 */
+	private function turn( array $conversation, string $title, string $message, array $items, array $context, int $user_id ): array {
+		$conversation_id = (int) $conversation['id'];
+		$transcript      = $conversation['transcript'];
+		$history         = $this->decode_messages( $conversation['messages'] );
+		$actions         = array();
 
 		$history[] = new UserMessage( array( new MessagePart( $message ) ) );
 
@@ -167,7 +289,11 @@ final class ChatAgent {
 			$history = $outcome;
 		}
 
-		$transcript = $this->merge_skill_proposals( $transcript, $items );
+		// A resolved action card is already updated in place in the transcript.
+		$resolved   = array_filter( $items, static fn( $item ) => AbilityTool::ACTION_ROLE === ( $item['role'] ?? '' ) && 'pending' !== ( $item['action']['status'] ?? '' ) );
+		$new_items  = array_values( array_diff_key( $items, $resolved ) );
+		$transcript = $this->merge_skill_proposals( $transcript, $new_items );
+		$items      = array_merge( array_values( $resolved ), $new_items );
 		$stored     = null === $history ? $conversation['messages'] : array_map( static fn( Message $m ) => $m->toArray(), $this->trim_history( $history ) );
 
 		$this->store->save( $conversation_id, $user_id, $title, $stored, $transcript );
@@ -196,7 +322,7 @@ final class ChatAgent {
 
 		$turn->add_known_posts( $this->history_post_ids( $history ) );
 
-		$tools   = ToolRegistry::build( $turn, $this->builtin_tools() );
+		$tools   = ToolRegistry::build( $turn, self::builtin_tools() );
 		$outcome = AgentLoop::run(
 			$history,
 			$this->system_instruction( $turn, $tools ),
@@ -241,13 +367,68 @@ final class ChatAgent {
 	}
 
 	/**
-	 * Built-in tools of the admin chat, before the theme and the
-	 * wp_cortex_admin_chat_tools filter change them.
+	 * Every admin chat tool for Settings > Chat tools, without the abilities of other
+	 * plugins (those are listed by ability_catalog()).
 	 *
+	 * @return array<string, array<string, mixed>> See ToolRegistry::catalog().
+	 */
+	public static function tool_catalog(): array {
+		$context = new AdminContext( array(), get_current_user_id(), array(), new SkillStore() );
+
+		return ToolRegistry::catalog( $context, self::builtin_tools( false ) );
+	}
+
+	/**
+	 * Registered abilities of other plugins and WordPress the admin chat can be allowed to
+	 * use, for Settings > Chat tools, ordered by category and label.
+	 *
+	 * @return array<string, array{name: string, function: string, label: string, description: string, category: string, read_only: bool, destructive: bool, usable: bool}>
+	 */
+	public static function ability_catalog(): array {
+		if ( ! function_exists( 'wp_get_abilities' ) ) {
+			return array();
+		}
+
+		$categories = function_exists( 'wp_get_ability_categories' ) ? wp_get_ability_categories() : array();
+		$rows       = array();
+
+		foreach ( wp_get_abilities() as $ability ) {
+			$name = $ability->get_name();
+
+			if ( str_starts_with( $name, 'wp-cortex/' ) ) {
+				continue;
+			}
+
+			$tool     = new AbilityTool( $name );
+			$category = $ability->get_category();
+
+			$rows[ $name ] = array(
+				'name'        => $name,
+				'function'    => $tool->name(),
+				'label'       => $ability->get_label(),
+				'description' => $ability->get_description(),
+				'category'    => isset( $categories[ $category ] ) ? $categories[ $category ]->get_label() : $category,
+				'read_only'   => AbilityTool::is_read_only( $ability ),
+				'destructive' => AbilityTool::is_destructive( $ability ),
+				'usable'      => strlen( $tool->name() ) <= 64,
+			);
+		}
+
+		uasort( $rows, static fn( $a, $b ) => strcasecmp( $a['category'], $b['category'] ) ?: strcasecmp( $a['label'], $b['label'] ) );
+
+		return $rows;
+	}
+
+	/**
+	 * Built-in tools of the admin chat, before the theme and the
+	 * wp_cortex_admin_chat_tools filter change them: the plugin's tools and abilities,
+	 * then the abilities of other plugins allowed under Settings > Chat tools.
+	 *
+	 * @param bool $with_abilities Whether to add the allowed abilities of other plugins.
 	 * @return Tool[]
 	 */
-	private function builtin_tools(): array {
-		return array(
+	private static function builtin_tools( bool $with_abilities = true ): array {
+		$tools = array(
 			new AbilityTool( 'wp-cortex/search-content', array( 'To find posts by an author, use the author filter of search-content, not a text query.' ) ),
 			new AbilityTool( 'wp-cortex/find-duplicates', array( 'For duplicate titles, meta descriptions or content, use find-duplicates.' ) ),
 			new AbilityTool( 'wp-cortex/get-document' ),
@@ -258,6 +439,21 @@ final class ChatAgent {
 			new ProposeSkill(),
 			new UseSkill(),
 		);
+
+		if ( ! $with_abilities ) {
+			return $tools;
+		}
+
+		foreach ( Settings::chat_abilities() as $name ) {
+			$tool = new AbilityTool( $name );
+
+			// Function names longer than providers accept are left out (and marked in the settings).
+			if ( ! str_starts_with( $name, 'wp-cortex/' ) && strlen( $tool->name() ) <= 64 ) {
+				$tools[] = $tool;
+			}
+		}
+
+		return $tools;
 	}
 
 	/**

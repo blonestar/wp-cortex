@@ -8,6 +8,9 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - Chat tools can be added, changed or removed from a theme: PHP files in `wp-cortex/tools/admin/` (admin chat) and `wp-cortex/tools/public/` (visitor chat) return a new tool, the parts of a built-in tool to change (description, arguments, system prompt lines, availability or behavior) or `false` to remove it; a child theme file replaces the parent theme file with the same name. Plugins can do the same with the new `wp_cortex_admin_chat_tools` and `wp_cortex_public_chat_tools` filters. The visitor chat never accepts abilities or admin tools. See `docs/chat-tools.md`.
 
+- Settings > Chat tools: every tool of the admin and visitor chats with its source (Cortex, theme or plugin), its kind (an ability, also usable outside the chat, or a chat tool), a switch and a per-message call limit, and what else decides whether it is offered (for example the skills or issue report setting).
+- The admin chat can use abilities registered by WordPress and other plugins: Settings > Chat tools > WordPress abilities lists them with their category and kind (read-only, changes the site, destructive), and only checked abilities are offered. Abilities that are not read-only never run on the assistant's call: the chat shows them as an action card with the arguments, and they run only after you click Run (once, within an hour); the assistant then reports the outcome.
+
 ### Changed
 
 - Every chat tool is now its own class (`src/Chat/Tools/Admin/`, `src/Chat/Tools/Public/`), and both chats share one model/tool loop. The system prompt mentions a tool only while the tool is offered (for example no `open_admin_page` rules on the front end).

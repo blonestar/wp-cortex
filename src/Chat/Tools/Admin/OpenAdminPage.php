@@ -36,6 +36,13 @@ final class OpenAdminPage extends AdminTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Only in the admin, not on the front end.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model, listing the screens.
 	 *
 	 * @param ToolContext $context Turn context.

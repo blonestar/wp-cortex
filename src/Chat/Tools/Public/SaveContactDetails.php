@@ -37,6 +37,13 @@ final class SaveContactDetails extends PublicTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Needs Visitor chat > Assistant actions > Collect contact details and the conversation log.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model.
 	 *
 	 * @param ToolContext $context Turn context.

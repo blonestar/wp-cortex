@@ -14,6 +14,7 @@ defined( 'ABSPATH' ) || exit;
  *
  * Keys (all optional when overriding a tool, "description" and "callback" required for a new one):
  * - label        string, for example in the settings
+ * - note         string, what else decides whether the tool is offered (shown in the settings)
  * - description  string|Closure( ToolContext $context, string $inherited ): string
  * - parameters   array|null|Closure( ToolContext $context, ?array $inherited ): ?array
  * - instructions string|string[]|Closure( ToolContext $context, array $inherited ): string|string[]
@@ -51,6 +52,15 @@ final class DefinedTool extends AbstractTool {
 		$inherited = $this->base ? $this->base->label() : $this->name;
 
 		return (string) ( $this->definition['label'] ?? $inherited );
+	}
+
+	/**
+	 * Note of the overridden tool, or the "note" key.
+	 */
+	public function availability_note(): string {
+		$inherited = $this->base instanceof AbstractTool ? $this->base->availability_note() : '';
+
+		return (string) ( $this->definition['note'] ?? $inherited );
 	}
 
 	/**

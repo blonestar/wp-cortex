@@ -36,6 +36,13 @@ final class SelectTab extends AdminTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Only on admin screens that have tabs.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model.
 	 *
 	 * @param ToolContext $context Turn context.

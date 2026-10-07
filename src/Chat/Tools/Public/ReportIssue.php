@@ -55,6 +55,13 @@ final class ReportIssue extends PublicTool {
 	}
 
 	/**
+	 * What else decides whether the tool is offered.
+	 */
+	public function availability_note(): string {
+		return __( 'Needs Visitor chat > Assistant actions > Issue reports.', 'wp-cortex' );
+	}
+
+	/**
 	 * Description for the model.
 	 *
 	 * @param ToolContext $context Turn context.
