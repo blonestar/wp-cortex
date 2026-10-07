@@ -31,6 +31,11 @@ final class AbilityTool extends AbstractTool {
 	public const ACTION_ROLE = 'ability_action';
 
 	/**
+	 * Argument that carries the input of an ability whose input is not an object.
+	 */
+	public const INPUT_ARGUMENT = 'input';
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string   $ability      Ability name, for example "wp-cortex/search-content".
@@ -116,16 +121,73 @@ final class AbilityTool extends AbstractTool {
 	}
 
 	/**
-	 * Input schema of the ability, prepared for the model.
+	 * Input schema of the ability, prepared for the model. Providers only accept an
+	 * object schema: an ability without input (no schema or "type": "null") gets no
+	 * arguments, an object schema that also allows null becomes a plain object schema,
+	 * and any other input is wrapped in the INPUT_ARGUMENT argument.
 	 *
 	 * @param ToolContext $context Turn context.
 	 * @return array<string, mixed>|null
 	 */
 	public function parameters( ToolContext $context ): ?array {
 		$ability = $this->ability();
-		$schema  = $ability ? wp_prepare_json_schema_for_client( $ability->get_input_schema() ) : array();
+		$schema  = $ability ? $ability->get_input_schema() : array();
 
-		return ! empty( $schema ) ? $schema : null;
+		if ( empty( $schema ) || ! is_array( $schema ) ) {
+			return null;
+		}
+
+		$schema = wp_prepare_json_schema_for_client( $schema );
+		$types  = self::schema_types( $schema );
+
+		if ( ! $types || array( 'null' ) === $types ) {
+			return null;
+		}
+
+		if ( in_array( 'object', $types, true ) ) {
+			$schema['type'] = 'object';
+
+			return $schema;
+		}
+
+		return array(
+			'type'       => 'object',
+			'properties' => array( self::INPUT_ARGUMENT => $schema ),
+			'required'   => in_array( 'null', $types, true ) ? array() : array( self::INPUT_ARGUMENT ),
+		);
+	}
+
+	/**
+	 * Input of the ability from the model's arguments: the wrapped value for an ability
+	 * whose input is not an object, null for an ability without input.
+	 *
+	 * @param array $args Arguments from the model.
+	 * @return mixed
+	 */
+	private function input( array $args ) {
+		$ability = $this->ability();
+		$schema  = $ability ? $ability->get_input_schema() : array();
+		$types   = is_array( $schema ) ? self::schema_types( $schema ) : array();
+
+		if ( ! $types || array( 'null' ) === $types ) {
+			return null;
+		}
+
+		if ( in_array( 'object', $types, true ) ) {
+			return ! empty( $args ) ? $args : null;
+		}
+
+		return $args[ self::INPUT_ARGUMENT ] ?? null;
+	}
+
+	/**
+	 * JSON Schema types of a schema ("type" may be a string or a list).
+	 *
+	 * @param array $schema Schema.
+	 * @return string[]
+	 */
+	private static function schema_types( array $schema ): array {
+		return array_values( array_filter( array_map( 'strval', (array) ( $schema['type'] ?? array() ) ) ) );
 	}
 
 	/**
@@ -156,7 +218,7 @@ final class AbilityTool extends AbstractTool {
 	 */
 	public function execute( array $args, ToolContext $context ) {
 		if ( ! $this->requires_confirmation() ) {
-			$result = self::run( $this->ability, $args );
+			$result = self::run( $this->ability, $this->input( $args ) );
 
 			return is_wp_error( $result ) ? self::error( $result ) : $result;
 		}
@@ -167,7 +229,7 @@ final class AbilityTool extends AbstractTool {
 			return self::error( self::not_found( $this->ability ) );
 		}
 
-		$input = $ability->normalize_input( ! empty( $args ) ? $args : null );
+		$input = $ability->normalize_input( $this->input( $args ) );
 		$check = $ability->validate_input( $input );
 
 		if ( true === $check ) {
@@ -220,7 +282,7 @@ final class AbilityTool extends AbstractTool {
 			return self::not_found( $name );
 		}
 
-		return $ability->execute( ! empty( $input ) ? $input : null );
+		return $ability->execute( null === $input || array() === $input ? null : $input );
 	}
 
 	/**
