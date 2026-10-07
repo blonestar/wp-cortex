@@ -203,7 +203,11 @@
 		}
 		switch ( item.role ) {
 			case 'navigate':
-				addNote( '→', item.title || item.url, item.url );
+				if ( item.reload ) {
+					addNote( '↻ ' + __( 'Page reloaded', 'wp-cortex' ) );
+				} else {
+					addNote( '→', item.title || item.url, item.url );
+				}
 				break;
 
 			case 'user':
@@ -466,17 +470,22 @@
 		} ).then( function ( body ) {
 			setBusy( false );
 			var target = null;
+			var reload = false;
 			( body.items || [] ).forEach( function ( item ) {
 				if ( item && 'user' !== item.role ) {
 					addItem( item );
-					if ( 'navigate' === item.role && item.url && isHttpUrl( item.url ) ) {
+					if ( 'navigate' === item.role && item.reload ) {
+						reload = true;
+					} else if ( 'navigate' === item.role && item.url && isHttpUrl( item.url ) ) {
 						target = item.url;
 					}
 				}
 			} );
 			saveState();
 			scrollBottom();
-			if ( target ) {
+			if ( reload ) {
+				navigate( null );
+			} else if ( target ) {
 				navigate( target );
 			}
 		} ).catch( function ( err ) {
@@ -487,12 +496,16 @@
 		} );
 	}
 
-	// Opens a page the visitor asked for; the chat state (open, history) survives the load.
+	// Opens a page the visitor asked for, or reloads the current one when url is null; the
+	// chat state (open, history) survives the load.
 	function navigate( url ) {
-		var to = new URL( url, window.location.href );
-		var here = window.location;
-		if ( to.origin === here.origin && to.pathname === here.pathname && to.search === here.search ) {
-			return;
+		var to = null;
+		if ( url ) {
+			to = new URL( url, window.location.href );
+			var here = window.location;
+			if ( to.origin === here.origin && to.pathname === here.pathname && to.search === here.search ) {
+				return;
+			}
 		}
 		busy = true;
 		input.disabled = true;
@@ -501,7 +514,11 @@
 			attachBtn.disabled = true;
 		}
 		window.setTimeout( function () {
-			window.location.assign( to.href );
+			if ( to ) {
+				window.location.assign( to.href );
+			} else {
+				window.location.reload();
+			}
 		}, NAVIGATE_DELAY );
 	}
 

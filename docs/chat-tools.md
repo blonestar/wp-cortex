@@ -183,7 +183,7 @@ Both contexts:
 
 `AdminContext`: `screen()`, `is_frontend()`, `post_id()`, `user_id()`, `admin_pages()`, `tabs()`, `editor()` (the post open in the block editor as it is in the editor, sanitized by `EditorState`: `title`, `excerpt`, `slug`, `terms`, `seo`, `blocks`, `fields`; null on other screens), `skills()`, `is_known_post()`, `add_known_posts()`, `navigate( array( 'url', 'title', ... ) )`, `add_action()`. Responses of every admin tool are scanned for posts (`results`, `groups`, or a single `id` with a `title`), so posts a custom tool returns can be cited as `#ID` cards and opened with `open_post`.
 
-`PublicContext`: `chat_id()`, `post_id()`, `page_url()`, `image_name()`, `current()`, `post_types()`, `get_public_document()`, `public_authors()`, `remember( $id, $title, $url, $snippet )` (lets the answer link the page as `[label](#ID)`), `navigate( $id, $title, $url )`.
+`PublicContext`: `chat_id()`, `post_id()`, `page_url()`, `image_name()`, `current()`, `post_types()`, `get_public_document()`, `public_authors()`, `remember( $id, $title, $url, $snippet )` (lets the answer link the page as `[label](#ID)`), `navigate( $id, $title, $url )`, `reload()` (reloads the page the visitor is on).
 
 ## Editor tools
 
