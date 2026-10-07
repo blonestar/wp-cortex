@@ -36,6 +36,16 @@ final class AbilityTool extends AbstractTool {
 	public const INPUT_ARGUMENT = 'input';
 
 	/**
+	 * Schema keywords whose value is a map of subschemas (a JSON object, also when empty).
+	 */
+	private const SCHEMA_MAPS = array( 'properties', 'patternProperties', 'definitions', '$defs', 'dependencies' );
+
+	/**
+	 * Schema keywords whose value is a list of subschemas.
+	 */
+	private const SCHEMA_LISTS = array( 'anyOf', 'oneOf', 'allOf' );
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string   $ability      Ability name, for example "wp-cortex/search-content".
@@ -137,7 +147,7 @@ final class AbilityTool extends AbstractTool {
 			return null;
 		}
 
-		$schema = wp_prepare_json_schema_for_client( $schema );
+		$schema = self::client_schema( wp_prepare_json_schema_for_client( $schema ) );
 		$types  = self::schema_types( $schema );
 
 		if ( ! $types || array( 'null' ) === $types ) {
@@ -145,6 +155,11 @@ final class AbilityTool extends AbstractTool {
 		}
 
 		if ( in_array( 'object', $types, true ) ) {
+			// An object that accepts no properties at all is an ability without input.
+			if ( ! isset( $schema['properties'] ) && false === ( $schema['additionalProperties'] ?? true ) ) {
+				return null;
+			}
+
 			$schema['type'] = 'object';
 
 			return $schema;
@@ -178,6 +193,66 @@ final class AbilityTool extends AbstractTool {
 		}
 
 		return $args[ self::INPUT_ARGUMENT ] ?? null;
+	}
+
+	/**
+	 * Fixes what PHP arrays cannot express in JSON: an empty "properties" (or another map
+	 * of subschemas) is encoded as [] instead of {}, which providers reject. Empty maps
+	 * are dropped, in every subschema.
+	 *
+	 * @param array $schema Schema.
+	 * @return array
+	 */
+	private static function client_schema( array $schema ): array {
+		foreach ( self::SCHEMA_MAPS as $keyword ) {
+			if ( ! array_key_exists( $keyword, $schema ) ) {
+				continue;
+			}
+
+			if ( ! is_array( $schema[ $keyword ] ) || ! $schema[ $keyword ] ) {
+				unset( $schema[ $keyword ] );
+				continue;
+			}
+
+			foreach ( $schema[ $keyword ] as $name => $subschema ) {
+				if ( is_array( $subschema ) ) {
+					$schema[ $keyword ][ $name ] = self::client_schema( $subschema );
+				}
+			}
+		}
+
+		foreach ( self::SCHEMA_LISTS as $keyword ) {
+			if ( isset( $schema[ $keyword ] ) && is_array( $schema[ $keyword ] ) ) {
+				$schema[ $keyword ] = array_map(
+					static function ( $subschema ) {
+						return is_array( $subschema ) ? self::client_schema( $subschema ) : $subschema;
+					},
+					$schema[ $keyword ]
+				);
+			}
+		}
+
+		foreach ( array( 'items', 'additionalProperties', 'not' ) as $keyword ) {
+			if ( ! isset( $schema[ $keyword ] ) || ! is_array( $schema[ $keyword ] ) ) {
+				continue;
+			}
+
+			if ( ! $schema[ $keyword ] ) {
+				// An empty schema allows anything.
+				$schema[ $keyword ] = (object) array();
+			} elseif ( wp_is_numeric_array( $schema[ $keyword ] ) ) {
+				$schema[ $keyword ] = array_map(
+					static function ( $subschema ) {
+						return is_array( $subschema ) ? self::client_schema( $subschema ) : $subschema;
+					},
+					$schema[ $keyword ]
+				);
+			} else {
+				$schema[ $keyword ] = self::client_schema( $schema[ $keyword ] );
+			}
+		}
+
+		return $schema;
 	}
 
 	/**
