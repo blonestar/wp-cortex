@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-07
+
 ### Added
 
 - Visitor chat `go_to_page` can reload the page the visitor is on (new `reload` argument), for example when the visitor asks to refresh a page that did not load correctly. It only reloads the current page, only after the visitor asks or confirms, and the chat stays open. The Visitor chats screen shows it as "Page reloaded".

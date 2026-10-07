@@ -2,7 +2,7 @@
 
 WP Cortex is a memory layer for WordPress. It indexes site content into a local SQLite store (structured fields, FTS5 full-text search and vector embeddings) so that AI search and chat features can be built on top of it. Everything is stored locally; the only external call is the optional OpenAI embeddings request.
 
-- Version: 0.10.2
+- Version: 0.10.3
 - Author: Bojan
 - License: GPL-2.0-or-later
 
