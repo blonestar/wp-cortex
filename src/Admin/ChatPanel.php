@@ -7,6 +7,7 @@
 
 namespace WPCortex\Admin;
 
+use WPCortex\Chat\Tools\Admin\EditorState;
 use WPCortex\Plugin;
 use WPCortex\Settings;
 
@@ -55,8 +56,9 @@ final class ChatPanel {
 			return;
 		}
 
-		$screen  = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
-		$post_id = 0;
+		$screen     = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		$post_id    = 0;
+		$taxonomies = array();
 
 		if ( $screen && 'post' === $screen->base ) {
 			global $post;
@@ -66,13 +68,20 @@ final class ChatPanel {
 			} elseif ( isset( $_GET['post'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 				$post_id = absint( wp_unslash( $_GET['post'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			}
+
+			// REST fields of the taxonomies the editor tools can assign.
+			if ( $post_id > 0 && $screen->is_block_editor() ) {
+				$taxonomies = array_values( wp_list_pluck( EditorState::taxonomies( (string) get_post_type( $post_id ) ), 'rest_base' ) );
+			}
 		}
 
 		self::enqueue_assets(
 			array(
-				'screen'     => $screen ? (string) $screen->id : '',
-				'postId'     => $post_id,
-				'adminPages' => self::admin_pages(),
+				'screen'           => $screen ? (string) $screen->id : '',
+				'postId'           => $post_id,
+				'adminPages'       => self::admin_pages(),
+				'editorTaxonomies' => $taxonomies,
+				'editorSeo'        => EditorState::has_seo(),
 			)
 		);
 	}

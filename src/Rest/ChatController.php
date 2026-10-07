@@ -12,6 +12,7 @@ use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\ConversationStore;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\SkillStore;
+use WPCortex\Chat\Tools\Admin\EditorState;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -60,6 +61,7 @@ final class ChatController {
 					'maxItems' => AdminPages::MAX_TABS,
 					'items'    => array( 'type' => 'string' ),
 				),
+				'editor'      => array( 'type' => 'object' ),
 			),
 		);
 
@@ -337,17 +339,20 @@ final class ChatController {
 	 * Sanitized screen context sent by the chat panel.
 	 *
 	 * @param WP_REST_Request $request Request.
-	 * @return array{screen: string, post_id: int, admin_pages: array, tabs: array}
+	 * @return array{screen: string, post_id: int, admin_pages: array, tabs: array, editor: array|null}
 	 */
 	private function screen_context( WP_REST_Request $request ): array {
 		$context = $request->get_param( 'context' );
 		$context = is_array( $context ) ? $context : array();
+		$post_id = absint( $context['post_id'] ?? 0 );
 
 		return array(
 			'screen'      => sanitize_text_field( (string) ( $context['screen'] ?? '' ) ),
-			'post_id'     => absint( $context['post_id'] ?? 0 ),
+			'post_id'     => $post_id,
 			'admin_pages' => AdminPages::sanitize( $context['admin_pages'] ?? array() ),
 			'tabs'        => AdminPages::sanitize_tabs( $context['tabs'] ?? array() ),
+			// Fields of the post open in the block editor, only reported on its edit screen.
+			'editor'      => EditorState::sanitize( $context['editor'] ?? null, $post_id ),
 		);
 	}
 

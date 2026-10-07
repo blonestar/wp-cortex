@@ -13,6 +13,11 @@ use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\UserMessage;
 use WPCortex\Chat\Tools\Admin\AbilityTool;
 use WPCortex\Chat\Tools\Admin\AdminContext;
+use WPCortex\Chat\Tools\Admin\EditContent;
+use WPCortex\Chat\Tools\Admin\EditFields;
+use WPCortex\Chat\Tools\Admin\EditPost;
+use WPCortex\Chat\Tools\Admin\EditSeo;
+use WPCortex\Chat\Tools\Admin\GetEditorContent;
 use WPCortex\Chat\Tools\Admin\OpenAdminPage;
 use WPCortex\Chat\Tools\Admin\OpenPost;
 use WPCortex\Chat\Tools\Admin\ProposeSkill;
@@ -436,6 +441,11 @@ final class ChatAgent {
 			new OpenPost(),
 			new OpenAdminPage(),
 			new SelectTab(),
+			new EditPost(),
+			new EditSeo(),
+			new EditFields(),
+			new GetEditorContent(),
+			new EditContent(),
 			new ProposeSkill(),
 			new UseSkill(),
 		);

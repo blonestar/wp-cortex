@@ -4,7 +4,7 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 | Chat | Built-in tools | Classes | Theme folder | Filter |
 |---|---|---|---|---|
-| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
+| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
 | Visitor | `search_site`, `get_page`, `go_to_page`, `save_contact_details`, `report_issue` | `src/Chat/Tools/Public/` | `wp-cortex/tools/public/` | `wp_cortex_public_chat_tools` |
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
@@ -181,9 +181,23 @@ Both contexts:
 - `search()`: `SearchService` over the index of the scope (`search()`, `get_document()`, `find_authors()`, ...).
 - `set_item( $key, $item )`: a transcript item shown after the answer, for example `array( 'role' => 'notice', 'text' => '...' )`. A later item with the same key replaces the earlier one.
 
-`AdminContext`: `screen()`, `is_frontend()`, `post_id()`, `user_id()`, `admin_pages()`, `tabs()`, `skills()`, `is_known_post()`, `add_known_posts()`, `navigate( array( 'url', 'title', ... ) )`, `add_action()`. Responses of every admin tool are scanned for posts (`results`, `groups`, or a single `id` with a `title`), so posts a custom tool returns can be cited as `#ID` cards and opened with `open_post`.
+`AdminContext`: `screen()`, `is_frontend()`, `post_id()`, `user_id()`, `admin_pages()`, `tabs()`, `editor()` (the post open in the block editor as it is in the editor, sanitized by `EditorState`: `title`, `excerpt`, `slug`, `terms`, `seo`, `blocks`, `fields`; null on other screens), `skills()`, `is_known_post()`, `add_known_posts()`, `navigate( array( 'url', 'title', ... ) )`, `add_action()`. Responses of every admin tool are scanned for posts (`results`, `groups`, or a single `id` with a `title`), so posts a custom tool returns can be cited as `#ID` cards and opened with `open_post`.
 
 `PublicContext`: `chat_id()`, `post_id()`, `page_url()`, `image_name()`, `current()`, `post_types()`, `get_public_document()`, `public_authors()`, `remember( $id, $title, $url, $snippet )` (lets the answer link the page as `[label](#ID)`), `navigate( $id, $title, $url )`.
+
+## Editor tools
+
+While the block editor of a post is open, the chat panel sends the post as it is in the editor (including unsaved changes) with every message: title, excerpt, slug, term IDs of the taxonomies the user can assign, the Yoast SEO title, meta description and focus keyphrase (when Yoast SEO is active), the blocks (client ID, block name, depth and the inline HTML of text blocks) and the ACF fields of a simple type. `EditorState::sanitize()` cleans it (and drops it when the user cannot edit the post); ACF field types, labels and choices come from ACF, and only top-level fields of the field groups shown for the post are kept.
+
+| Tool | Changes |
+|---|---|
+| `edit_post` | title, excerpt, slug, terms (existing terms only, by name; the list replaces the current terms of that taxonomy) |
+| `edit_seo` | Yoast SEO title, meta description, focus keyphrase (only with Yoast SEO) |
+| `edit_fields` | ACF fields: text, textarea, number, email, URL, select, radio, true/false, range (by field key) |
+| `get_editor_content` | nothing: returns the blocks in pages of about 10,000 characters |
+| `edit_content` | `replace` the text of a paragraph, heading, list item, preformatted, verse or button block (inline HTML), `insert_before` / `insert_after` HTML (converted to blocks by the editor), `remove` a block |
+
+The editor tools never write to the database. They only validate the change and add a UI action (`edit_post`, `edit_seo`, `edit_fields`, `edit_content`); `assets/js/chat.js` applies it in the editor (`core/editor` `editPost()`, the Yoast SEO store, the ACF JS API, `core/block-editor`), so the post is marked as changed and the user saves it or undoes the change. They need no confirmation card for that reason. The block text attributes (`EditorState::TEXT_BLOCKS`) and ACF field types (`EditorState::FIELD_TYPES`) are listed in both files and must be kept in sync.
 
 ## Abilities of other plugins
 

@@ -437,7 +437,339 @@
 	}
 
 	function screenContext() {
-		return { screen: cfg.screen || '', post_id: cfg.postId || 0, admin_pages: cfg.adminPages || [], tabs: collectTabs() };
+		var context = { screen: cfg.screen || '', post_id: cfg.postId || 0, admin_pages: cfg.adminPages || [], tabs: collectTabs() };
+		var editor = blockEditor();
+		if ( editor ) {
+			context.editor = editorState( editor );
+		}
+		return context;
+	}
+
+	/* ---------- Block editor ---------- */
+
+	// Blocks whose text the assistant can replace, with the attribute that holds it
+	// (EditorState::TEXT_BLOCKS), and the ACF field types it can change (EditorState::FIELD_TYPES).
+	var BLOCK_TEXT = {
+		'core/paragraph': 'content',
+		'core/heading': 'content',
+		'core/list-item': 'content',
+		'core/preformatted': 'content',
+		'core/verse': 'content',
+		'core/button': 'text'
+	};
+	var ACF_TYPES = [ 'text', 'textarea', 'number', 'email', 'url', 'select', 'radio', 'true_false', 'range' ];
+	var MAX_BLOCKS = 300;
+	var MAX_FIELDS = 80;
+
+	// The block editor of the current post, or null on other screens.
+	function blockEditor() {
+		var data = window.wp && window.wp.data;
+		if ( ! cfg.postId || ! data || 'function' !== typeof data.select ) {
+			return null;
+		}
+		var select, blocks;
+		try {
+			select = data.select( 'core/editor' );
+			blocks = data.select( 'core/block-editor' );
+		} catch ( e ) {
+			return null;
+		}
+		if ( ! select || 'function' !== typeof select.getCurrentPostId || select.getCurrentPostId() !== cfg.postId ) {
+			return null;
+		}
+		return {
+			data: data,
+			select: select,
+			dispatch: data.dispatch( 'core/editor' ),
+			blocks: blocks && 'function' === typeof blocks.getBlocks ? blocks : null,
+			blocksDispatch: blocks ? data.dispatch( 'core/block-editor' ) : null
+		};
+	}
+
+	// The post as it is in the editor, including changes that are not saved yet.
+	function editorState( editor ) {
+		var select = editor.select;
+		var state = {
+			title: String( select.getEditedPostAttribute( 'title' ) || '' ),
+			excerpt: String( select.getEditedPostAttribute( 'excerpt' ) || '' ),
+			slug: String( select.getEditedPostAttribute( 'slug' ) || '' ),
+			terms: {},
+			fields: acfFields().map( function ( field ) {
+				return { key: field.get( 'key' ), value: acfValue( field ) };
+			} )
+		};
+		( cfg.editorTaxonomies || [] ).forEach( function ( base ) {
+			var ids = select.getEditedPostAttribute( base );
+			if ( Array.isArray( ids ) ) {
+				state.terms[ base ] = ids;
+			}
+		} );
+		var seo = seoStore();
+		if ( seo ) {
+			var snippet = seo.select.getSnippetEditorData() || {};
+			state.seo = {
+				title: String( snippet.title || '' ),
+				description: String( snippet.description || '' ),
+				focus_keyphrase: String( ( seo.select.getFocusKeyphrase && seo.select.getFocusKeyphrase() ) || '' )
+			};
+		}
+		if ( editor.blocks ) {
+			state.blocks = editorBlocks( editor.blocks );
+		}
+		return state;
+	}
+
+	// Blocks in document order, with their text for text blocks.
+	function editorBlocks( store ) {
+		var out = [];
+		( function walk( blocks, depth ) {
+			( blocks || [] ).forEach( function ( block ) {
+				if ( out.length >= MAX_BLOCKS ) {
+					return;
+				}
+				var row = { id: block.clientId, name: block.name, depth: depth };
+				var attr = BLOCK_TEXT[ block.name ];
+				if ( attr ) {
+					// Rich text values (RichTextData) convert to their HTML.
+					row.text = String( null === block.attributes[ attr ] || undefined === block.attributes[ attr ] ? '' : block.attributes[ attr ] );
+				}
+				if ( 'core/heading' === block.name ) {
+					row.level = block.attributes.level || 2;
+				}
+				out.push( row );
+				walk( block.innerBlocks, depth + 1 );
+			} );
+		}( store.getBlocks(), 0 ) );
+		return out;
+	}
+
+	// The Yoast SEO editor store, when Yoast SEO is active.
+	function seoStore() {
+		if ( ! cfg.editorSeo ) {
+			return null;
+		}
+		var select;
+		try {
+			select = window.wp.data.select( 'yoast-seo/editor' );
+		} catch ( e ) {
+			return null;
+		}
+		if ( ! select || 'function' !== typeof select.getSnippetEditorData ) {
+			return null;
+		}
+		return { select: select, dispatch: window.wp.data.dispatch( 'yoast-seo/editor' ) };
+	}
+
+	// Top-level ACF fields of the post (not in ACF blocks or hidden by conditional logic)
+	// of a type the assistant can change.
+	function acfFields() {
+		var acf = window.acf;
+		if ( ! acf || 'function' !== typeof acf.getFields ) {
+			return [];
+		}
+		var fields = [];
+		try {
+			fields = acf.getFields();
+		} catch ( e ) {
+			return [];
+		}
+		return fields.filter( function ( field ) {
+			return -1 !== ACF_TYPES.indexOf( field.get( 'type' ) ) &&
+				! field.parent() &&
+				! field.$el.closest( '.acf-block-fields, .acf-block-component, .acf-hidden' ).length;
+		} ).slice( 0, MAX_FIELDS );
+	}
+
+	function acfField( key ) {
+		return acfFields().filter( function ( field ) {
+			return field.get( 'key' ) === key;
+		} )[ 0 ] || null;
+	}
+
+	function acfValue( field ) {
+		switch ( field.get( 'type' ) ) {
+			case 'true_false':
+				return field.$el.find( 'input[type="checkbox"]' ).prop( 'checked' ) ? '1' : '0';
+			case 'radio':
+				return String( field.$el.find( 'input[type="radio"]:checked' ).val() || '' );
+			default:
+				var value = field.val();
+				return Array.isArray( value ) ? '' : String( null === value || undefined === value ? '' : value );
+		}
+	}
+
+	function setAcfValue( field, value ) {
+		switch ( field.get( 'type' ) ) {
+			case 'true_false':
+				field.$el.find( 'input[type="checkbox"]' ).prop( 'checked', '1' === value ).trigger( 'change' );
+				break;
+			case 'radio':
+				field.$el.find( 'input[type="radio"]' ).filter( function () {
+					return this.value === value;
+				} ).prop( 'checked', true ).trigger( 'change' );
+				break;
+			default:
+				// ACF triggers "change", which marks the post as changed in the editor.
+				field.val( value );
+		}
+	}
+
+	// Editor actions of a reply: edit_post, edit_seo, edit_fields, edit_content. They
+	// only change the editor; nothing is saved.
+	function applyEditorAction( action ) {
+		var editor = blockEditor();
+		if ( ! editor || editor.select.getCurrentPostId() !== action.post_id ) {
+			addMessage( 'error', __( 'The change could not be applied: the post is no longer open in the editor.', 'wp-cortex' ), false );
+			return;
+		}
+		var done = false;
+		try {
+			switch ( action.type ) {
+				case 'edit_post':
+					done = applyPostChanges( editor, action.changes || {} );
+					break;
+				case 'edit_seo':
+					done = applySeoChanges( editor, action.changes || {} );
+					break;
+				case 'edit_fields':
+					done = applyFieldChanges( action.fields || [] );
+					break;
+				case 'edit_content':
+					done = applyContentChanges( editor, action.operations || [] );
+					break;
+			}
+		} catch ( e ) {
+			done = false;
+		}
+		if ( false === done ) {
+			addMessage( 'error', __( 'The change could not be applied in the editor.', 'wp-cortex' ), false );
+			return;
+		}
+		var text = 'string' === typeof done
+			? done
+			/* translators: %s: comma-separated list of changed fields */
+			: __( 'Changed in the editor: %s. Review the changes and save the post to keep them.', 'wp-cortex' ).replace( '%s', function () {
+				return ( action.labels || [] ).join( ', ' );
+			} );
+		addMessage( 'assistant', text, false );
+	}
+
+	function applyPostChanges( editor, changes ) {
+		var edits = {};
+		[ 'title', 'excerpt', 'slug' ].forEach( function ( key ) {
+			if ( 'string' === typeof changes[ key ] ) {
+				edits[ key ] = changes[ key ];
+			}
+		} );
+		Object.keys( changes.terms || {} ).forEach( function ( base ) {
+			if ( -1 !== ( cfg.editorTaxonomies || [] ).indexOf( base ) && Array.isArray( changes.terms[ base ] ) ) {
+				edits[ base ] = changes.terms[ base ];
+			}
+		} );
+		if ( ! Object.keys( edits ).length ) {
+			return false;
+		}
+		editor.dispatch.editPost( edits );
+		return true;
+	}
+
+	function applySeoChanges( editor, changes ) {
+		var seo = seoStore();
+		if ( ! seo ) {
+			return false;
+		}
+		var data = {};
+		var meta = {};
+		var current = editor.select.getEditedPostAttribute( 'meta' ) || {};
+		// The post meta Yoast SEO registers for the editor, so the post is marked as changed.
+		var keys = { title: '_yoast_wpseo_title', description: '_yoast_wpseo_metadesc', focus_keyphrase: '_yoast_wpseo_focuskw' };
+		Object.keys( keys ).forEach( function ( key ) {
+			if ( 'string' !== typeof changes[ key ] ) {
+				return;
+			}
+			if ( 'focus_keyphrase' !== key ) {
+				data[ key ] = changes[ key ];
+			}
+			if ( Object.prototype.hasOwnProperty.call( current, keys[ key ] ) ) {
+				meta[ keys[ key ] ] = changes[ key ];
+			}
+		} );
+		if ( Object.keys( data ).length ) {
+			seo.dispatch.updateData( data );
+		}
+		if ( 'string' === typeof changes.focus_keyphrase && 'function' === typeof seo.dispatch.setFocusKeyword ) {
+			seo.dispatch.setFocusKeyword( changes.focus_keyphrase );
+		}
+		if ( Object.keys( meta ).length ) {
+			editor.dispatch.editPost( { meta: meta } );
+		}
+		return true;
+	}
+
+	function applyFieldChanges( fields ) {
+		var applied = 0;
+		fields.forEach( function ( change ) {
+			var field = acfField( change.key );
+			if ( field ) {
+				setAcfValue( field, String( change.value ) );
+				applied++;
+			}
+		} );
+		return applied > 0;
+	}
+
+	function applyContentChanges( editor, operations ) {
+		var store = editor.blocks;
+		var dispatch = editor.blocksDispatch;
+		if ( ! store || ! dispatch || ! window.wp.blocks ) {
+			return false;
+		}
+		var applied = 0;
+		var failed = 0;
+		operations.forEach( function ( op ) {
+			var id = op.block || '';
+			var name = id ? store.getBlockName( id ) : null;
+			if ( id && ! name ) {
+				failed++;
+				return;
+			}
+			if ( 'replace' === op.op ) {
+				var attrs = {};
+				if ( ! BLOCK_TEXT[ name ] ) {
+					failed++;
+					return;
+				}
+				attrs[ BLOCK_TEXT[ name ] ] = op.html;
+				dispatch.updateBlockAttributes( id, attrs );
+			} else if ( 'remove' === op.op ) {
+				dispatch.removeBlock( id, false );
+			} else {
+				var root = id ? store.getBlockRootClientId( id ) || undefined : undefined;
+				var index = id ? store.getBlockIndex( id ) + ( 'insert_after' === op.op ? 1 : 0 ) : ( 'insert_after' === op.op ? store.getBlockCount() : 0 );
+				var blocks = window.wp.blocks.rawHandler( { HTML: op.html } );
+				// New list items next to a list item: insert the items, not a nested list.
+				if ( root && 'core/list' === store.getBlockName( root ) ) {
+					blocks = [].concat.apply( [], blocks.map( function ( block ) {
+						return 'core/list' === block.name ? block.innerBlocks : [ block ];
+					} ) );
+				}
+				if ( ! blocks.length ) {
+					failed++;
+					return;
+				}
+				dispatch.insertBlocks( blocks, index, root, false );
+			}
+			applied++;
+		} );
+		if ( ! applied ) {
+			return false;
+		}
+		var text = __( 'Content changed in the editor. Review the changes and save the post to keep them.', 'wp-cortex' );
+		if ( failed ) {
+			/* translators: %d: number of changes */
+			text += ' ' + __( '%d changes could not be applied because their blocks no longer exist.', 'wp-cortex' ).replace( '%d', String( failed ) );
+		}
+		return text;
 	}
 
 	function actionStatusText( action ) {
@@ -788,6 +1120,12 @@
 
 	function handleActions( actions ) {
 		actions = actions || [];
+		actions.forEach( function ( a ) {
+			if ( a && -1 !== [ 'edit_post', 'edit_seo', 'edit_fields', 'edit_content' ].indexOf( a.type ) ) {
+				applyEditorAction( a );
+			}
+		} );
+		scrollBottom();
 		// Only one page can be opened: the last navigation wins, as on the server.
 		var nav = actions.filter( function ( a ) {
 			return a && 'navigate' === a.type && a.url;
