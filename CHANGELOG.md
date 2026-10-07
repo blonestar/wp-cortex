@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-07
+
 ### Fixed
 
 - Admin chat: allowing an ability without input (for example ACF's `acf/custom-post-types`, whose input schema is `"type": "null"`) under Settings > Chat tools broke every chat message with "Invalid schema for function ...: schema must be a JSON Schema of 'type: "object"'". Abilities without input are now offered without arguments, input schemas that also allow null (such as Akismet's `akismet/get-stats`) as plain objects, and any other input is passed through an `input` argument.
