@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-07
+
 ### Added
 
 - Chat tools can be added, changed or removed from a theme: PHP files in `wp-cortex/tools/admin/` (admin chat) and `wp-cortex/tools/public/` (visitor chat) return a new tool, the parts of a built-in tool to change (description, arguments, system prompt lines, availability or behavior) or `false` to remove it; a child theme file replaces the parent theme file with the same name. Plugins can do the same with the new `wp_cortex_admin_chat_tools` and `wp_cortex_public_chat_tools` filters. The visitor chat never accepts abilities or admin tools. See `docs/chat-tools.md`.
