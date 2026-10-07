@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-07
+
 ### Fixed
 
 - Admin chat: allowing ACF's `acf/field-groups` ability (or any ability whose input schema has an empty `properties` list) under Settings > Chat tools broke every chat message with "Invalid schema for function ...: [] is not of type 'object'". Empty property lists are no longer sent to the AI provider as `[]`, and an ability whose input accepts no properties is offered without arguments.
