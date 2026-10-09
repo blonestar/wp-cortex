@@ -13,6 +13,7 @@ use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\RateLimiter;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Chat\VisitorImages;
+use WPCortex\Leads\Attribution;
 use WPCortex\Settings;
 use WP_Error;
 use WP_REST_Request;
@@ -28,7 +29,8 @@ defined( 'ABSPATH' ) || exit;
  * The message endpoint answers from the public index only, is available only while the
  * visitor chat is enabled and is limited per client IP. While the conversation log is
  * on, each turn is appended to the conversation of the browser's session token, with the
- * visitor's image (when images are on) stored next to it, and the presence endpoint
+ * visitor's image (when images are on) and the marketing attribution the widget sends
+ * (when lead attribution is on, Leads\Attribution) stored next to it, and the presence endpoint
  * records whether that conversation's chat window is still open.
  */
 final class PublicChatController {
@@ -54,17 +56,17 @@ final class PublicChatController {
 				'callback'            => array( $this, 'message' ),
 				'permission_callback' => array( $this, 'permission' ),
 				'args'                => array(
-					'message'  => array(
+					'message'     => array(
 						'type'      => 'string',
 						'default'   => '',
 						'maxLength' => PublicChatAgent::MAX_MESSAGE_LENGTH,
 					),
-					'image'    => array(
+					'image'       => array(
 						'type'      => 'string',
 						'default'   => '',
 						'maxLength' => VisitorImages::MAX_DATA_URL,
 					),
-					'history'  => array(
+					'history'     => array(
 						'type'     => 'array',
 						'default'  => array(),
 						'maxItems' => 50,
@@ -80,20 +82,24 @@ final class PublicChatController {
 							),
 						),
 					),
-					'post_id'  => array(
+					'post_id'     => array(
 						'type'    => 'integer',
 						'default' => 0,
 						'minimum' => 0,
 					),
-					'session'  => array(
+					'session'     => array(
 						'type'    => 'string',
 						'default' => '',
 						'pattern' => '^([a-f0-9]{32})?$',
 					),
-					'page_url' => array(
+					'page_url'    => array(
 						'type'      => 'string',
 						'default'   => '',
 						'maxLength' => IssueReportStore::MAX_URL,
+					),
+					'attribution' => array(
+						'type'    => 'object',
+						'default' => array(),
 					),
 				),
 			)
@@ -204,6 +210,12 @@ final class PublicChatController {
 			}
 
 			$store->append( $chat_id, $log, $client );
+
+			$attribution = Attribution::enabled() ? Attribution::from_request( $request->get_param( 'attribution' ) ) : null;
+
+			if ( $attribution ) {
+				$store->save_attribution( $chat_id, $attribution );
+			}
 		}
 
 		// Notices are for the log: the assistant confirms in the visitor's language.

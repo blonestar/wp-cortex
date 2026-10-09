@@ -9,6 +9,8 @@ namespace WPCortex\Admin;
 
 use WPCortex\Chat\IssueReportStore;
 use WPCortex\Chat\VisitorChatStore;
+use WPCortex\Leads\Attribution;
+use WPCortex\Leads\LeadQualifier;
 use WPCortex\Plugin;
 use WPCortex\Settings;
 
@@ -22,6 +24,7 @@ final class Menu {
 	public const SLUG_SETTINGS = 'wp-cortex';
 	public const SLUG_VISITORS = 'wp-cortex-visitor-chats';
 	public const SLUG_REPORTS  = 'wp-cortex-issue-reports';
+	public const SLUG_LEADS    = 'wp-cortex-leads';
 
 	/**
 	 * Slug of the former Cortex > Indexing screen, now Settings > Indexing > Status & stats.
@@ -41,6 +44,13 @@ final class Menu {
 	 * @var string
 	 */
 	private string $visitors_hook = '';
+
+	/**
+	 * Hook suffix of the Leads screen.
+	 *
+	 * @var string
+	 */
+	private string $leads_hook = '';
 
 	/**
 	 * Hook suffix of the Issue reports screen.
@@ -86,6 +96,17 @@ final class Menu {
 			'manage_options',
 			self::SLUG_VISITORS
 		);
+
+		if ( Settings::leads_enabled() ) {
+			$this->leads_hook = (string) add_submenu_page(
+				self::SLUG_VISITORS,
+				__( 'Cortex Leads', 'wp-cortex' ),
+				self::count_label( __( 'Leads', 'wp-cortex' ), $can ? ( new VisitorChatStore() )->lead_status_counts()['new'] : 0 ),
+				'manage_options',
+				self::SLUG_LEADS,
+				array( new LeadsPage(), 'render' )
+			);
+		}
 
 		$this->reports_hook = (string) add_submenu_page(
 			self::SLUG_VISITORS,
@@ -141,8 +162,9 @@ final class Menu {
 		$is_settings = '' !== $this->settings_hook && $hook_suffix === $this->settings_hook;
 		$is_visitors = '' !== $this->visitors_hook && $hook_suffix === $this->visitors_hook;
 		$is_reports  = '' !== $this->reports_hook && $hook_suffix === $this->reports_hook;
+		$is_leads    = '' !== $this->leads_hook && $hook_suffix === $this->leads_hook;
 
-		if ( ! $is_settings && ! $is_visitors && ! $is_reports ) {
+		if ( ! $is_settings && ! $is_visitors && ! $is_reports && ! $is_leads ) {
 			return;
 		}
 
@@ -190,6 +212,34 @@ final class Menu {
 					array(
 						'forwardTo'  => (string) get_option( 'admin_email' ),
 						'reportsUrl' => admin_url( 'admin.php?page=' . self::SLUG_REPORTS ),
+						'leads'      => Settings::leads_enabled(),
+						'leadsUrl'   => admin_url( 'admin.php?page=' . self::SLUG_LEADS ),
+						'homeUrl'    => home_url( '/' ),
+						'channels'   => Attribution::channel_labels(),
+						'intents'    => LeadQualifier::intent_labels(),
+						'statuses'   => LeadsPage::status_labels(),
+						'clickIds'   => Attribution::CLICK_IDS,
+						'consents'   => Attribution::consent_labels(),
+					)
+				) . ';',
+				'before'
+			);
+		}
+
+		if ( $is_leads ) {
+			wp_enqueue_script( 'wp-cortex-leads', WP_CORTEX_URL . 'assets/js/leads.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/leads.js' ), true );
+			wp_set_script_translations( 'wp-cortex-leads', 'wp-cortex' );
+			wp_add_inline_script(
+				'wp-cortex-leads',
+				'window.wpCortexLeads = ' . wp_json_encode(
+					array(
+						'chatUrl'     => admin_url( 'admin.php?page=' . self::SLUG_VISITORS ),
+						'attribution' => (bool) Settings::get( 'leads_attribution' ),
+						'homeUrl'     => home_url( '/' ),
+						'channels'    => Attribution::channel_labels(),
+						'intents'     => LeadQualifier::intent_labels(),
+						'statuses'    => LeadsPage::status_labels(),
+						'siteName'    => sanitize_title( get_bloginfo( 'name' ) ),
 					)
 				) . ';',
 				'before'

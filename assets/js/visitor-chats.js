@@ -1,6 +1,7 @@
 /**
  * Cortex Visitor chats screen: lists stored visitor conversations, opens one with its
- * transcript and contact details, generates the AI summary, forwards it by email, saves
+ * transcript, contact details, lead status and AI rating and how the visitor found the
+ * site (attribution), generates the AI summary, forwards it by email, saves
  * the administrator note, marks conversations as read or unread and deletes them. The open conversation is kept in the URL hash
  * (#chat=ID), so the browser's back button returns to the list.
  *
@@ -61,6 +62,8 @@
 		activity: byId( 'wp-cortex-vchat-activity' ),
 		transcript: byId( 'wp-cortex-vchat-transcript' ),
 		contact: byId( 'wp-cortex-vchat-contact' ),
+		lead: byId( 'wp-cortex-vchat-lead' ),
+		attribution: byId( 'wp-cortex-vchat-attribution' ),
 		noteForm: byId( 'wp-cortex-vchat-note-form' ),
 		note: byId( 'wp-cortex-vchat-note' ),
 		summarize: byId( 'wp-cortex-vchat-summarize' ),
@@ -356,6 +359,9 @@
 		}
 		if ( chat.ip ) {
 			meta.appendChild( document.createTextNode( ' · IP ' + chat.ip ) );
+		}
+		if ( cfg.leads && chat.channel ) {
+			meta.appendChild( document.createTextNode( ' · ' + channelLabel( chat.channel ) + ( chat.campaign ? ': ' + chat.campaign : '' ) ) );
 		}
 		main.appendChild( meta );
 		if ( chat.admin_note ) {
@@ -673,6 +679,182 @@
 		} );
 	}
 
+	/* ---------- Lead and attribution ---------- */
+
+	function channelLabel( channel ) {
+		var labels = cfg.channels || {};
+		return labels[ channel ] || channel || labels[ '' ] || '';
+	}
+
+	function addRow( dl, label, value ) {
+		if ( ! value ) {
+			return;
+		}
+		dl.appendChild( el( 'dt', '', label ) );
+		var dd = el( 'dd' );
+		if ( value instanceof Node ) {
+			dd.appendChild( value );
+		} else {
+			dd.textContent = value;
+		}
+		dl.appendChild( dd );
+	}
+
+	function renderLead( chat ) {
+		if ( ! els.lead ) {
+			return;
+		}
+		els.lead.innerHTML = '';
+		if ( ! chat.lead_at ) {
+			els.lead.appendChild( el( 'p', 'wp-cortex-muted', __( 'Not a lead: the visitor has not left a way to reach them.', 'wp-cortex' ) ) );
+			return;
+		}
+		var q = chat.qualification || {};
+		var dl = el( 'dl' );
+		var select = el( 'select', 'wp-cortex-lead-status is-' + chat.lead_status );
+		select.setAttribute( 'aria-label', __( 'Lead status', 'wp-cortex' ) );
+		Object.keys( cfg.statuses || {} ).forEach( function ( key ) {
+			var o = el( 'option', '', cfg.statuses[ key ] );
+			o.value = key;
+			o.selected = key === chat.lead_status;
+			select.appendChild( o );
+		} );
+		select.addEventListener( 'change', function () {
+			update( { lead_status: select.value }, __( 'Lead status saved.', 'wp-cortex' ) );
+		} );
+		addRow( dl, __( 'Status', 'wp-cortex' ), select );
+		addRow( dl, __( 'Lead since', 'wp-cortex' ), fmtDate( chat.lead_at ) );
+		if ( chat.lead_rating ) {
+			var labels = { hot: __( 'Hot', 'wp-cortex' ), warm: __( 'Warm', 'wp-cortex' ), cold: __( 'Cold', 'wp-cortex' ) };
+			var badge = el( 'span', 'wp-cortex-rating is-' + chat.lead_rating );
+			badge.appendChild( el( 'span', 'wp-cortex-rating-dot' ) );
+			badge.appendChild( document.createTextNode( sprintf( __( '%1$s · score %2$d', 'wp-cortex' ), labels[ chat.lead_rating ], chat.lead_score ) ) );
+			addRow( dl, __( 'AI rating', 'wp-cortex' ), badge );
+			addRow( dl, __( 'Intent', 'wp-cortex' ), ( cfg.intents || {} )[ chat.lead_intent ] || chat.lead_intent );
+			addRow( dl, __( 'Interest', 'wp-cortex' ), q.interest );
+			addRow( dl, __( 'Company', 'wp-cortex' ), q.company );
+			addRow( dl, __( 'Role', 'wp-cortex' ), q.role );
+			addRow( dl, __( 'Budget', 'wp-cortex' ), q.budget );
+			addRow( dl, __( 'Timeline', 'wp-cortex' ), q.timeline );
+			addRow( dl, __( 'Next step', 'wp-cortex' ), q.next_step );
+			addRow( dl, __( 'Why', 'wp-cortex' ), q.reason );
+		}
+		els.lead.appendChild( dl );
+		if ( chat.qualification_stale ) {
+			els.lead.appendChild( el( 'p', 'wp-cortex-vchat-forward-hint is-stale', __( 'The conversation continued after the rating: rate it again.', 'wp-cortex' ) ) );
+		}
+		var actions = el( 'p', 'wp-cortex-actions' );
+		var rate = el( 'button', 'button', chat.lead_rating ? __( 'Rate again', 'wp-cortex' ) : __( 'Rate with AI', 'wp-cortex' ) );
+		rate.type = 'button';
+		rate.addEventListener( 'click', function () {
+			var id = current.id;
+			rate.disabled = true;
+			rate.textContent = __( 'Rating…', 'wp-cortex' );
+			pending++;
+			apiFetch( { path: '/wp-cortex/v1/leads/' + id + '/rate', method: 'POST' } ).then( function ( res ) {
+				if ( current && current.id === id ) {
+					current = res;
+					renderDetail();
+				}
+			} ).catch( function ( err ) {
+				fail( err );
+				if ( current && current.id === id ) {
+					renderLead( current );
+				}
+			} ).then( function () {
+				pending--;
+			} );
+		} );
+		actions.appendChild( rate );
+		if ( cfg.leadsUrl ) {
+			actions.appendChild( link( __( 'All leads', 'wp-cortex' ), cfg.leadsUrl ) );
+		}
+		els.lead.appendChild( actions );
+	}
+
+	// One visit: channel, source / medium, campaign parameters, ad clicks, landing page, referrer.
+	function touchRows( dl, touch ) {
+		var p = touch.params || {};
+		addRow( dl, __( 'Date', 'wp-cortex' ), fmtDate( touch.at ) );
+		addRow( dl, __( 'Channel', 'wp-cortex' ), channelLabel( touch.channel ) );
+		addRow( dl, __( 'Source / medium', 'wp-cortex' ), touch.source ? touch.source + ' / ' + touch.medium : '' );
+		addRow( dl, __( 'Campaign', 'wp-cortex' ), p.utm_campaign );
+		addRow( dl, __( 'Campaign ID', 'wp-cortex' ), p.utm_id );
+		addRow( dl, __( 'Term', 'wp-cortex' ), p.utm_term );
+		addRow( dl, __( 'Content', 'wp-cortex' ), p.utm_content );
+		var clicks = Object.keys( cfg.clickIds || {} ).filter( function ( key ) {
+			return p[ key ];
+		} );
+		if ( clicks.length ) {
+			clicks.forEach( function ( key ) {
+				addRow( dl, sprintf( __( 'Ad click: %s', 'wp-cortex' ), cfg.clickIds[ key ] ), key + ' = ' + p[ key ] );
+			} );
+		}
+		Object.keys( p ).filter( function ( key ) {
+			return 0 !== key.indexOf( 'utm_' ) && ! ( cfg.clickIds || {} )[ key ];
+		} ).forEach( function ( key ) {
+			addRow( dl, key, p[ key ] );
+		} );
+		addRow( dl, __( 'Landing page', 'wp-cortex' ), touch.landing );
+		addRow( dl, __( 'Referrer', 'wp-cortex' ), touch.referrer ? link( touch.referrer.replace( /^https?:\/\//, '' ), touch.referrer ) : '' );
+	}
+
+	function renderAttribution( chat ) {
+		if ( ! els.attribution ) {
+			return;
+		}
+		var a = chat.attribution || {};
+		els.attribution.innerHTML = '';
+		if ( ! a.last ) {
+			els.attribution.appendChild( el( 'p', 'wp-cortex-muted', __( 'Not recorded: the conversation started before attribution was turned on, or it is off.', 'wp-cortex' ) ) );
+			return;
+		}
+		var sameVisit = ! a.first || a.first.at === a.last.at;
+		els.attribution.appendChild( el( 'h3', '', sameVisit ? __( 'Visit that led to the chat (also the first visit)', 'wp-cortex' ) : __( 'Visit that led to the chat', 'wp-cortex' ) ) );
+		var last = el( 'dl' );
+		touchRows( last, a.last );
+		els.attribution.appendChild( last );
+		if ( ! sameVisit ) {
+			els.attribution.appendChild( el( 'h3', '', __( 'First visit', 'wp-cortex' ) ) );
+			var first = el( 'dl' );
+			touchRows( first, a.first );
+			els.attribution.appendChild( first );
+		}
+
+		var more = el( 'dl' );
+		if ( a.visits ) {
+			addRow( more, __( 'Visits', 'wp-cortex' ), String( a.visits ) );
+		}
+		if ( chat.lead_at && a.first && a.first.at ) {
+			var days = Math.max( 0, Math.round( ( toTime( chat.lead_at ) - toTime( a.first.at ) ) / 86400000 ) );
+			addRow( more, __( 'First visit to lead', 'wp-cortex' ), sprintf( _n( '%d day', '%d days', days, 'wp-cortex' ), days ) );
+		}
+		var d = a.device || {};
+		var types = { mobile: __( 'Mobile', 'wp-cortex' ), tablet: __( 'Tablet', 'wp-cortex' ), desktop: __( 'Desktop', 'wp-cortex' ), bot: __( 'Bot', 'wp-cortex' ) };
+		addRow( more, __( 'Device', 'wp-cortex' ), [ types[ d.type ] || d.type, d.browser, d.os ].filter( Boolean ).join( ' · ' ) );
+		addRow( more, __( 'Screen', 'wp-cortex' ), d.screen );
+		addRow( more, __( 'Language', 'wp-cortex' ), d.language );
+		addRow( more, __( 'Time zone', 'wp-cortex' ), d.timezone );
+		addRow( more, __( 'Country', 'wp-cortex' ), d.country );
+		addRow( more, __( 'Consent manager', 'wp-cortex' ), a.consent ? ( cfg.consents || {} )[ a.consent ] || a.consent : '' );
+		if ( more.childNodes.length ) {
+			els.attribution.appendChild( el( 'h3', '', __( 'Visitor', 'wp-cortex' ) ) );
+			els.attribution.appendChild( more );
+		}
+
+		if ( ( a.pages || [] ).length ) {
+			els.attribution.appendChild( el( 'h3', '', __( 'Pages viewed', 'wp-cortex' ) ) );
+			var ol = el( 'ol', 'wp-cortex-journey' );
+			a.pages.forEach( function ( page ) {
+				var li = el( 'li' );
+				li.appendChild( link( page.title || page.path, ( cfg.homeUrl || '' ).replace( /\/$/, '' ) + page.path ) );
+				li.appendChild( el( 'span', 'wp-cortex-vchat-time', page.path + ' · ' + fmtDate( page.at ) ) );
+				ol.appendChild( li );
+			} );
+			els.attribution.appendChild( ol );
+		}
+	}
+
 	function renderSummary( chat ) {
 		els.summaryText.innerHTML = chat.summary ? window.wpCortexMarkdown.render( chat.summary ) : '';
 		els.summarize.textContent = chat.summary ? __( 'Refresh summary', 'wp-cortex' ) : __( 'Summarize', 'wp-cortex' );
@@ -832,6 +1014,8 @@
 		}
 
 		renderContact( chat );
+		renderLead( chat );
+		renderAttribution( chat );
 		renderSummary( chat );
 		renderVisitedPages( chat );
 		renderForwarded( chat );
@@ -915,7 +1099,7 @@
 
 	// What a refresh must re-render for; everything else only updates the relative times.
 	function signature( chat ) {
-		return [ chat.updated_at, chat.seen_at, chat.chat_open, chat.activity, chat.is_read, chat.forwarded_at, chat.summary_at ].join( '|' );
+		return [ chat.updated_at, chat.seen_at, chat.chat_open, chat.activity, chat.is_read, chat.forwarded_at, chat.summary_at, chat.qualified_at, chat.lead_status ].join( '|' );
 	}
 
 	function refreshDetail() {

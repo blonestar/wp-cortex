@@ -123,6 +123,16 @@ final class VisitorChatsPage {
 							<h2><?php esc_html_e( 'Contact details', 'wp-cortex' ); ?></h2>
 							<div id="wp-cortex-vchat-contact"></div>
 						</div>
+						<?php if ( Settings::leads_enabled() ) : ?>
+							<div class="wp-cortex-card wp-cortex-vchat-lead">
+								<h2><?php esc_html_e( 'Lead', 'wp-cortex' ); ?></h2>
+								<div id="wp-cortex-vchat-lead"></div>
+							</div>
+							<div class="wp-cortex-card wp-cortex-vchat-attribution">
+								<h2><?php esc_html_e( 'How the visitor found the site', 'wp-cortex' ); ?></h2>
+								<div id="wp-cortex-vchat-attribution"></div>
+							</div>
+						<?php endif; ?>
 						<form class="wp-cortex-card" id="wp-cortex-vchat-forward-form">
 							<h2><label for="wp-cortex-vchat-forward-to"><?php esc_html_e( 'Forward by email', 'wp-cortex' ); ?></label></h2>
 							<p class="wp-cortex-vchat-forward-hint is-stale" id="wp-cortex-vchat-forward-warning" hidden></p>

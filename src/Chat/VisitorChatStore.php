@@ -7,22 +7,26 @@
 
 namespace WPCortex\Chat;
 
+use WPCortex\Leads\Attribution;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Stores visitor chat conversations, the contact details visitors leave, the client IP,
- * the AI summary, the visitor's presence and the administrator's read state, note and
- * forwarding in a custom MySQL table. Attached images are files (VisitorImages)
+ * the marketing attribution (Leads\Attribution), the AI summary and lead rating, the
+ * visitor's presence and the administrator's read state, note, lead status and
+ * forwarding in a custom MySQL table. A conversation becomes a lead when the visitor
+ * leaves contact details (lead_at). Attached images are files (VisitorImages)
  * referenced by name in the transcript and deleted with their conversation.
  *
  * A conversation is identified by a random session token generated in the browser;
  * only its SHA-256 hash is stored. The visitor chat only appends to its own
- * conversation, saves its contact details and reports whether the chat is open
- * (touch()): it never reads stored conversations.
+ * conversation, saves its contact details and attribution and reports whether the chat
+ * is open (touch()): it never reads stored conversations.
  */
 final class VisitorChatStore {
 
-	public const DB_VERSION        = '4';
+	public const DB_VERSION        = '6';
 	public const DB_VERSION_OPTION = 'wp_cortex_visitor_chats_db_version';
 	public const TABLE_SUFFIX      = 'wp_cortex_visitor_chats';
 	public const PURGE_HOOK        = 'wp_cortex_purge_visitor_chats';
@@ -66,8 +70,35 @@ final class VisitorChatStore {
 	public const FILTER_CONTACT = 'contact';
 
 	/**
+	 * Lead statuses, in pipeline order. A conversation gets "new" when it becomes a lead.
+	 */
+	public const LEAD_STATUSES = array( 'new', 'contacted', 'qualified', 'won', 'lost', 'spam' );
+
+	/**
+	 * Lead ratings from the AI qualification.
+	 */
+	public const LEAD_RATINGS = array( 'hot', 'warm', 'cold' );
+
+	/**
+	 * Columns the leads list can be sorted by (request value => SQL).
+	 */
+	private const LEAD_ORDER = array(
+		'lead_at'  => 'lead_at',
+		'score'    => 'lead_score',
+		'channel'  => 'channel',
+		'campaign' => 'campaign',
+		'status'   => 'lead_status',
+	);
+
+	/**
 	 * Contact fields and their maximum lengths.
 	 */
+	/**
+	 * Contact fields through which the visitor can be reached; one of them makes the
+	 * conversation a lead (a website usually has a contact page).
+	 */
+	public const REACH_FIELDS = array( 'email', 'phone', 'address', 'website' );
+
 	public const CONTACT_FIELDS = array(
 		'first_name' => 100,
 		'last_name'  => 100,
@@ -96,8 +127,9 @@ final class VisitorChatStore {
 
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
-		$table   = self::table();
-		$charset = $wpdb->get_charset_collate();
+		$table    = self::table();
+		$charset  = $wpdb->get_charset_collate();
+		$previous = (string) get_option( self::DB_VERSION_OPTION, '' );
 
 		dbDelta(
 			"CREATE TABLE {$table} (
@@ -119,15 +151,63 @@ final class VisitorChatStore {
 			forwarded_at datetime DEFAULT NULL,
 			seen_at datetime DEFAULT NULL,
 			chat_open tinyint(1) NOT NULL DEFAULT 0,
+			attribution text NOT NULL,
+			channel varchar(32) NOT NULL DEFAULT '',
+			first_channel varchar(32) NOT NULL DEFAULT '',
+			source varchar(191) NOT NULL DEFAULT '',
+			medium varchar(191) NOT NULL DEFAULT '',
+			campaign varchar(191) NOT NULL DEFAULT '',
+			referrer_host varchar(191) NOT NULL DEFAULT '',
+			landing_path varchar(191) NOT NULL DEFAULT '',
+			first_seen datetime DEFAULT NULL,
+			visits int(10) unsigned NOT NULL DEFAULT 0,
+			lead_at datetime DEFAULT NULL,
+			lead_status varchar(20) NOT NULL DEFAULT '',
+			lead_rating varchar(10) NOT NULL DEFAULT '',
+			lead_score tinyint(3) unsigned NOT NULL DEFAULT 0,
+			lead_intent varchar(32) NOT NULL DEFAULT '',
+			qualification text NOT NULL,
+			qualified_at datetime DEFAULT NULL,
 			created_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			updated_at datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
 			PRIMARY KEY  (id),
 			UNIQUE KEY session_hash (session_hash),
-			KEY updated_at (updated_at)
+			KEY updated_at (updated_at),
+			KEY created_at (created_at),
+			KEY lead_at (lead_at),
+			KEY channel (channel)
 		) {$charset};"
 		);
 
+		// Version 6: conversations through which the visitor can be reached are leads, and
+		// only those (version 5 also counted a name alone).
+		if ( $previous && version_compare( $previous, '6', '<' ) ) {
+			self::recount_leads();
+		}
+
 		update_option( self::DB_VERSION_OPTION, self::DB_VERSION, false );
+	}
+
+	/**
+	 * Makes the conversations through which the visitor can be reached leads (status New,
+	 * since their last activity) and removes the lead data of the others.
+	 */
+	private static function recount_leads(): void {
+		global $wpdb;
+
+		$table = self::table();
+		$rows  = $wpdb->get_results( "SELECT id, contact, lead_at FROM {$table} WHERE has_contact = 1 OR lead_at IS NOT NULL", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		foreach ( (array) $rows as $row ) {
+			$contact = json_decode( (string) $row['contact'], true );
+			$reached = self::can_be_reached( is_array( $contact ) ? $contact : array() );
+
+			if ( $reached && empty( $row['lead_at'] ) ) {
+				$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET lead_at = updated_at, lead_status = 'new' WHERE id = %d", $row['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			} elseif ( ! $reached && ! empty( $row['lead_at'] ) ) {
+				$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET lead_at = NULL, lead_status = '', lead_rating = '', lead_score = 0, lead_intent = '', qualification = '', qualified_at = NULL WHERE id = %d", $row['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			}
+		}
 	}
 
 	/**
@@ -167,7 +247,7 @@ final class VisitorChatStore {
 		$now   = current_time( 'mysql', true );
 
 		// INSERT IGNORE: two concurrent first messages of one session share a row.
-		$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$table} (session_hash, post_id, transcript, search_text, contact, admin_note, summary, created_at, updated_at) VALUES (%s, %d, '[]', '', '{}', '', '', %s, %s)", $hash, $post_id, $now, $now ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$table} (session_hash, post_id, transcript, search_text, contact, admin_note, summary, attribution, qualification, created_at, updated_at) VALUES (%s, %d, '[]', '', '{}', '', '', '{}', '{}', %s, %s)", $hash, $post_id, $now, $now ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT id FROM {$table} WHERE session_hash = %s", $hash ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
@@ -313,6 +393,16 @@ final class VisitorChatStore {
 	}
 
 	/**
+	 * Whether contact details give a way to reach the visitor (REACH_FIELDS), which makes
+	 * the conversation a lead. A name, company or request alone does not.
+	 *
+	 * @param array $contact Contact fields.
+	 */
+	public static function can_be_reached( array $contact ): bool {
+		return (bool) array_intersect( self::REACH_FIELDS, array_keys( array_filter( $contact ) ) );
+	}
+
+	/**
 	 * Merges contact details into a conversation: non-empty values replace stored ones.
 	 *
 	 * @param int   $id      Conversation ID.
@@ -323,7 +413,7 @@ final class VisitorChatStore {
 		global $wpdb;
 
 		$table  = self::table();
-		$stored = $wpdb->get_row( $wpdb->prepare( "SELECT contact, search_text FROM {$table} WHERE id = %d", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$stored = $wpdb->get_row( $wpdb->prepare( "SELECT contact, search_text, lead_at FROM {$table} WHERE id = %d", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
 		if ( ! $stored ) {
 			return null;
@@ -331,20 +421,160 @@ final class VisitorChatStore {
 
 		$current = json_decode( (string) $stored['contact'], true );
 		$merged  = array_merge( is_array( $current ) ? $current : array(), $contact );
+		$now     = current_time( 'mysql', true );
+		$data    = array(
+			'contact'     => wp_json_encode( $merged, self::JSON_FLAGS ),
+			'search_text' => self::search_text( (string) $stored['search_text'], $contact ),
+			'has_contact' => self::has_contact_details( $merged ) ? 1 : 0,
+			'is_read'     => 0,
+			'updated_at'  => $now,
+		);
+
+		// The conversation becomes a lead the first time the visitor can be reached.
+		if ( self::can_be_reached( $merged ) && empty( $stored['lead_at'] ) ) {
+			$data['lead_at']     = $now;
+			$data['lead_status'] = 'new';
+		}
+
+		$wpdb->update( $table, $data, array( 'id' => $id ) );
+
+		return $merged;
+	}
+
+	/**
+	 * Stores the marketing attribution the widget sent with a message, merged into the
+	 * stored one (Attribution::merge(); the touches no longer change once the
+	 * conversation is a lead), with the columns used by filters and reports.
+	 *
+	 * @param int   $id          Conversation ID.
+	 * @param array $attribution Clean attribution from Attribution::from_request().
+	 */
+	public function save_attribution( int $id, array $attribution ): void {
+		global $wpdb;
+
+		$table = self::table();
+		$row   = $wpdb->get_row( $wpdb->prepare( "SELECT attribution, lead_at FROM {$table} WHERE id = %d", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		if ( ! $row ) {
+			return;
+		}
+
+		$stored = json_decode( (string) $row['attribution'], true );
+		$merged = Attribution::merge( is_array( $stored ) ? $stored : array(), $attribution, ! empty( $row['lead_at'] ) );
+		$data   = array_merge( array( 'attribution' => wp_json_encode( $merged, self::JSON_FLAGS ) ), Attribution::columns( $merged ) );
+
+		$wpdb->update( $table, $data, array( 'id' => $id ) );
+	}
+
+	/**
+	 * Stores the AI rating of a lead (LeadQualifier).
+	 *
+	 * @param int   $id     Conversation ID.
+	 * @param array $rating Clean rating: rating, score, intent and the details.
+	 */
+	public function save_qualification( int $id, array $rating ): void {
+		global $wpdb;
 
 		$wpdb->update(
-			$table,
+			self::table(),
 			array(
-				'contact'     => wp_json_encode( $merged, self::JSON_FLAGS ),
-				'search_text' => self::search_text( (string) $stored['search_text'], $contact ),
-				'has_contact' => self::has_contact_details( $merged ) ? 1 : 0,
-				'is_read'     => 0,
-				'updated_at'  => current_time( 'mysql', true ),
+				'lead_rating'   => in_array( $rating['rating'] ?? '', self::LEAD_RATINGS, true ) ? $rating['rating'] : '',
+				'lead_score'    => max( 0, min( 100, (int) ( $rating['score'] ?? 0 ) ) ),
+				'lead_intent'   => substr( sanitize_key( (string) ( $rating['intent'] ?? '' ) ), 0, 32 ),
+				'qualification' => wp_json_encode( $rating, self::JSON_FLAGS ),
+				'qualified_at'  => current_time( 'mysql', true ),
 			),
 			array( 'id' => $id )
 		);
+	}
 
-		return $merged;
+	/**
+	 * Lists leads (conversations with contact details) for the Leads screen.
+	 *
+	 * @param array $args from, to (UTC dates on lead_at, empty for none), status, rating,
+	 *                    channel, search, orderby, order, page and per_page (0 for all).
+	 * @return array{leads: array, total: int}
+	 */
+	public function query_leads( array $args ): array {
+		global $wpdb;
+
+		$table = self::table();
+		$where = $this->lead_where( $args );
+		$order = self::LEAD_ORDER[ $args['orderby'] ?? '' ] ?? 'lead_at';
+		$dir   = 'asc' === strtolower( (string) ( $args['order'] ?? '' ) ) ? 'ASC' : 'DESC';
+		$per   = (int) ( $args['per_page'] ?? 20 );
+		$limit = $per > 0 ? $wpdb->prepare( ' LIMIT %d OFFSET %d', $per, ( max( 1, (int) ( $args['page'] ?? 1 ) ) - 1 ) * $per ) : '';
+		$total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE {$where}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$rows  = $wpdb->get_results( "SELECT * FROM {$table} WHERE {$where} ORDER BY {$order} {$dir}, id DESC{$limit}", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		return array(
+			'leads' => array_map( array( self::class, 'format_summary' ), (array) $rows ),
+			'total' => $total,
+		);
+	}
+
+	/**
+	 * Number of leads per status (all time), for the pipeline filters and the menu badge.
+	 *
+	 * @return array<string, int>
+	 */
+	public function lead_status_counts(): array {
+		global $wpdb;
+
+		$table  = self::table();
+		$counts = array_fill_keys( self::LEAD_STATUSES, 0 );
+		$rows   = $wpdb->get_results( "SELECT lead_status, COUNT(*) AS n FROM {$table} WHERE lead_at IS NOT NULL GROUP BY lead_status", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
+		foreach ( (array) $rows as $row ) {
+			$status            = in_array( $row['lead_status'], self::LEAD_STATUSES, true ) ? $row['lead_status'] : 'new';
+			$counts[ $status ] += (int) $row['n'];
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Light rows of the conversations started or turned into leads since a date, for
+	 * the Leads report (Leads\LeadReport aggregates them).
+	 *
+	 * @param string $since UTC date, empty for all.
+	 * @return array<int, array<string, string>>
+	 */
+	public function report_rows( string $since ): array {
+		global $wpdb;
+
+		$table = self::table();
+		$where = '' !== $since ? $wpdb->prepare( 'WHERE created_at >= %s OR lead_at >= %s', $since, $since ) : '';
+
+		return (array) $wpdb->get_results( "SELECT id, created_at, lead_at, channel, source, medium, campaign, referrer_host, landing_path, first_seen, visits, lead_status, lead_rating, lead_score, lead_intent FROM {$table} {$where}", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+	}
+
+	/**
+	 * Consent manager the widget reported with the latest attribution, for the settings
+	 * screen: one of Attribution::CONSENT_SOURCES or "" when nothing was recorded yet.
+	 */
+	public function latest_consent_source(): string {
+		global $wpdb;
+
+		$table = self::table();
+		$json  = (string) $wpdb->get_var( "SELECT attribution FROM {$table} WHERE attribution LIKE '%\"consent\":\"%' ORDER BY id DESC LIMIT 1" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+		$data  = json_decode( $json, true );
+
+		return is_array( $data ) ? (string) ( $data['consent'] ?? '' ) : '';
+	}
+
+	/**
+	 * IDs of leads without an AI rating, newest first.
+	 *
+	 * @param int $limit Maximum number.
+	 * @return int[]
+	 */
+	public function unrated_lead_ids( int $limit ): array {
+		global $wpdb;
+
+		$table = self::table();
+
+		return array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE lead_at IS NOT NULL AND qualified_at IS NULL ORDER BY lead_at DESC LIMIT %d", $limit ) ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
@@ -470,7 +700,9 @@ final class VisitorChatStore {
 		$transcript = json_decode( (string) $row['transcript'], true );
 		$chat       = self::format_summary( $row );
 
-		$chat['transcript'] = array_map( array( self::class, 'format_item' ), is_array( $transcript ) ? $transcript : array() );
+		$attribution         = json_decode( (string) ( $row['attribution'] ?? '' ), true );
+		$chat['transcript']  = array_map( array( self::class, 'format_item' ), is_array( $transcript ) ? $transcript : array() );
+		$chat['attribution'] = is_array( $attribution ) && $attribution ? $attribution : (object) array();
 
 		return $chat;
 	}
@@ -479,7 +711,7 @@ final class VisitorChatStore {
 	 * Updates the administrator fields of conversations.
 	 *
 	 * @param int[] $ids  Conversation IDs.
-	 * @param array $data is_read (bool) and/or admin_note (string).
+	 * @param array $data is_read (bool), admin_note (string) and/or lead_status (only changes leads).
 	 * @return int Number of conversations found.
 	 */
 	public function update_admin( array $ids, array $data ): int {
@@ -500,6 +732,10 @@ final class VisitorChatStore {
 			$fields['admin_note'] = mb_substr( trim( sanitize_textarea_field( (string) $data['admin_note'] ) ), 0, self::MAX_NOTE );
 		}
 
+		if ( isset( $data['lead_status'] ) && in_array( $data['lead_status'], self::LEAD_STATUSES, true ) ) {
+			$fields['lead_status'] = (string) $data['lead_status'];
+		}
+
 		$table = self::table();
 		$in    = implode( ',', $ids );
 		$found = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE id IN ({$in})" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -513,7 +749,8 @@ final class VisitorChatStore {
 		$values = array();
 
 		foreach ( $fields as $column => $value ) {
-			$set[]    = $column . ' = ' . ( is_int( $value ) ? '%d' : '%s' );
+			// Only leads have a status.
+			$set[]    = 'lead_status' === $column ? 'lead_status = IF(lead_at IS NULL, lead_status, %s)' : $column . ' = ' . ( is_int( $value ) ? '%d' : '%s' );
 			$values[] = $value;
 		}
 
@@ -599,6 +836,46 @@ final class VisitorChatStore {
 	}
 
 	/**
+	 * SQL condition of the leads list.
+	 *
+	 * @param array $args See query_leads().
+	 */
+	private function lead_where( array $args ): string {
+		global $wpdb;
+
+		$where = array( 'lead_at IS NOT NULL' );
+
+		if ( ! empty( $args['from'] ) ) {
+			$where[] = $wpdb->prepare( 'lead_at >= %s', $args['from'] );
+		}
+
+		if ( ! empty( $args['to'] ) ) {
+			$where[] = $wpdb->prepare( 'lead_at < %s', $args['to'] );
+		}
+
+		if ( ! empty( $args['status'] ) && in_array( $args['status'], self::LEAD_STATUSES, true ) ) {
+			$where[] = $wpdb->prepare( 'lead_status = %s', $args['status'] );
+		}
+
+		if ( ! empty( $args['rating'] ) ) {
+			$where[] = 'unrated' === $args['rating'] ? "lead_rating = ''" : $wpdb->prepare( 'lead_rating = %s', $args['rating'] );
+		}
+
+		if ( isset( $args['channel'] ) && '' !== $args['channel'] ) {
+			$where[] = $wpdb->prepare( 'channel = %s', 'unknown' === $args['channel'] ? '' : $args['channel'] );
+		}
+
+		$search = trim( (string) ( $args['search'] ?? '' ) );
+
+		if ( '' !== $search ) {
+			$like    = '%' . $wpdb->esc_like( $search ) . '%';
+			$where[] = $wpdb->prepare( '(contact LIKE %s OR source LIKE %s OR campaign LIKE %s OR landing_path LIKE %s OR admin_note LIKE %s)', $like, $like, $like, $like, $like );
+		}
+
+		return implode( ' AND ', $where );
+	}
+
+	/**
 	 * Plain text used by the list search: message texts and contact values, appended.
 	 *
 	 * @param string   $current Stored search text.
@@ -632,8 +909,10 @@ final class VisitorChatStore {
 			}
 		}
 
-		$post_id      = (int) $row['post_id'];
-		$summary_at   = (string) ( $row['summary_at'] ?? '' );
+		$post_id       = (int) $row['post_id'];
+		$qualification = json_decode( (string) ( $row['qualification'] ?? '' ), true );
+		$qualified_at  = (string) ( $row['qualified_at'] ?? '' );
+		$summary_at    = (string) ( $row['summary_at'] ?? '' );
 		$forwarded_at = (string) ( $row['forwarded_at'] ?? '' );
 		$seen_at      = (string) ( $row['seen_at'] ?? '' );
 		$new_messages = 0;
@@ -647,30 +926,47 @@ final class VisitorChatStore {
 		}
 
 		return array(
-			'id'            => (int) $row['id'],
-			'preview'       => $preview,
-			'message_count' => (int) $row['message_count'],
-			'contact'       => is_array( $contact ) && $contact ? $contact : (object) array(),
-			'has_contact'   => (bool) $row['has_contact'],
-			'is_read'       => (bool) $row['is_read'],
-			'admin_note'    => (string) $row['admin_note'],
-			'ip'            => (string) $row['ip'],
-			'ip_forwarded'  => (string) $row['ip_forwarded'],
-			'summary'       => (string) $row['summary'],
-			'summary_at'    => $summary_at,
+			'id'                  => (int) $row['id'],
+			'preview'             => $preview,
+			'message_count'       => (int) $row['message_count'],
+			'contact'             => is_array( $contact ) && $contact ? $contact : (object) array(),
+			'has_contact'         => (bool) $row['has_contact'],
+			'is_read'             => (bool) $row['is_read'],
+			'admin_note'          => (string) $row['admin_note'],
+			'ip'                  => (string) $row['ip'],
+			'ip_forwarded'        => (string) $row['ip_forwarded'],
+			'summary'             => (string) $row['summary'],
+			'summary_at'          => $summary_at,
 			// The conversation continued (or contact details changed) after the summary.
-			'summary_stale' => '' !== $summary_at && strcmp( (string) $row['updated_at'], $summary_at ) > 0,
-			'forwarded_to'  => (string) $row['forwarded_to'],
-			'forwarded_at'  => $forwarded_at,
+			'summary_stale'       => '' !== $summary_at && strcmp( (string) $row['updated_at'], $summary_at ) > 0,
+			'forwarded_to'        => (string) $row['forwarded_to'],
+			'forwarded_at'        => $forwarded_at,
 			// The conversation continued (or contact details changed) after it was forwarded.
-			'forward_stale' => '' !== $forwarded_at && strcmp( (string) $row['updated_at'], $forwarded_at ) > 0,
-			'new_messages'  => $new_messages,
-			'seen_at'       => $seen_at,
-			'chat_open'     => (bool) ( $row['chat_open'] ?? false ),
-			'activity'      => self::activity( (string) $row['updated_at'], $seen_at, (bool) ( $row['chat_open'] ?? false ) ),
-			'page'          => self::page( $post_id ),
-			'created_at'    => (string) $row['created_at'],
-			'updated_at'    => (string) $row['updated_at'],
+			'forward_stale'       => '' !== $forwarded_at && strcmp( (string) $row['updated_at'], $forwarded_at ) > 0,
+			'new_messages'        => $new_messages,
+			'seen_at'             => $seen_at,
+			'chat_open'           => (bool) ( $row['chat_open'] ?? false ),
+			'activity'            => self::activity( (string) $row['updated_at'], $seen_at, (bool) ( $row['chat_open'] ?? false ) ),
+			'page'                => self::page( $post_id ),
+			'created_at'          => (string) $row['created_at'],
+			'updated_at'          => (string) $row['updated_at'],
+			'channel'             => (string) ( $row['channel'] ?? '' ),
+			'first_channel'       => (string) ( $row['first_channel'] ?? '' ),
+			'source'              => (string) ( $row['source'] ?? '' ),
+			'medium'              => (string) ( $row['medium'] ?? '' ),
+			'campaign'            => (string) ( $row['campaign'] ?? '' ),
+			'landing_path'        => (string) ( $row['landing_path'] ?? '' ),
+			'first_seen'          => (string) ( $row['first_seen'] ?? '' ),
+			'visits'              => (int) ( $row['visits'] ?? 0 ),
+			'lead_at'             => (string) ( $row['lead_at'] ?? '' ),
+			'lead_status'         => (string) ( $row['lead_status'] ?? '' ),
+			'lead_rating'         => (string) ( $row['lead_rating'] ?? '' ),
+			'lead_score'          => (int) ( $row['lead_score'] ?? 0 ),
+			'lead_intent'         => (string) ( $row['lead_intent'] ?? '' ),
+			'qualification'       => is_array( $qualification ) && $qualification ? $qualification : (object) array(),
+			'qualified_at'        => $qualified_at,
+			// The conversation continued (or contact details changed) after the rating.
+			'qualification_stale' => '' !== $qualified_at && strcmp( (string) $row['updated_at'], $qualified_at ) > 0,
 		);
 	}
 

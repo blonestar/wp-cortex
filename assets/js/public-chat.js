@@ -11,6 +11,12 @@
  * (and once when the window is closed, the tab hidden or the page left), so the site can
  * tell whether the visitor is still in the conversation. Requests carry no cookies or
  * nonce, so they are always anonymous and work on cached pages.
+ *
+ * When the site records lead attribution, the widget also notes how the visitor arrived
+ * (campaign parameters, ad click IDs, the referring site and the landing page) and the
+ * pages of the visit, and sends them with the chat messages (see trackVisit()). With a
+ * consent manager on the page (Osano, OneTrust, Cookiebot or the WP Consent API), only after
+ * the visitor accepts marketing; the chat works either way.
  */
 ( function () {
 	'use strict';
@@ -40,6 +46,14 @@
 	// Image waiting to be sent: { data: full data URL, thumb: preview data URL }.
 	var pending = null;
 	var presenceTimer = null;
+	var VISIT_KEY = 'wpCortexVisit';
+	var FIRST_KEY = 'wpCortexFirstTouch';
+	var MAX_PAGES = 25;
+	// The current visit: { first, last, visits, pages }, null while attribution is off or
+	// the visitor has not consented.
+	var visit = null;
+	// How this page was reached, taken when it loads (consent may come later on the page).
+	var landing = null;
 
 	function loadState() {
 		try {
@@ -415,6 +429,214 @@
 		} );
 	}
 
+	/* ---------- Attribution ---------- */
+
+	function readJson( storage, key ) {
+		try {
+			var value = JSON.parse( storage.getItem( key ) || 'null' );
+			return value && 'object' === typeof value ? value : null;
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function writeJson( storage, key, value ) {
+		try {
+			storage.setItem( key, JSON.stringify( value ) );
+		} catch ( e ) {}
+	}
+
+	// The consent manager on the page: Osano, OneTrust, Cookiebot, a banner reporting through
+	// the WP Consent API, or none. The dedicated ones come first: a site may also run the WP
+	// Consent API plugin without a banner that reports to it.
+	function consentSource() {
+		if ( window.Osano && window.Osano.cm && 'function' === typeof window.Osano.cm.getConsent ) {
+			return 'osano';
+		}
+		if ( window.OneTrust && 'string' === typeof window.OnetrustActiveGroups ) {
+			return 'onetrust';
+		}
+		if ( window.Cookiebot && window.Cookiebot.consent ) {
+			return 'cookiebot';
+		}
+		return 'function' === typeof window.wp_has_consent ? 'wp_consent_api' : '';
+	}
+
+	// A consent manager is on the page but not set up yet (scripts load asynchronously):
+	// nothing is recorded until it reports (see watchConsent()).
+	function consentPending() {
+		return !! window.Osano || !! window.OneTrustStub || !! window.OneTrust || !! window.Cookiebot ||
+			!! document.querySelector( 'script[src*="otSDKStub"], script[src*="cookielaw.org"], script[src*="cookiepro.com"], script[src*="cookiebot.com"], script[src*="cookiebot.eu"]' );
+	}
+
+	// Whether OneTrust allows the marketing category (C0004, "Targeting cookies", unless the
+	// site set another one).
+	function oneTrustConsent() {
+		var group = cfg.attribution.onetrust || 'C0004';
+		return -1 !== ( ',' + window.OnetrustActiveGroups + ',' ).indexOf( ',' + group + ',' );
+	}
+
+	// Whether attribution may be recorded: the visitor accepted marketing in the consent
+	// manager. Without one, the site setting decides (record, or only with a consent manager);
+	// "ignore" records whatever the visitor chose.
+	function hasConsent() {
+		var mode = cfg.attribution.consent || 'auto';
+		if ( 'ignore' === mode ) {
+			return true;
+		}
+		try {
+			switch ( consentSource() ) {
+				case 'osano':
+					return 'ACCEPT' === ( window.Osano.cm.getConsent() || {} ).MARKETING;
+				case 'onetrust':
+					return oneTrustConsent();
+				case 'cookiebot':
+					return true === window.Cookiebot.consent.marketing;
+				case 'wp_consent_api':
+					return !! window.wp_has_consent( 'marketing' );
+			}
+		} catch ( e ) {
+			return false;
+		}
+		return ! consentPending() && 'require' !== mode;
+	}
+
+	// The first visit may outlive the session only when the site keeps it for some days.
+	function mayPersist() {
+		return ( cfg.attribution.days || 0 ) >= 1;
+	}
+
+	// Removes everything recorded in the browser, when consent is missing or withdrawn.
+	function forgetVisit() {
+		visit = null;
+		try {
+			window.sessionStorage.removeItem( VISIT_KEY );
+			window.localStorage.removeItem( FIRST_KEY );
+		} catch ( e ) {}
+	}
+
+	// Starts recording when the visitor gives consent on this page (with the touch of the page
+	// load, so a campaign landing page still counts) and forgets everything when it is withdrawn.
+	function watchConsent() {
+		var check = function () {
+			if ( hasConsent() ) {
+				if ( ! visit ) {
+					trackVisit();
+				}
+			} else if ( visit || readJson( window.sessionStorage, VISIT_KEY ) ) {
+				forgetVisit();
+			}
+		};
+		if ( window.Osano && window.Osano.cm && 'function' === typeof window.Osano.cm.addEventListener ) {
+			[ 'osano-cm-initialized', 'osano-cm-consent-saved', 'osano-cm-consent-changed' ].forEach( function ( name ) {
+				window.Osano.cm.addEventListener( name, check );
+			} );
+		} else if ( consentPending() ) {
+			window.addEventListener( 'load', check );
+		}
+		// OneTrust reports its categories when it loads and on every change; Cookiebot when
+		// the stored choice is read and when the visitor accepts or declines.
+		[ 'OneTrustGroupsUpdated', 'CookiebotOnConsentReady', 'CookiebotOnAccept', 'CookiebotOnDecline' ].forEach( function ( name ) {
+			window.addEventListener( name, check );
+		} );
+		document.addEventListener( 'wp_listen_for_consent_change', check );
+	}
+
+	// How this page was reached: tracked URL parameters and an outside referrer (origin and
+	// path only). Query strings are never kept: they can hold personal data.
+	function pageTouch() {
+		var params = {};
+		var query = new URLSearchParams( window.location.search );
+		( cfg.attribution.params || [] ).forEach( function ( key ) {
+			var value = query.get( key );
+			if ( value ) {
+				params[ key ] = value.slice( 0, 255 );
+			}
+		} );
+		var referrer = '';
+		try {
+			var ref = document.referrer ? new URL( document.referrer ) : null;
+			if ( ref && ref.host !== window.location.host && /^https?:$/.test( ref.protocol ) ) {
+				referrer = ref.origin + ref.pathname;
+			}
+		} catch ( e ) {}
+		return { at: new Date().toISOString(), landing: window.location.pathname, referrer: referrer, params: params };
+	}
+
+	function sameTouch( a, b ) {
+		return !! a && !! b && a.referrer === b.referrer && JSON.stringify( a.params ) === JSON.stringify( b.params );
+	}
+
+	// A visit starts with the first page of a browser session, or with a page opened from a
+	// campaign link or another site during it (like Google Analytics). The latest visit and
+	// its pages live in the session; the first visit and the visit count in local storage
+	// while mayPersist() allows it, else they are forgotten with the session.
+	function trackVisit() {
+		if ( ! cfg.attribution ) {
+			return;
+		}
+		if ( ! hasConsent() ) {
+			forgetVisit();
+			return;
+		}
+		var touch = landing || pageTouch();
+		var external = touch.referrer || Object.keys( touch.params ).length;
+		var days = cfg.attribution.days || 0;
+		visit = readJson( window.sessionStorage, VISIT_KEY );
+		var starts = ! visit || ! visit.last || ( external && ! sameTouch( touch, visit.last ) );
+
+		var stored = null;
+		if ( mayPersist() ) {
+			stored = readJson( window.localStorage, FIRST_KEY );
+			if ( stored && ( ! stored.first || Date.now() - Date.parse( stored.seen ) > days * 86400000 ) ) {
+				stored = null;
+			}
+		} else {
+			try {
+				window.localStorage.removeItem( FIRST_KEY );
+			} catch ( e ) {}
+		}
+
+		if ( starts ) {
+			visit = {
+				first: ( stored && stored.first ) || ( visit && visit.first ) || touch,
+				last: touch,
+				visits: ( stored ? stored.visits || 0 : ( visit && visit.visits ) || 0 ) + 1,
+				pages: visit && visit.pages ? visit.pages : []
+			};
+		}
+
+		var last = visit.pages[ visit.pages.length - 1 ];
+		if ( ! last || last.path !== window.location.pathname ) {
+			visit.pages.push( { path: window.location.pathname, title: document.title.slice( 0, 150 ), at: touch.at } );
+			visit.pages = visit.pages.slice( -MAX_PAGES );
+		}
+		writeJson( window.sessionStorage, VISIT_KEY, visit );
+
+		if ( mayPersist() ) {
+			writeJson( window.localStorage, FIRST_KEY, { first: visit.first, visits: visit.visits, seen: touch.at } );
+		}
+	}
+
+	// Sent with each message while consent lasts; the server keeps the first touch it got and
+	// the latest pages.
+	function attribution() {
+		if ( ! visit || ! hasConsent() ) {
+			return undefined;
+		}
+		var tz = '';
+		try {
+			tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+		} catch ( e ) {}
+		return {
+			first: visit.first,
+			last: visit.last,
+			visits: visit.visits,
+			pages: visit.pages,
+			client: { lang: navigator.language || '', tz: tz, screen: window.screen ? window.screen.width + 'x' + window.screen.height : '', consent: consentSource() || 'none' }
+		};
+	}
+
 	/* ---------- Sending ---------- */
 
 	// Previous user and assistant turns: text, and whether a visitor message had an image.
@@ -456,7 +678,7 @@
 			method: 'POST',
 			credentials: 'omit',
 			headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-			body: JSON.stringify( { message: text, image: image ? image.data : '', history: previous, post_id: cfg.postId || 0, session: state.session, page_url: window.location.href.split( '#' )[ 0 ] } )
+			body: JSON.stringify( { message: text, image: image ? image.data : '', history: previous, post_id: cfg.postId || 0, session: state.session, page_url: window.location.href.split( '#' )[ 0 ], attribution: attribution() } )
 		} ).then( function ( res ) {
 			return res.json().catch( function () {
 				return {};
@@ -668,6 +890,11 @@
 		root.appendChild( toggle );
 		root.appendChild( panel );
 
+		if ( cfg.attribution ) {
+			landing = pageTouch();
+			trackVisit();
+			watchConsent();
+		}
 		loadState();
 		render();
 		if ( state.open ) {
