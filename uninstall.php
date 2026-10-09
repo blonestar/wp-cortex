@@ -20,7 +20,7 @@ if ( ! is_array( $wp_cortex_settings ) || ! isset( $wp_cortex_settings['uninstal
 	delete_transient( 'wp_cortex_storage_exposed' );
 }
 
-foreach ( array( 'wp_cortex_settings', 'wp_cortex_index_run', 'wp_cortex_index_lock', 'wp_cortex_sync_queue', 'wp_cortex_last_sync', 'wp_cortex_db_version', 'wp_cortex_skills_db_version', 'wp_cortex_visitor_chats_db_version', 'wp_cortex_issue_reports_db_version' ) as $option ) {
+foreach ( array( 'wp_cortex_settings', 'wp_cortex_index_run', 'wp_cortex_index_lock', 'wp_cortex_sync_queue', 'wp_cortex_last_sync', 'wp_cortex_db_version', 'wp_cortex_skills_db_version', 'wp_cortex_visitor_chats_db_version', 'wp_cortex_issue_reports_db_version', 'wp_cortex_integration_log' ) as $option ) {
 	delete_option( $option );
 }
 
@@ -29,6 +29,7 @@ delete_transient( 'wp_cortex_update_release' );
 wp_clear_scheduled_hook( 'wp_cortex_process_queue' );
 wp_clear_scheduled_hook( 'wp_cortex_index_watchdog' );
 wp_clear_scheduled_hook( 'wp_cortex_purge_visitor_chats' );
+wp_clear_scheduled_hook( 'wp_cortex_deliver_lead' );
 
 global $wpdb;
 $wpdb->query( "DROP TABLE IF EXISTS {$wpdb->prefix}wp_cortex_conversations" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL.InterpolatedNotPrepared

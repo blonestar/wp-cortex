@@ -179,6 +179,7 @@ final class Settings {
 			'leads_extra_params'         => array(),
 			'leads_consent'              => 'auto',
 			'leads_onetrust_group'       => Leads\Attribution::ONETRUST_GROUP,
+			'integrations'               => array(),
 		);
 	}
 
@@ -460,6 +461,7 @@ final class Settings {
 			'leads_extra_params'       => Leads\Attribution::sanitize_param_names( $input['leads_extra_params'] ?? array() ),
 			'leads_consent'            => in_array( $input['leads_consent'] ?? '', Leads\Attribution::CONSENT_MODES, true ) ? (string) $input['leads_consent'] : 'auto',
 			'leads_onetrust_group'     => Leads\Attribution::sanitize_onetrust_group( $input['leads_onetrust_group'] ?? '' ),
+			'integrations'             => Integrations\IntegrationRegistry::sanitize( $input['integrations'] ?? null, (array) $stored['integrations'] ),
 		);
 	}
 
