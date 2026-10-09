@@ -67,6 +67,22 @@ if ( ! hash_equals( $expected, $_SERVER['HTTP_X_CORTEX_SIGNATURE'] ?? '' ) ) {
 - Any 2xx answer counts as delivered. Anything else is retried.
 - Addresses on the local or private network are refused (`wp_safe_remote_post()`).
 
+## Built-in: HubSpot
+
+Creates or updates a HubSpot contact for each lead. It needs the access token of a HubSpot private app with the scopes `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read` and `crm.schemas.contacts.write`.
+
+- **Matching.** The contact is matched by the custom unique property `wp_cortex_lead_id` (`<site>#<lead ID>`, for example `example.com#1315`). A corrected email address therefore updates the same contact, and several sites can share one HubSpot account. If HubSpot already has a contact with the lead's email address, that contact is updated and gets the lead ID. When the same visitor becomes a lead again, the contact holds the data of the lead that was sent last.
+- **Contact details.** `email`, `firstname`, `lastname`, `phone`, `address`, `company` and `website` are sent only when the lead has them. An empty field never clears a value in HubSpot.
+- **Custom properties.** On the first delivery, a "WP Cortex" property group is created with these properties:
+  - `wp_cortex_lead_status`, `wp_cortex_lead_rating`, `wp_cortex_lead_score`, `wp_cortex_lead_intent`;
+  - `wp_cortex_request`, `wp_cortex_conversation_url` and `wp_cortex_visits`;
+  - for the latest (`last`) and the first (`first`) visit: `wp_cortex_<visit>_channel`, `_landing`, `_referrer`, every UTM parameter (`wp_cortex_last_utm_source`, …) and every ad click ID (`wp_cortex_last_gclid`, …).
+  
+  The rating is sent once the lead is rated. Visit properties are sent only when the lead has attribution.
+- **Property check.** A transient (`wp_cortex_hubspot_schema`) records for a week that the properties exist. If a property is deleted in HubSpot, it is created again on the next delivery.
+- **Send test lead.** Creates or updates the contact `Test Lead` (`test@example.com`, key `<site>#test`). You can delete it in HubSpot.
+- **Errors.** A refused token, a missing scope or a HubSpot error is shown in the delivery log and retried like any failed delivery.
+
 ## Writing your own integration
 
 An integration is a class extending `WPCortex\Integrations\Integration`. It describes its settings and sends one lead. Storing the settings, scheduling, retries and the log are handled for it.
