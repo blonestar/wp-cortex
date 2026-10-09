@@ -209,7 +209,7 @@ Namespace `wp-cortex/v1`. All routes require the `manage_options` capability (an
 | DELETE | `/skills/<id>` | `{ deleted: true }`. |
 | GET | `/visitor-chats` | Params `filter` (`unread`, `contact` or empty), `search`, `page`, `per_page` (max 100). `{ chats: [ { id, preview, message_count, contact, has_contact, is_read, admin_note, ip, ip_forwarded, summary, summary_at, summary_stale, forwarded_to, forwarded_at, page, created_at, updated_at } ], total, pages, counts: { all, unread, contact } }`; `search` also matches IP addresses, latest activity first. |
 | GET | `/visitor-chats/<id>` | One conversation with its `transcript` (visitor messages with an image carry its file name in `image`); 404 when missing. |
-| GET | `/visitor-chats/<id>/images/<name>` | An attached image as `{ name, mime, data }` (base64); 404 when missing. |
+| GET | `/visitor-chats/<id>/image?name=<name>` | An attached image as `{ name, mime, data }` (base64); 404 when missing. |
 | PUT/PATCH | `/visitor-chats/<id>` | Update `is_read` and/or `admin_note`. |
 | DELETE | `/visitor-chats/<id>` | `{ deleted: true }`. |
 | POST | `/visitor-chats/<id>/summary` | Generates (or regenerates) the AI summary; returns the conversation with `summary`, `summary_at`, `summary_stale`. 502 when the AI request fails. |

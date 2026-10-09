@@ -469,7 +469,7 @@
 		if ( imageUrls[ name ] ) {
 			return Promise.resolve( imageUrls[ name ] );
 		}
-		return apiFetch( { path: PATH + '/' + current.id + '/images/' + encodeURIComponent( name ) } ).then( function ( res ) {
+		return apiFetch( { path: PATH + '/' + current.id + '/image?name=' + encodeURIComponent( name ) } ).then( function ( res ) {
 			var bin = window.atob( res.data );
 			var bytes = new Uint8Array( bin.length );
 			for ( var i = 0; i < bin.length; i++ ) {
