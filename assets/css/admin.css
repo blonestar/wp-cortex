@@ -1322,3 +1322,523 @@
 .wp-cortex-tools-table + .description {
 	margin-top: 8px;
 }
+
+/* Leads screen */
+
+.wp-cortex-leads {
+	max-width: 1400px;
+}
+
+.wp-cortex-leads .wp-cortex-card {
+	max-width: none;
+	margin: 0;
+	border-radius: 8px;
+	border-color: #dcdcde;
+}
+
+.wp-cortex-leads-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin: 16px 0;
+}
+
+.wp-cortex-leads-toolbar-end {
+	display: flex;
+	gap: 8px;
+	margin-left: auto;
+}
+
+.wp-cortex-segmented {
+	display: inline-flex;
+}
+
+.wp-cortex-segmented .button {
+	border-radius: 0;
+	margin-left: -1px;
+}
+
+.wp-cortex-segmented .button:first-child {
+	border-radius: 4px 0 0 4px;
+	margin-left: 0;
+}
+
+.wp-cortex-segmented .button:last-child {
+	border-radius: 0 4px 4px 0;
+}
+
+.wp-cortex-segmented .button[aria-pressed="true"] {
+	background: #2271b1;
+	border-color: #2271b1;
+	color: #fff;
+	position: relative;
+}
+
+.wp-cortex-kpis {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+	gap: 16px;
+	margin: 0 0 16px;
+	transition: opacity 0.2s;
+}
+
+.wp-cortex-kpis.is-loading {
+	opacity: 0.5;
+}
+
+.wp-cortex-kpi {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 8px;
+	padding: 16px 18px;
+}
+
+.wp-cortex-kpi-label {
+	color: #50575e;
+	font-size: 13px;
+	font-weight: 500;
+}
+
+.wp-cortex-kpi-value {
+	color: #1d2327;
+	font-size: 32px;
+	font-weight: 600;
+	line-height: 1.2;
+	margin: 6px 0;
+}
+
+.wp-cortex-kpi-foot {
+	color: #646970;
+	font-size: 12px;
+}
+
+.wp-cortex-kpi-delta {
+	font-weight: 600;
+}
+
+.wp-cortex-kpi-delta.is-up {
+	color: #006300;
+}
+
+.wp-cortex-kpi-delta.is-down {
+	color: #b32d2e;
+}
+
+.wp-cortex-kpi-delta.is-flat {
+	color: #646970;
+}
+
+.wp-cortex-leads-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	margin: 0 0 16px;
+}
+
+.wp-cortex-leads-wide {
+	grid-column: 1 / -1;
+}
+
+@media screen and (max-width: 960px) {
+	.wp-cortex-leads-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.wp-cortex-chart {
+	min-height: 240px;
+}
+
+.wp-cortex-trend-svg {
+	display: block;
+	width: 100%;
+	height: auto;
+	overflow: visible;
+}
+
+.wp-cortex-axis-text {
+	fill: #898781;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.wp-cortex-axis-text.is-strong {
+	fill: #1d2327;
+	font-weight: 600;
+}
+
+.wp-cortex-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+	margin: 0 0 8px;
+	color: #50575e;
+	font-size: 12px;
+}
+
+.wp-cortex-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.wp-cortex-swatch {
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	border-radius: 2px;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+
+.wp-cortex-legend .wp-cortex-swatch {
+	margin-right: 0;
+}
+
+.wp-cortex-swatch.is-line {
+	height: 2px;
+	width: 14px;
+	border-radius: 1px;
+}
+
+.wp-cortex-chart-tip {
+	position: fixed;
+	z-index: 100000;
+	pointer-events: none;
+	background: #fff;
+	border: 1px solid rgba(11, 11, 11, 0.1);
+	border-radius: 6px;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+	padding: 8px 10px;
+	font-size: 12px;
+	line-height: 1.6;
+	color: #1d2327;
+	white-space: nowrap;
+}
+
+.wp-cortex-chart-tip-title {
+	font-weight: 600;
+}
+
+.wp-cortex-chart-table {
+	margin-top: 8px;
+}
+
+.wp-cortex-chart-table summary {
+	cursor: pointer;
+	color: #2271b1;
+	font-size: 12px;
+}
+
+.wp-cortex-chart-table table {
+	margin-top: 8px;
+}
+
+.wp-cortex-bars {
+	margin: 0;
+}
+
+.wp-cortex-bar-row {
+	display: grid;
+	grid-template-columns: minmax(110px, 30%) 1fr auto;
+	align-items: center;
+	gap: 12px;
+	margin: 0;
+	padding: 5px 0;
+}
+
+.wp-cortex-bar-label {
+	color: #1d2327;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.wp-cortex-bar-track {
+	height: 14px;
+}
+
+.wp-cortex-bar {
+	display: block;
+	height: 100%;
+	border-radius: 0 4px 4px 0;
+	transition: width 0.3s ease;
+}
+
+.wp-cortex-bar-value {
+	color: #50575e;
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.wp-cortex-stack {
+	display: flex;
+	gap: 2px;
+	height: 18px;
+	margin: 4px 0 8px;
+}
+
+.wp-cortex-stack-seg {
+	display: block;
+	min-width: 4px;
+	height: 100%;
+}
+
+.wp-cortex-stack-seg:first-child {
+	border-radius: 4px 0 0 4px;
+}
+
+.wp-cortex-stack-seg:last-child {
+	border-radius: 0 4px 4px 0;
+}
+
+.wp-cortex-stack-seg:only-child {
+	border-radius: 4px;
+}
+
+.wp-cortex-leads .wp-cortex-card h3 {
+	font-size: 13px;
+	margin: 16px 0 4px;
+}
+
+.wp-cortex-mini-table {
+	border: 0;
+	box-shadow: none;
+}
+
+.wp-cortex-mini-table th,
+.wp-cortex-mini-table td {
+	padding: 7px 8px;
+	vertical-align: middle;
+}
+
+.wp-cortex-mini-table .num {
+	text-align: right;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+	width: 4.5em;
+}
+
+.wp-cortex-mini-table td.num:nth-child(2) {
+	width: 7em;
+}
+
+.wp-cortex-inline-bar {
+	position: relative;
+	display: block;
+	text-align: right;
+}
+
+.wp-cortex-inline-bar-fill {
+	position: absolute;
+	left: 0;
+	top: 50%;
+	height: 6px;
+	margin-top: -3px;
+	background: #b7d3f6;
+	border-radius: 0 3px 3px 0;
+	max-width: calc(100% - 2.5em);
+}
+
+.wp-cortex-inline-bar-text {
+	position: relative;
+	font-weight: 600;
+}
+
+.wp-cortex-chart-empty {
+	margin: 24px 0;
+	text-align: center;
+}
+
+.wp-cortex-path {
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	word-break: break-all;
+}
+
+.wp-cortex-leads-list h2 + .subsubsub {
+	margin-top: 0;
+}
+
+.wp-cortex-leads-table {
+	margin-bottom: 8px;
+}
+
+.wp-cortex-leads-table .wp-cortex-col-date {
+	width: 9em;
+}
+
+.wp-cortex-leads-table .wp-cortex-col-rating {
+	width: 9em;
+}
+
+.wp-cortex-leads-table .wp-cortex-col-lead-status {
+	width: 9em;
+}
+
+.wp-cortex-leads-table .wp-cortex-block {
+	margin: 2px 0 0;
+}
+
+.wp-cortex-leads-table .button-small {
+	margin-top: 4px;
+}
+
+.wp-cortex-channel {
+	background: #f0f6fc;
+	color: #043959;
+}
+
+.wp-cortex-rating {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.wp-cortex-rating-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #c3c2b7;
+}
+
+.wp-cortex-rating.is-hot .wp-cortex-rating-dot {
+	background: #e34948;
+}
+
+.wp-cortex-rating.is-warm .wp-cortex-rating-dot {
+	background: #eda100;
+}
+
+.wp-cortex-rating.is-cold .wp-cortex-rating-dot {
+	background: #2a78d6;
+}
+
+.wp-cortex-lead-status {
+	max-width: 100%;
+}
+
+.wp-cortex-lead-status.is-new {
+	border-color: #2271b1;
+	font-weight: 600;
+}
+
+.wp-cortex-lead-status.is-won {
+	border-color: #00a32a;
+	color: #006300;
+}
+
+.wp-cortex-lead-status.is-lost,
+.wp-cortex-lead-status.is-spam {
+	color: #646970;
+}
+
+/* Lead and attribution cards of a visitor chat */
+
+.wp-cortex-vchat-lead dl,
+.wp-cortex-vchat-attribution dl {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 12px;
+	margin: 0 0 8px;
+}
+
+.wp-cortex-vchat-lead dt,
+.wp-cortex-vchat-attribution dt {
+	color: #646970;
+}
+
+.wp-cortex-vchat-lead dd,
+.wp-cortex-vchat-attribution dd {
+	margin: 0;
+	word-break: break-word;
+}
+
+.wp-cortex-vchat-attribution h3 {
+	font-size: 13px;
+	margin: 14px 0 6px;
+}
+
+.wp-cortex-journey {
+	margin: 0;
+	border-left: 2px solid #dcdcde;
+	padding-left: 12px;
+}
+
+.wp-cortex-journey li {
+	position: relative;
+	margin: 0 0 6px;
+}
+
+.wp-cortex-journey li::before {
+	content: "";
+	position: absolute;
+	left: -17px;
+	top: 6px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: #2a78d6;
+	box-shadow: 0 0 0 2px #fff;
+}
+
+.wp-cortex-journey .wp-cortex-vchat-time {
+	display: block;
+}
+
+/* Settings > Leads > Integrations */
+
+.wp-cortex-integrations {
+	display: grid;
+	gap: 12px;
+	margin-bottom: 24px;
+}
+
+.wp-cortex-integration {
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #fff;
+}
+
+.wp-cortex-integration > summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	padding: 12px 16px;
+	cursor: pointer;
+}
+
+.wp-cortex-integration[open] > summary {
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.wp-cortex-integration-name {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.wp-cortex-integration-description {
+	flex-basis: 100%;
+	color: #646970;
+}
+
+.wp-cortex-integration-body {
+	padding: 4px 16px 12px;
+}
+
+.wp-cortex-integration-result.is-ok {
+	color: #00450c;
+}
+
+.wp-cortex-integration-result.is-error {
+	color: #8a2424;
+}
+
+.wp-cortex-integration-log td {
+	vertical-align: top;
+}

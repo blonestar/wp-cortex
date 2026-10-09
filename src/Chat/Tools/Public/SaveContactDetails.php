@@ -133,7 +133,7 @@ final class SaveContactDetails extends PublicTool {
 			'contact' => $saved,
 		);
 
-		if ( ! array_intersect( array( 'email', 'phone', 'website', 'address' ), array_keys( $saved ) ) ) {
+		if ( ! VisitorChatStore::can_be_reached( $saved ) ) {
 			if ( isset( $saved['request'] ) ) {
 				$result['next_step'] = 'There is no way to reach the visitor yet. Unless the visitor already declined, ask for what is missing: their name and an email address or phone number.';
 			}

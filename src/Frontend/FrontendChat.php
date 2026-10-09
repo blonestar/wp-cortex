@@ -11,6 +11,7 @@ use WPCortex\Admin\ChatPanel;
 use WPCortex\Chat\ChatAgent;
 use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\VisitorImages;
+use WPCortex\Leads\Attribution;
 use WPCortex\Plugin;
 use WPCortex\Settings;
 
@@ -123,6 +124,13 @@ final class FrontendChat {
 					'attachIcon'  => (bool) Settings::get( 'public_chat_attach_icon' ),
 					'imageSide'   => VisitorImages::MAX_SIDE,
 					'imageMax'    => VisitorImages::MAX_UPLOAD_BYTES,
+					// URL parameters to record and how long the first visit is kept (0: session only).
+					'attribution' => Attribution::enabled() ? array(
+						'params'   => Attribution::tracked_params(),
+						'days'     => (int) Settings::get( 'leads_attribution_days' ),
+						'consent'  => (string) Settings::get( 'leads_consent' ),
+						'onetrust' => (string) Settings::get( 'leads_onetrust_group' ),
+					) : null,
 				)
 			) . ';',
 			'before'

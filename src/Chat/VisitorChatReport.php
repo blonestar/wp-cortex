@@ -7,6 +7,9 @@
 
 namespace WPCortex\Chat;
 
+use WPCortex\Leads\Attribution;
+use WPCortex\Settings;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -55,7 +58,7 @@ final class VisitorChatReport {
 	}
 
 	/**
-	 * Conversation details: dates, start page, IP addresses.
+	 * Conversation details: dates, start page, how the visitor arrived, IP addresses.
 	 *
 	 * @param array $chat Conversation.
 	 */
@@ -72,6 +75,10 @@ final class VisitorChatReport {
 			$lines[] = sprintf( __( 'Started on: %1$s (%2$s)', 'wp-cortex' ), $chat['page']['title'], $chat['page']['url'] );
 		}
 
+		if ( Settings::leads_enabled() ) {
+			$lines = array_merge( $lines, self::attribution( $chat ) );
+		}
+
 		if ( '' !== $chat['ip'] ) {
 			/* translators: %s: IP address. */
 			$lines[] = sprintf( __( 'IP address: %s', 'wp-cortex' ), $chat['ip'] );
@@ -83,6 +90,51 @@ final class VisitorChatReport {
 		}
 
 		return implode( "\n", $lines );
+	}
+
+	/**
+	 * How the visitor arrived: channel, source and campaign of the latest and the first
+	 * visit, the landing page and the number of visits.
+	 *
+	 * @param array $chat Conversation.
+	 * @return string[]
+	 */
+	public static function attribution( array $chat ): array {
+		$data  = (array) ( $chat['attribution'] ?? array() );
+		$lines = array();
+
+		foreach ( array( 'last', 'first' ) as $key ) {
+			$touch = (array) ( $data[ $key ] ?? array() );
+
+			if ( empty( $touch['channel'] ) || ( 'first' === $key && ( $touch['at'] ?? '' ) === ( $data['last']['at'] ?? '' ) ) ) {
+				continue;
+			}
+
+			$parts = array( ( Attribution::channel_labels()[ $touch['channel'] ] ?? $touch['channel'] ) . ' (' . $touch['source'] . ' / ' . $touch['medium'] . ')' );
+
+			if ( ! empty( $touch['params']['utm_campaign'] ) ) {
+				/* translators: %s: campaign name. */
+				$parts[] = sprintf( __( 'campaign "%s"', 'wp-cortex' ), $touch['params']['utm_campaign'] );
+			}
+
+			if ( ! empty( $touch['landing'] ) ) {
+				/* translators: %s: page path. */
+				$parts[] = sprintf( __( 'landed on %s', 'wp-cortex' ), $touch['landing'] );
+			}
+
+			$lines[] = 'last' === $key
+				/* translators: 1: date and time (UTC), 2: channel, source, campaign and landing page. */
+				? sprintf( __( 'Visit that led to the chat: %1$s UTC, %2$s', 'wp-cortex' ), $touch['at'], implode( ', ', $parts ) )
+				/* translators: 1: date and time (UTC), 2: channel, source, campaign and landing page. */
+				: sprintf( __( 'First visit: %1$s UTC, %2$s', 'wp-cortex' ), $touch['at'], implode( ', ', $parts ) );
+		}
+
+		if ( (int) ( $data['visits'] ?? 0 ) > 1 ) {
+			/* translators: %d: number of visits. */
+			$lines[] = sprintf( __( 'Visits to the site: %d', 'wp-cortex' ), (int) $data['visits'] );
+		}
+
+		return $lines;
 	}
 
 	/**
