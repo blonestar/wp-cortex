@@ -136,7 +136,7 @@
 	function loadImage( chatId, name ) {
 		var key = chatId + '/' + name;
 		if ( ! imageUrls[ key ] ) {
-			imageUrls[ key ] = apiFetch( { path: CHATS_PATH + '/' + chatId + '/images/' + encodeURIComponent( name ) } ).then( function ( res ) {
+			imageUrls[ key ] = apiFetch( { path: CHATS_PATH + '/' + chatId + '/image?name=' + encodeURIComponent( name ) } ).then( function ( res ) {
 				var bin = window.atob( res.data );
 				var bytes = new Uint8Array( bin.length );
 				for ( var i = 0; i < bin.length; i++ ) {
