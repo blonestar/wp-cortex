@@ -19,6 +19,9 @@ use WPCortex\Chat\VisitorImages;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Indexing\FieldPolicy;
+use WPCortex\Integrations\Dispatcher;
+use WPCortex\Integrations\Integration;
+use WPCortex\Integrations\IntegrationRegistry;
 use WPCortex\Leads\Attribution;
 use WPCortex\Settings;
 use WPCortex\Storage\Storage;
@@ -99,8 +102,9 @@ final class SettingsPage {
 				'label'    => __( 'Leads', 'wp-cortex' ),
 				'icon'     => 'dashicons-businessperson',
 				'sections' => array(
-					'general'     => array( __( 'Leads', 'wp-cortex' ), __( 'Visitors who leave an email address, phone number, postal address or website in the visitor chat become leads you can rate with AI, track and export.', 'wp-cortex' ), array( $this, 'fields_leads' ) ),
-					'attribution' => array( __( 'Attribution', 'wp-cortex' ), __( 'How visitors who chat found the site, so Cortex > Leads can show which channels, campaigns and pages bring inquiries.', 'wp-cortex' ), array( $this, 'fields_leads_attribution' ) ),
+					'general'      => array( __( 'Leads', 'wp-cortex' ), __( 'Visitors who leave an email address, phone number, postal address or website in the visitor chat become leads you can rate with AI, track and export.', 'wp-cortex' ), array( $this, 'fields_leads' ) ),
+					'attribution'  => array( __( 'Attribution', 'wp-cortex' ), __( 'How visitors who chat found the site, so Cortex > Leads can show which channels, campaigns and pages bring inquiries.', 'wp-cortex' ), array( $this, 'fields_leads_attribution' ) ),
+					'integrations' => array( __( 'Integrations', 'wp-cortex' ), __( 'Send new leads and their changes to a CRM or another tool, with the contact details, AI rating and every campaign parameter and ad click ID. Leads are sent in the background, a failed delivery is retried twice.', 'wp-cortex' ), array( $this, 'fields_integrations' ) ),
 				),
 			),
 			'tools'      => array(
@@ -1367,6 +1371,206 @@ final class SettingsPage {
 				Attribution::MAX_EXTRA_PARAMS
 			)
 		);
+	}
+
+	/**
+	 * Integrations section: one card per integration and the latest deliveries.
+	 */
+	public function fields_integrations(): void {
+		if ( ! Settings::leads_enabled() ) {
+			echo '<div class="notice notice-warning inline"><p>' . esc_html__( 'Leads are off, so no lead is sent. Turn them on under Leads.', 'wp-cortex' ) . '</p></div>';
+		}
+
+		if ( Dispatcher::cron_disabled() ) {
+			echo '<div class="notice notice-info inline"><p>' . esc_html__( 'WP-Cron is disabled on this site (DISABLE_WP_CRON), so leads are sent when the server\'s cron job runs.', 'wp-cortex' ) . '</p></div>';
+		}
+
+		$log = Dispatcher::entries();
+
+		echo '<div class="wp-cortex-integrations">';
+		foreach ( IntegrationRegistry::all() as $integration ) {
+			$this->integration_card( $integration, $log );
+		}
+		echo '</div>';
+
+		$this->integration_log( $log );
+
+		echo '<p class="description">' . esc_html__( 'Developers can add their own integration with a PHP file in the theme\'s wp-cortex/integrations/ folder or the wp_cortex_lead_integrations filter (see docs/integrations.md in the plugin).', 'wp-cortex' ) . '</p>';
+	}
+
+	/**
+	 * One integration: status, switch, events, its fields and the test button.
+	 *
+	 * @param Integration $integration Integration.
+	 * @param array       $log         Latest deliveries.
+	 */
+	private function integration_card( Integration $integration, array $log ): void {
+		$id       = $integration->id();
+		$settings = IntegrationRegistry::settings( $integration );
+		$ready    = $integration->is_configured( $settings );
+		$name     = static fn( string $key ): string => esc_attr( Settings::OPTION . '[integrations][' . $id . '][' . $key . ']' );
+		$last     = null;
+
+		foreach ( $log as $entry ) {
+			if ( $id === ( $entry['integration'] ?? '' ) && 'test' !== ( $entry['event'] ?? '' ) ) {
+				$last = $entry;
+				break;
+			}
+		}
+
+		if ( ! $settings['enabled'] ) {
+			$badge = array( '', __( 'Off', 'wp-cortex' ) );
+		} elseif ( ! $ready ) {
+			$badge = array( 'wp-cortex-badge-warn', __( 'Incomplete', 'wp-cortex' ) );
+		} elseif ( $last && empty( $last['ok'] ) ) {
+			$badge = array( 'wp-cortex-badge-failed', __( 'Failing', 'wp-cortex' ) );
+		} else {
+			$badge = array( 'wp-cortex-badge-ok', __( 'Active', 'wp-cortex' ) );
+		}
+
+		printf( '<details class="wp-cortex-integration" data-integration="%s"%s>', esc_attr( $id ), $settings['enabled'] ? ' open' : '' );
+		printf(
+			'<summary><span class="wp-cortex-integration-name">%1$s</span> <span class="wp-cortex-badge %2$s">%3$s</span><span class="wp-cortex-integration-description">%4$s</span></summary>',
+			esc_html( $integration->label() ),
+			esc_attr( $badge[0] ),
+			esc_html( $badge[1] ),
+			esc_html( $integration->description() )
+		);
+		echo '<div class="wp-cortex-integration-body">';
+		printf( '<input type="hidden" name="%s" value="1" />', $name( 'shown' ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in $name().
+
+		$this->row_start( __( 'Status', 'wp-cortex' ) );
+		printf(
+			'<label><input type="checkbox" name="%1$s" value="1" %2$s /> %3$s</label>',
+			$name( 'enabled' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in $name().
+			checked( (bool) $settings['enabled'], true, false ),
+			/* translators: %s: integration name. */
+			esc_html( sprintf( __( 'Send leads to %s', 'wp-cortex' ), $integration->label() ) )
+		);
+		$this->row_end();
+
+		$this->row_start( __( 'Send', 'wp-cortex' ) );
+		$events = array(
+			'created' => __( 'New leads', 'wp-cortex' ),
+			'updated' => __( 'Changes to leads (contact details, status, AI rating)', 'wp-cortex' ),
+		);
+		foreach ( $events as $event => $label ) {
+			printf(
+				'<label class="wp-cortex-block"><input type="checkbox" name="%1$s[]" value="%2$s" %3$s /> %4$s</label>',
+				$name( 'events' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in $name().
+				esc_attr( $event ),
+				checked( in_array( $event, (array) $settings['events'], true ), true, false ),
+				esc_html( $label )
+			);
+		}
+		$this->row_end( __( 'A change sends the whole lead again with the same ID, so the receiver can update its record instead of creating a new one.', 'wp-cortex' ) );
+
+		foreach ( $integration->fields() as $key => $field ) {
+			$this->row_start( (string) ( $field['label'] ?? $key ) );
+			$this->integration_field( $name( $key ), $field, $settings[ $key ] ?? '' );
+			$this->row_end( (string) ( $field['description'] ?? '' ) );
+		}
+
+		$this->row_start( __( 'Test', 'wp-cortex' ) );
+		echo '<button type="button" class="button wp-cortex-integration-test">' . esc_html__( 'Send test lead', 'wp-cortex' ) . '</button> <span class="wp-cortex-integration-result" aria-live="polite"></span>';
+		$this->row_end( __( 'Sends a made-up lead (marked "test": true) with the values above, saved or not.', 'wp-cortex' ) );
+
+		echo '</div></details>';
+	}
+
+	/**
+	 * Input of an integration field.
+	 *
+	 * @param string $name  Escaped field name.
+	 * @param array  $field Field definition.
+	 * @param mixed  $value Current value.
+	 */
+	private function integration_field( string $name, array $field, $value ): void {
+		$type        = (string) ( $field['type'] ?? 'text' );
+		$placeholder = (string) ( $field['placeholder'] ?? '' );
+
+		switch ( $type ) {
+			case 'checkbox':
+				printf( '<label><input type="checkbox" name="%1$s" value="1" %2$s /> %3$s</label>', $name, checked( (bool) $value, true, false ), esc_html( (string) ( $field['label'] ?? '' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped by the caller.
+				break;
+			case 'textarea':
+				printf( '<textarea class="large-text" rows="3" name="%1$s" placeholder="%2$s">%3$s</textarea>', $name, esc_attr( $placeholder ), esc_textarea( (string) $value ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped by the caller.
+				break;
+			case 'select':
+				printf( '<select name="%s">', $name ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped by the caller.
+				foreach ( (array) ( $field['options'] ?? array() ) as $option => $label ) {
+					printf( '<option value="%1$s" %2$s>%3$s</option>', esc_attr( (string) $option ), selected( (string) $value, (string) $option, false ), esc_html( (string) $label ) );
+				}
+				echo '</select>';
+				break;
+			case 'secret':
+				printf(
+					'<input type="password" class="regular-text" name="%1$s" value="" autocomplete="new-password" placeholder="%2$s" />',
+					$name, // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped by the caller.
+					esc_attr( '' !== (string) $value ? __( 'Saved; leave empty to keep it', 'wp-cortex' ) : $placeholder )
+				);
+				break;
+			default:
+				printf( '<input type="%1$s" class="regular-text" name="%2$s" value="%3$s" placeholder="%4$s" />', 'url' === $type ? 'url' : 'text', $name, esc_attr( (string) $value ), esc_attr( $placeholder ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped by the caller.
+		}
+	}
+
+	/**
+	 * The latest deliveries of all integrations.
+	 *
+	 * @param array $log Latest deliveries.
+	 */
+	private function integration_log( array $log ): void {
+		echo '<h3>' . esc_html__( 'Latest deliveries', 'wp-cortex' ) . '</h3>';
+
+		if ( ! $log ) {
+			echo '<p class="wp-cortex-muted">' . esc_html__( 'Nothing sent yet.', 'wp-cortex' ) . '</p>';
+			return;
+		}
+
+		$events = array(
+			'created' => __( 'New lead', 'wp-cortex' ),
+			'updated' => __( 'Lead changed', 'wp-cortex' ),
+			'test'    => __( 'Test', 'wp-cortex' ),
+		);
+
+		echo '<table class="wp-list-table widefat fixed striped wp-cortex-integration-log"><thead><tr>';
+		foreach ( array( __( 'Time (UTC)', 'wp-cortex' ), __( 'Integration', 'wp-cortex' ), __( 'Lead', 'wp-cortex' ), __( 'Event', 'wp-cortex' ), __( 'Result', 'wp-cortex' ) ) as $heading ) {
+			echo '<th scope="col">' . esc_html( $heading ) . '</th>';
+		}
+		echo '</tr></thead><tbody>';
+
+		foreach ( array_slice( $log, 0, 20 ) as $entry ) {
+			$integration = IntegrationRegistry::get( (string) ( $entry['integration'] ?? '' ) );
+			$lead        = (int) ( $entry['lead'] ?? 0 );
+			$attempt     = (int) ( $entry['attempt'] ?? 1 );
+
+			if ( ! empty( $entry['ok'] ) ) {
+				$result = '<span class="wp-cortex-badge wp-cortex-badge-ok">' . esc_html__( 'Sent', 'wp-cortex' ) . '</span>';
+			} else {
+				$result = '<span class="wp-cortex-badge wp-cortex-badge-failed">' . esc_html__( 'Failed', 'wp-cortex' ) . '</span> ' . esc_html( (string) ( $entry['message'] ?? '' ) );
+
+				if ( empty( $entry['final'] ) ) {
+					$result .= ' <span class="wp-cortex-muted">' . esc_html__( '(will retry)', 'wp-cortex' ) . '</span>';
+				}
+			}
+
+			if ( $attempt > 1 ) {
+				/* translators: %d: attempt number. */
+				$result .= ' <span class="wp-cortex-muted">' . esc_html( sprintf( __( 'attempt %d', 'wp-cortex' ), $attempt ) ) . '</span>';
+			}
+
+			printf(
+				'<tr><td>%1$s</td><td>%2$s</td><td>%3$s</td><td>%4$s</td><td>%5$s</td></tr>',
+				esc_html( (string) ( $entry['at'] ?? '' ) ),
+				esc_html( $integration ? $integration->label() : (string) ( $entry['integration'] ?? '' ) ),
+				$lead ? '<a href="' . esc_url( admin_url( 'admin.php?page=' . Menu::SLUG_VISITORS . '#chat=' . $lead ) ) . '">#' . esc_html( (string) $lead ) . '</a>' : '–',
+				esc_html( $events[ $entry['event'] ?? '' ] ?? (string) ( $entry['event'] ?? '' ) ),
+				$result // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped above.
+			);
+		}
+
+		echo '</tbody></table>';
 	}
 
 	/**

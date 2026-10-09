@@ -1789,3 +1789,56 @@
 .wp-cortex-journey .wp-cortex-vchat-time {
 	display: block;
 }
+
+/* Settings > Leads > Integrations */
+
+.wp-cortex-integrations {
+	display: grid;
+	gap: 12px;
+	margin-bottom: 24px;
+}
+
+.wp-cortex-integration {
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	background: #fff;
+}
+
+.wp-cortex-integration > summary {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 10px;
+	padding: 12px 16px;
+	cursor: pointer;
+}
+
+.wp-cortex-integration[open] > summary {
+	border-bottom: 1px solid #f0f0f1;
+}
+
+.wp-cortex-integration-name {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.wp-cortex-integration-description {
+	flex-basis: 100%;
+	color: #646970;
+}
+
+.wp-cortex-integration-body {
+	padding: 4px 16px 12px;
+}
+
+.wp-cortex-integration-result.is-ok {
+	color: #00450c;
+}
+
+.wp-cortex-integration-result.is-error {
+	color: #8a2424;
+}
+
+.wp-cortex-integration-log td {
+	vertical-align: top;
+}

@@ -196,6 +196,12 @@ final class Menu {
 			);
 		}
 
+		if ( $is_settings ) {
+			// The Send test lead buttons under Leads > Integrations.
+			wp_enqueue_script( 'wp-cortex-integrations', WP_CORTEX_URL . 'assets/js/integrations.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/integrations.js' ), true );
+			wp_set_script_translations( 'wp-cortex-integrations', 'wp-cortex' );
+		}
+
 		if ( $is_settings && Settings::skills_enabled() ) {
 			// The saved skills list on the Skills tab.
 			wp_enqueue_script( 'wp-cortex-skills', WP_CORTEX_URL . 'assets/js/skills.js', array( 'wp-api-fetch', 'wp-i18n' ), Plugin::asset_version( 'assets/js/skills.js' ), true );
