@@ -9,6 +9,7 @@ namespace WPCortex\Rest;
 
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Leads\Attribution;
+use WPCortex\Leads\LeadPayload;
 use WPCortex\Leads\LeadQualifier;
 use WPCortex\Leads\LeadReport;
 use WPCortex\Settings;
@@ -206,18 +207,18 @@ final class LeadController {
 	}
 
 	/**
-	 * GET /leads/export: every lead matching the filters (up to MAX_EXPORT), for the CSV
-	 * file the screen builds.
+	 * GET /leads/export: every lead matching the filters (up to MAX_EXPORT) as lead
+	 * payloads (LeadPayload::build()), for the CSV file the screen builds.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response
 	 */
 	public function export( WP_REST_Request $request ) {
-		$result = ( new VisitorChatStore() )->query_leads( $this->args( $request, 1, self::MAX_EXPORT ) );
+		$result = ( new VisitorChatStore() )->query_leads( array_merge( $this->args( $request, 1, self::MAX_EXPORT ), array( 'attribution' => true ) ) );
 
 		return rest_ensure_response(
 			array(
-				'leads'     => $result['leads'],
+				'leads'     => array_map( array( LeadPayload::class, 'build' ), $result['leads'] ),
 				'total'     => $result['total'],
 				'truncated' => $result['total'] > self::MAX_EXPORT,
 			)
