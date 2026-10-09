@@ -13,11 +13,13 @@ use WPCortex\Chat\IssueReportMailer;
 use WPCortex\Chat\ModelCatalog;
 use WPCortex\Chat\PublicChatAgent;
 use WPCortex\Chat\Reasoning;
+use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Chat\VisitorChatSummarizer;
 use WPCortex\Chat\VisitorImages;
 use WPCortex\Embeddings\OpenAIEmbeddings;
 use WPCortex\Frontend\ChatAppearance;
 use WPCortex\Indexing\FieldPolicy;
+use WPCortex\Leads\Attribution;
 use WPCortex\Settings;
 use WPCortex\Storage\Storage;
 
@@ -91,6 +93,14 @@ final class SettingsPage {
 					'privacy'    => array( __( 'Conversations & privacy', 'wp-cortex' ), __( 'What is stored about visitor conversations and for how long.', 'wp-cortex' ), array( $this, 'fields_public_chat_privacy' ) ),
 					'actions'    => array( __( 'Assistant actions', 'wp-cortex' ), __( 'What the visitor chat may do beyond answering questions.', 'wp-cortex' ), array( $this, 'fields_public_chat_actions' ) ),
 					'summary'    => array( __( 'Conversation summaries', 'wp-cortex' ), __( 'How the AI summary of a visitor conversation is written (Summarize under Cortex > Visitor chats and forwarded emails).', 'wp-cortex' ), array( $this, 'fields_public_chat_summary' ) ),
+				),
+			),
+			'leads'      => array(
+				'label'    => __( 'Leads', 'wp-cortex' ),
+				'icon'     => 'dashicons-businessperson',
+				'sections' => array(
+					'general'     => array( __( 'Leads', 'wp-cortex' ), __( 'Visitors who leave an email address, phone number, postal address or website in the visitor chat become leads you can rate with AI, track and export.', 'wp-cortex' ), array( $this, 'fields_leads' ) ),
+					'attribution' => array( __( 'Attribution', 'wp-cortex' ), __( 'How visitors who chat found the site, so Cortex > Leads can show which channels, campaigns and pages bring inquiries.', 'wp-cortex' ), array( $this, 'fields_leads_attribution' ) ),
 				),
 			),
 			'tools'      => array(
@@ -1282,6 +1292,79 @@ final class SettingsPage {
 				/* translators: %d: maximum number of addresses. */
 				__( 'Optional. Up to %d addresses, separated by commas, notified of each new report through the site\'s mail setup. Leave empty to only list reports in the admin.', 'wp-cortex' ),
 				IssueReportMailer::MAX_RECIPIENTS
+			)
+		);
+	}
+
+	/**
+	 * Leads section: whether conversations with contact details are tracked as leads.
+	 */
+	public function fields_leads(): void {
+		$this->row_start( __( 'Leads', 'wp-cortex' ) );
+		$this->checkbox( 'leads_enabled', __( 'Track visitors who leave contact details as leads', 'wp-cortex' ), Settings::leads_enabled() );
+		$this->row_end( __( 'Adds the Cortex > Leads screen (key figures, leads over time, lead quality and the leads list with status tracking, AI rating and CSV export) and the Lead card to visitor conversations. When off, the Leads screen, the lead status, AI rating and attribution are gone and nothing is recorded about how visitors found the site; contact details are still stored with the conversation. Requires the conversation log.', 'wp-cortex' ) );
+	}
+
+	/**
+	 * Attribution section: what the widget records and how long the first visit is remembered.
+	 */
+	public function fields_leads_attribution(): void {
+		$this->row_start( __( 'Attribution', 'wp-cortex' ) );
+		$this->checkbox( 'leads_attribution', __( 'Record how visitors who chat arrived on the site', 'wp-cortex' ), (bool) Settings::get( 'leads_attribution' ) );
+		$this->row_end( __( 'Stored with the conversation when the visitor writes in the chat: campaign parameters (utm_source, utm_medium, utm_campaign, utm_term, utm_content, utm_id), ad click IDs (gclid, gbraid, wbraid, msclkid, fbclid, li_fat_id, ttclid, twclid), the referring site, the landing page, the first and the latest visit, the pages viewed in the visit, the device type, browser language and, when the host or CDN reports it, the country. Query strings of URLs are never stored. Adds channels, sources, campaigns and landing pages to Cortex > Leads. Off by default: turn it on only if the site\'s privacy policy covers it. Requires leads and the conversation log.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Remember the first visit', 'wp-cortex' ) );
+		$this->number( 'leads_attribution_days', 0, 730 );
+		echo ' ' . esc_html__( 'days', 'wp-cortex' );
+		$this->row_end( __( 'The first visit (first touch) is kept in the browser\'s local storage for this many days, so a visitor who comes back later is still credited to the campaign that brought them. 0 keeps it for the browser session only (no local storage).', 'wp-cortex' ) );
+
+		$this->row_start( __( 'Consent', 'wp-cortex' ) );
+		$this->select(
+			'leads_consent',
+			array(
+				'auto'    => __( 'Respect the consent manager; record when there is none', 'wp-cortex' ),
+				'require' => __( 'Record only with marketing consent from a consent manager', 'wp-cortex' ),
+				'ignore'  => __( 'Always record (ignore consent)', 'wp-cortex' ),
+			)
+		);
+		$labels   = Attribution::consent_labels();
+		$detected = ( new VisitorChatStore() )->latest_consent_source();
+		echo '<p class="description">';
+		if ( isset( $labels[ $detected ] ) ) {
+			/* translators: %s: consent manager name, for example Osano. */
+			echo esc_html( sprintf( __( 'Consent manager found by the chat on the site in the latest conversation: %s.', 'wp-cortex' ), $labels[ $detected ] ) );
+		} else {
+			esc_html_e( 'No conversation with attribution yet, so the consent manager on the site is not known.', 'wp-cortex' );
+		}
+		echo '</p>';
+		$this->row_end( __( 'Osano, OneTrust, Cookiebot and banners that report through the WP Consent API plugin (for example Complianz or CookieYes) are recognized in the visitor\'s browser. With one of them, nothing is recorded, stored in the browser or sent until the visitor accepts marketing, recording starts when they accept on the page and everything stored in the browser is removed when they withdraw it. The chat works either way; conversations without consent appear under Unknown in Cortex > Leads. If the consent manager blocks scripts by category, classify the Cortex chat script as essential or functional, or the chat is blocked too.', 'wp-cortex' ) );
+
+		$this->row_start( __( 'OneTrust marketing category', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="small-text" name="%1$s" value="%2$s" maxlength="32" />',
+			$this->name( 'leads_onetrust_group' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( (string) Settings::get( 'leads_onetrust_group' ) )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %s: default OneTrust category ID. */
+				__( 'Only with OneTrust: the ID of the cookie category that stands for marketing consent. %s ("Targeting cookies") by default; check the categories of the site\'s OneTrust script if they were changed.', 'wp-cortex' ),
+				Attribution::ONETRUST_GROUP
+			)
+		);
+
+		$this->row_start( __( 'Extra parameters', 'wp-cortex' ) );
+		printf(
+			'<input type="text" class="regular-text" name="%1$s" value="%2$s" placeholder="%3$s" />',
+			$this->name( 'leads_extra_params' ), // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Escaped in name().
+			esc_attr( implode( ', ', (array) Settings::get( 'leads_extra_params' ) ) ),
+			esc_attr__( 'ref, aff_id, promo', 'wp-cortex' )
+		);
+		$this->row_end(
+			sprintf(
+				/* translators: %d: maximum number of parameters. */
+				__( 'Optional. Up to %d more URL parameters to record, separated by commas, for example partner or affiliate codes.', 'wp-cortex' ),
+				Attribution::MAX_EXTRA_PARAMS
 			)
 		);
 	}

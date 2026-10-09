@@ -24,6 +24,7 @@ use WPCortex\Indexing\PostSync;
 use WPCortex\Rest\ChatController;
 use WPCortex\Rest\IndexController;
 use WPCortex\Rest\IssueReportController;
+use WPCortex\Rest\LeadController;
 use WPCortex\Rest\PublicChatController;
 use WPCortex\Rest\SkillController;
 use WPCortex\Rest\VisitorChatController;
@@ -48,6 +49,7 @@ final class Plugin {
 		( new SkillController() )->register();
 		( new VisitorChatController() )->register();
 		( new IssueReportController() )->register();
+		( new LeadController() )->register();
 		( new Abilities() )->register();
 
 		ConversationStore::maybe_upgrade();
@@ -118,6 +120,15 @@ final class Plugin {
 
 			if ( Settings::get( 'public_chat_store_ip' ) ) {
 				$text .= '<p>' . esc_html__( 'Your IP address is stored with the conversation to protect the chat from abuse and to help the site team handle your request.', 'wp-cortex' ) . '</p>';
+			}
+
+			if ( Settings::leads_enabled() && Settings::get( 'leads_attribution' ) ) {
+				$text .= '<p>' . esc_html__( 'If you accept marketing cookies (or the site asks for no consent), when you write in the chat the site also stores how you found it, to learn which of its marketing brings inquiries: the campaign parameters and ad click identifiers of the link you followed (such as utm_source or gclid), the website you came from, the page you arrived on, the pages you viewed during your visit, the number of visits, your device type, browser and language and, if the hosting provider reports it, your country.', 'wp-cortex' ) . '</p>';
+
+				if ( (int) Settings::get( 'leads_attribution_days' ) > 0 ) {
+					/* translators: %d: number of days. */
+					$text .= '<p>' . esc_html( sprintf( __( 'To credit a later visit to the campaign that first brought you, your browser\'s local storage keeps your first visit (its date, the page you arrived on, the website you came from and the campaign parameters) and the number of visits for %d days. This data stays in your browser and is only sent to the site if you write in the chat. If you decline or withdraw marketing consent, nothing is recorded and this data is removed from your browser; the chat still works.', 'wp-cortex' ), (int) Settings::get( 'leads_attribution_days' ) ) ) . '</p>';
+				}
 			}
 		}
 
