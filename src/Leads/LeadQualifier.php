@@ -33,7 +33,7 @@ final class LeadQualifier {
 	/**
 	 * Text details of a rating and their maximum lengths.
 	 */
-	private const DETAILS = array(
+	public const DETAILS = array(
 		'interest'  => 200,
 		'company'   => 200,
 		'role'      => 100,

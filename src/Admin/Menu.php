@@ -240,6 +240,9 @@ final class Menu {
 						'intents'     => LeadQualifier::intent_labels(),
 						'statuses'    => LeadsPage::status_labels(),
 						'siteName'    => sanitize_title( get_bloginfo( 'name' ) ),
+						// URL parameters every lead export has a column for.
+						'utmParams'   => array_keys( Attribution::UTM_PARAMS ),
+						'clickIds'    => array_keys( Attribution::CLICK_IDS ),
 					)
 				) . ';',
 				'before'

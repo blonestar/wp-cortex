@@ -947,18 +947,55 @@
 	function exportCsv() {
 		els.exportBtn.disabled = true;
 		apiFetch( { path: PATH + '/export' + query() } ).then( function ( res ) {
-			var headers = [ 'Lead ID', 'Received (UTC)', 'First name', 'Last name', 'Email', 'Phone', 'Company', 'Website', 'Request', 'Status', 'Rating', 'Score', 'Intent', 'Interest', 'Role', 'Budget', 'Timeline', 'Next step', 'Channel', 'Source', 'Medium', 'Campaign', 'Landing page', 'First visit channel', 'First visit (UTC)', 'Visits', 'Conversation started (UTC)', 'Messages', 'Note', 'Conversation URL' ];
+			var leads = res.leads || [];
+			var utm = cfg.utmParams || [];
+			var clicks = cfg.clickIds || [];
+			var extra = [];
+			leads.forEach( function ( l ) {
+				var a = l.attribution || {};
+				[ a.last, a.first ].forEach( function ( t ) {
+					Object.keys( ( t && t.extra ) || {} ).forEach( function ( key ) {
+						if ( -1 === extra.indexOf( key ) ) {
+							extra.push( key );
+						}
+					} );
+				} );
+			} );
+			extra.sort();
+			var params = utm.concat( clicks, extra );
+
+			// The latest visit (that led to the chat) and the first one: channel, source,
+			// landing page, referrer and every URL parameter as the visitor's link had it.
+			var touchHeaders = function ( prefix ) {
+				return [ prefix + 'Channel', prefix + 'Source', prefix + 'Medium', prefix + 'Landing page', prefix + 'Referrer', prefix + 'Visit (UTC)' ].concat( params.map( function ( key ) {
+					return prefix + key;
+				} ) );
+			};
+			var touchCells = function ( t ) {
+				if ( ! t ) {
+					return touchHeaders( '' ).map( function () {
+						return '';
+					} );
+				}
+				return [ channelLabel( t.channel || 'unknown' ), t.source, t.medium, t.landing, t.referrer, t.at ].concat( params.map( function ( key ) {
+					return ( t.utm || {} )[ key ] || ( t.click_ids || {} )[ key ] || ( t.extra || {} )[ key ] || '';
+				} ) );
+			};
+
+			var headers = [ 'Lead ID', 'Received (UTC)', 'First name', 'Last name', 'Email', 'Phone', 'Address', 'Company', 'Website', 'Request', 'Status', 'Rating', 'Score', 'Intent', 'Interest', 'Role', 'Budget', 'Timeline', 'Next step' ]
+				.concat( touchHeaders( '' ), touchHeaders( 'First visit ' ), [ 'Visits', 'Consent', 'Conversation started (UTC)', 'Messages', 'Start page', 'Note', 'Conversation URL' ] );
 			var lines = [ headers.map( csvCell ).join( ',' ) ];
-			( res.leads || [] ).forEach( function ( l ) {
+			leads.forEach( function ( l ) {
 				var c = l.contact || {};
-				var q = l.qualification || {};
+				var r = l.rating || {};
+				var a = l.attribution || {};
 				lines.push( [
-					l.id, l.lead_at, c.first_name, c.last_name, c.email, c.phone, c.company || q.company, ( c.website || '' ).replace( /\n/g, ' ' ), c.request,
-					( cfg.statuses || {} )[ l.lead_status ] || l.lead_status, l.lead_rating, l.lead_rating ? l.lead_score : '', ( cfg.intents || {} )[ l.lead_intent ] || l.lead_intent,
-					q.interest, q.role, q.budget, q.timeline, q.next_step,
-					channelLabel( l.channel || 'unknown' ), l.source, l.medium, l.campaign, l.landing_path, l.first_channel ? channelLabel( l.first_channel ) : '', l.first_seen, l.visits || '',
-					l.created_at, l.message_count, l.admin_note, new URL( cfg.chatUrl + '#chat=' + l.id, window.location.href ).href
-				].map( csvCell ).join( ',' ) );
+					l.id, l.lead_at, c.first_name, c.last_name, c.email, c.phone, ( c.address || '' ).replace( /\n/g, ' ' ), c.company || r.company, ( c.website || '' ).replace( /\n/g, ' ' ), c.request,
+					( cfg.statuses || {} )[ l.status ] || l.status, r.rating, l.rating ? r.score : '', ( cfg.intents || {} )[ r.intent ] || r.intent,
+					r.interest, r.role, r.budget, r.timeline, r.next_step
+				].concat( touchCells( a.last ), touchCells( a.first ), [
+					a.visits || '', a.consent, l.started_at, l.message_count, l.start_page, l.note, l.conversation_url
+				] ).map( csvCell ).join( ',' ) );
 			} );
 			var blob = new Blob( [ '﻿' + lines.join( '\r\n' ) + '\r\n' ], { type: 'text/csv;charset=utf-8' } );
 			var a = el( 'a' );

@@ -8,6 +8,7 @@
 namespace WPCortex\Chat;
 
 use WPCortex\Leads\Attribution;
+use WPCortex\Leads\LeadPayload;
 
 defined( 'ABSPATH' ) || exit;
 
@@ -438,6 +439,12 @@ final class VisitorChatStore {
 
 		$wpdb->update( $table, $data, array( 'id' => $id ) );
 
+		if ( isset( $data['lead_at'] ) ) {
+			LeadPayload::created( $id );
+		} elseif ( ! empty( $stored['lead_at'] ) && array_filter( $merged ) != array_filter( is_array( $current ) ? $current : array() ) ) { // phpcs:ignore Universal.Operators.StrictComparisons.LooseNotEqual -- Same details in any order.
+			LeadPayload::updated( $id, 'contact' );
+		}
+
 		return $merged;
 	}
 
@@ -486,13 +493,16 @@ final class VisitorChatStore {
 			),
 			array( 'id' => $id )
 		);
+
+		LeadPayload::updated( $id, 'rating' );
 	}
 
 	/**
-	 * Lists leads (conversations with contact details) for the Leads screen.
+	 * Lists leads (conversations through which the visitor can be reached) for the Leads screen.
 	 *
 	 * @param array $args from, to (UTC dates on lead_at, empty for none), status, rating,
-	 *                    channel, search, orderby, order, page and per_page (0 for all).
+	 *                    channel, search, orderby, order, page, per_page (0 for all) and
+	 *                    attribution (true to add the stored attribution of each lead).
 	 * @return array{leads: array, total: int}
 	 */
 	public function query_leads( array $args ): array {
@@ -507,8 +517,21 @@ final class VisitorChatStore {
 		$total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE {$where}" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		$rows  = $wpdb->get_results( "SELECT * FROM {$table} WHERE {$where} ORDER BY {$order} {$dir}, id DESC{$limit}", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 
+		$leads = array();
+
+		foreach ( (array) $rows as $row ) {
+			$lead = self::format_summary( $row );
+
+			if ( ! empty( $args['attribution'] ) ) {
+				$attribution         = json_decode( (string) $row['attribution'], true );
+				$lead['attribution'] = is_array( $attribution ) ? $attribution : array();
+			}
+
+			$leads[] = $lead;
+		}
+
 		return array(
-			'leads' => array_map( array( self::class, 'format_summary' ), (array) $rows ),
+			'leads' => $leads,
 			'total' => $total,
 		);
 	}
@@ -744,6 +767,9 @@ final class VisitorChatStore {
 			return $found;
 		}
 
+		// Leads whose status this changes, for wp_cortex_lead_updated.
+		$changed = isset( $fields['lead_status'] ) ? array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE id IN ({$in}) AND lead_at IS NOT NULL AND lead_status <> %s", $fields['lead_status'] ) ) ) : array(); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+
 		// Administrator changes do not touch updated_at, which tracks visitor activity.
 		$set    = array();
 		$values = array();
@@ -755,6 +781,10 @@ final class VisitorChatStore {
 		}
 
 		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET " . implode( ', ', $set ) . " WHERE id IN ({$in})", $values ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared
+
+		foreach ( $changed as $lead_id ) {
+			LeadPayload::updated( $lead_id, 'status' );
+		}
 
 		return $found;
 	}
