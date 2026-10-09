@@ -7,6 +7,7 @@
 
 namespace WPCortex\Integrations;
 
+use WPCortex\Integrations\Builtin\HubSpot;
 use WPCortex\Integrations\Builtin\Webhook;
 use WPCortex\Settings;
 
@@ -53,7 +54,7 @@ final class IntegrationRegistry {
 			return self::$integrations;
 		}
 
-		$list = array( new Webhook() );
+		$list = array( new Webhook(), new HubSpot() );
 
 		foreach ( self::theme_integrations() as $integration ) {
 			$list[] = $integration;
