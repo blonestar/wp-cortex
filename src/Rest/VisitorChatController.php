@@ -113,11 +113,18 @@ final class VisitorChatController {
 
 		register_rest_route(
 			self::NAMESPACE,
-			'/visitor-chats/(?P<id>\d+)/images/(?P<name>' . VisitorImages::NAME_PATTERN . ')',
+			'/visitor-chats/(?P<id>\d+)/image',
 			array(
 				'methods'             => WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_image' ),
 				'permission_callback' => $permission,
+				'args'                => array(
+					'name' => array(
+						'type'     => 'string',
+						'required' => true,
+						'pattern'  => '^' . VisitorImages::NAME_PATTERN . '$',
+					),
+				),
 			)
 		);
 
@@ -221,10 +228,12 @@ final class VisitorChatController {
 	}
 
 	/**
-	 * GET /visitor-chats/<id>/images/<name>: an image the visitor attached, as base64.
+	 * GET /visitor-chats/<id>/image?name=<name>: an image the visitor attached, as base64.
 	 *
 	 * Images live in the protected data directory and are never linked directly; the
-	 * admin screen loads them through this route (with the REST nonce) instead.
+	 * admin screen loads them through this route (with the REST nonce) instead. The file
+	 * name is a query argument because many hosts (WP Engine, Nginx static file rules)
+	 * answer URLs ending in .png or .jpg themselves, without ever reaching WordPress.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response|WP_Error

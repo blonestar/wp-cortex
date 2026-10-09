@@ -8,6 +8,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - Visitor chat `go_to_page` can reload the page the visitor is on (new `reload` argument), for example when the visitor asks to refresh a page that did not load correctly. It only reloads the current page, only after the visitor asks or confirms, and the chat stays open. The Visitor chats screen shows it as "Page reloaded".
 
+### Fixed
+
+- Images attached in the visitor chat showed "The image is no longer available." under Cortex > Visitor chats and Issue reports on hosts whose web server answers URLs ending in `.png` or `.jpg` itself (for example WP Engine), because the admin image route ended with the file name. The route is now `GET /wp-cortex/v1/visitor-chats/<id>/image?name=<name>`; images stored earlier show again.
+
 ## [0.10.2] - 2026-10-07
 
 ### Fixed
