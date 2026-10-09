@@ -173,6 +173,13 @@ final class Settings {
 			'summary_reasoning'          => '',
 			'summary_language'           => 'site',
 			'summary_instructions'       => '',
+			'leads_enabled'              => true,
+			'leads_attribution'          => false,
+			'leads_attribution_days'     => 90,
+			'leads_extra_params'         => array(),
+			'leads_consent'              => 'auto',
+			'leads_onetrust_group'       => Leads\Attribution::ONETRUST_GROUP,
+			'integrations'               => array(),
 		);
 	}
 
@@ -266,6 +273,14 @@ final class Settings {
 	 */
 	public static function skills_enabled(): bool {
 		return (bool) self::get( 'skills_enabled' );
+	}
+
+	/**
+	 * Whether leads are on: the Leads screen, the leads REST routes, the lead status and
+	 * AI rating of visitor conversations and, while `leads_attribution` is on, attribution.
+	 */
+	public static function leads_enabled(): bool {
+		return (bool) self::get( 'leads_enabled' );
 	}
 
 	/**
@@ -440,6 +455,13 @@ final class Settings {
 			'summary_reasoning'        => $summary_custom ? sanitize_key( (string) ( $input['summary_reasoning'] ?? '' ) ) : '',
 			'summary_language'         => in_array( $summary_language, self::SUMMARY_LANGUAGES, true ) ? $summary_language : self::SUMMARY_LANGUAGES[0],
 			'summary_instructions'     => mb_substr( $summary_instructions, 0, self::CHAT_INSTRUCTIONS_MAX ),
+			'leads_enabled'            => ! empty( $input['leads_enabled'] ),
+			'leads_attribution'        => ! empty( $input['leads_attribution'] ),
+			'leads_attribution_days'   => self::clamp( $input['leads_attribution_days'] ?? $defaults['leads_attribution_days'], 0, 730 ),
+			'leads_extra_params'       => Leads\Attribution::sanitize_param_names( $input['leads_extra_params'] ?? array() ),
+			'leads_consent'            => in_array( $input['leads_consent'] ?? '', Leads\Attribution::CONSENT_MODES, true ) ? (string) $input['leads_consent'] : 'auto',
+			'leads_onetrust_group'     => Leads\Attribution::sanitize_onetrust_group( $input['leads_onetrust_group'] ?? '' ),
+			'integrations'             => Integrations\IntegrationRegistry::sanitize( $input['integrations'] ?? null, (array) $stored['integrations'] ),
 		);
 	}
 

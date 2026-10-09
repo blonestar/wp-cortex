@@ -11,6 +11,7 @@ use WPCortex\Chat\VisitorChatMailer;
 use WPCortex\Chat\VisitorChatStore;
 use WPCortex\Chat\VisitorChatSummarizer;
 use WPCortex\Chat\VisitorImages;
+use WPCortex\Settings;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -38,10 +39,14 @@ final class VisitorChatController {
 	public function register_routes(): void {
 		$permission = array( $this, 'permission' );
 		$fields     = array(
-			'is_read'    => array( 'type' => 'boolean' ),
-			'admin_note' => array(
+			'is_read'     => array( 'type' => 'boolean' ),
+			'admin_note'  => array(
 				'type'      => 'string',
 				'maxLength' => VisitorChatStore::MAX_NOTE * 2,
+			),
+			'lead_status' => array(
+				'type' => 'string',
+				'enum' => VisitorChatStore::LEAD_STATUSES,
 			),
 		);
 
@@ -260,7 +265,7 @@ final class VisitorChatController {
 	}
 
 	/**
-	 * PUT/PATCH /visitor-chats/<id>: read state and administrator note.
+	 * PUT/PATCH /visitor-chats/<id>: read state, administrator note and lead status.
 	 *
 	 * @param WP_REST_Request $request Request.
 	 * @return WP_REST_Response|WP_Error
@@ -270,7 +275,7 @@ final class VisitorChatController {
 		$id    = (int) $request['id'];
 		$data  = array();
 
-		foreach ( array( 'is_read', 'admin_note' ) as $key ) {
+		foreach ( Settings::leads_enabled() ? array( 'is_read', 'admin_note', 'lead_status' ) : array( 'is_read', 'admin_note' ) as $key ) {
 			if ( null !== $request->get_param( $key ) ) {
 				$data[ $key ] = $request->get_param( $key );
 			}
