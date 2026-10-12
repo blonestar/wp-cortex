@@ -78,7 +78,7 @@ final class Dispatcher {
 	}
 
 	/**
-	 * Schedules a delivery for every active integration that wants the event.
+	 * Schedules a delivery for every active integration that wants the event and can send it.
 	 *
 	 * @param int      $id      Conversation ID.
 	 * @param string   $event   "created" or "updated".
@@ -86,7 +86,7 @@ final class Dispatcher {
 	 */
 	private static function schedule( int $id, string $event, array $changes ): void {
 		foreach ( IntegrationRegistry::active() as $integration_id => $active ) {
-			if ( in_array( $event, (array) $active['settings']['events'], true ) ) {
+			if ( in_array( $event, (array) $active['settings']['events'], true ) && in_array( $event, $active['integration']->supported_events( $active['settings'] ), true ) ) {
 				wp_schedule_single_event( time(), self::CRON_HOOK, array( $integration_id, $id, $event, array_values( $changes ) ) );
 			}
 		}

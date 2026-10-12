@@ -1450,9 +1450,12 @@ final class SettingsPage {
 		$this->row_end();
 
 		$this->row_start( __( 'Send', 'wp-cortex' ) );
-		$events = array(
-			'created' => __( 'New leads', 'wp-cortex' ),
-			'updated' => __( 'Changes to leads (contact details, status, AI rating)', 'wp-cortex' ),
+		$events = array_intersect_key(
+			array(
+				'created' => __( 'New leads', 'wp-cortex' ),
+				'updated' => __( 'Changes to leads (contact details, status, AI rating)', 'wp-cortex' ),
+			),
+			array_flip( $integration->supported_events( $settings ) )
 		);
 		foreach ( $events as $event => $label ) {
 			printf(
@@ -1463,7 +1466,11 @@ final class SettingsPage {
 				esc_html( $label )
 			);
 		}
-		$this->row_end( __( 'A change sends the whole lead again with the same ID, so the receiver can update its record instead of creating a new one.', 'wp-cortex' ) );
+		$this->row_end(
+			isset( $events['updated'] )
+				? __( 'A change sends the whole lead again with the same ID, so the receiver can update its record instead of creating a new one.', 'wp-cortex' )
+				: __( 'This integration cannot update a lead it has sent, so later changes are not sent.', 'wp-cortex' )
+		);
 
 		foreach ( $integration->fields() as $key => $field ) {
 			$this->row_start( (string) ( $field['label'] ?? $key ) );
