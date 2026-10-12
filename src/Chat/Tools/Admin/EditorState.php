@@ -13,7 +13,8 @@ defined( 'ABSPATH' ) || exit;
  * Sanitizes what the chat panel reports about the post open in the block editor (its
  * fields as they are in the editor, possibly not saved yet) and validates the values
  * the editor tools write back. The editor tools never save anything: the browser
- * applies their changes in the editor and the user saves the post.
+ * applies their changes in the editor and the user saves the post, or asks the chat to
+ * (EditorSave).
  */
 final class EditorState {
 
@@ -89,6 +90,8 @@ final class EditorState {
 				? self::clip( sanitize_textarea_field( (string) ( $raw['excerpt'] ?? '' ) ), self::MAX_EXCERPT_LENGTH )
 				: null,
 			'slug'    => self::clip( sanitize_title( (string) ( $raw['slug'] ?? '' ) ), self::MAX_SLUG_LENGTH ),
+			// Status set in the editor; it differs from the saved one until the post is saved.
+			'status'  => sanitize_key( (string) ( $raw['status'] ?? '' ) ),
 			'terms'   => array(),
 			'seo'     => null,
 			'blocks'  => null,

@@ -21,7 +21,9 @@ interface ConfirmableTool {
 	 * Runs a confirmed call.
 	 *
 	 * @param array $input Input stored with the action card.
-	 * @return mixed|\WP_Error Result for the model.
+	 * @return mixed|\WP_Error Result for the model. An array may carry a "ui_action" for the
+	 *                         browser (for example EditorSave::ACTION); it is taken out of
+	 *                         the result and returned with the UI actions of the reply.
 	 */
 	public function run_confirmed( array $input );
 }
