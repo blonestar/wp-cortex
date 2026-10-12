@@ -62,6 +62,18 @@ abstract class Integration {
 	}
 
 	/**
+	 * Events the integration can send with these settings: "created" and/or "updated".
+	 * Only they are offered in the settings and scheduled. Leave out "updated" when the
+	 * destination cannot update a record it created.
+	 *
+	 * @param array $settings This integration's settings.
+	 * @return string[]
+	 */
+	public function supported_events( array $settings ): array {
+		return IntegrationRegistry::EVENTS;
+	}
+
+	/**
 	 * Whether the settings are complete enough to send: every required field is filled in.
 	 *
 	 * @param array $settings This integration's settings.

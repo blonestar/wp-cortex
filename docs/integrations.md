@@ -101,6 +101,27 @@ Creates or updates a HubSpot contact for each lead. It needs the access token of
 - **Send test lead.** Creates or updates the contact `Test Lead` (`test@example.com`, key `<site>#test`). You can delete it in HubSpot.
 - **Errors.** A refused token, a missing scope or a HubSpot error is shown in the delivery log and retried like any failed delivery.
 
+## Built-in: Salesforce
+
+Creates a Salesforce lead for each new lead through [Web-to-Lead](https://help.salesforce.com/s/articleView?id=sales.setting_up_web-to-lead.htm). It needs only the organization ID (Setup > Company Information, starts with `00D`), and Web-to-Lead must be on in Salesforce (Setup > Web-to-Lead). Tick **This is a sandbox organization** to send to a sandbox.
+
+- **New leads only.** Web-to-Lead can create a lead but not update it, so this integration offers only "New leads". The lead is sent as it is a moment after it was created; contact details the visitor adds later, status changes and the AI rating (unless leads are rated before the delivery runs) do not reach Salesforce.
+- **Standard fields.** First name, last name, company, email, phone, website, street (the lead's address) and description (the request and a link to the conversation), plus the **Lead source** from the settings (`Web` by default). Salesforce requires a last name and a company, so a missing one is sent as `[not provided]`.
+- **Custom fields.** One line per field in the settings: a value of the lead, `=`, and the Salesforce field. Web-to-Lead identifies a custom field by its ID (Setup > Object Manager > Lead > Fields & Relationships > the field; the ID starting with `00N` is in the address bar), for example:
+
+  ```
+  gclid = 00N5g00000AbCdE
+  utm_campaign = 00N5g00000FgHiJ
+  first_utm_source = 00N5g00000KlMnO
+  lead_id = 00N5g00000PqRsT
+  ```
+
+  Values: `lead_id` (`<site>#<lead ID>`), `status`, `rating`, `score`, `intent`, `conversation_url`, `visits`, and from the latest visit `channel`, `source`, `medium`, `landing`, `referrer`, every UTM parameter, every ad click ID and your extra parameters (`leads_extra_params`). Prefix a visit value with `first_` for the first visit. Empty values are not sent, and values are cut to 255 characters.
+- **What the delivery log can tell.** Salesforce answers a Web-to-Lead request with success even when it does not create the lead. A request it refuses outright (for example an unknown organization ID) is reported through its `Is-Processed` header and shown as failed. A lead dropped afterwards by a validation rule, a duplicate rule or the daily Web-to-Lead limit (500 by default) is shown as sent. While setting up, fill in **Debug email**: Salesforce then emails that address what it received and why a lead was not created.
+- **Send test lead.** Creates a lead named `Test Lead` (`test@example.com`), which you can delete in Salesforce. Each test creates another one.
+
+The class builds the Salesforce lead once, by the API names of the Lead fields, and a delivery method sends it. Web-to-Lead is the only method for now; a REST API method (updates and real error reporting) can be added next to it without changing stored settings.
+
 ## Writing your own integration
 
 An integration is a class extending `WPCortex\Integrations\Integration`. It describes its settings and sends one lead. Storing the settings, scheduling, retries and the log are handled for it.
@@ -112,6 +133,7 @@ An integration is a class extending `WPCortex\Integrations\Integration`. It desc
 | `send( $event, $payload, $changes, $settings )` | yes | Send one lead. Return `true`, or a `WP_Error` (which is retried). |
 | `description()` | no | One sentence shown in the card. |
 | `fields()` | no | Settings fields (see below). |
+| `supported_events( $settings )` | no | Events it can send, `created` and/or `updated` (both by default). Leave out `updated` when the destination cannot update a record. |
 | `is_configured( $settings )` | no | Defaults to "every required field is filled in". |
 | `validate( $settings )` | no | Return a `WP_Error` to refuse switching it on (the reason is shown). |
 

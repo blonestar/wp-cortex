@@ -9,6 +9,7 @@ namespace WPCortex\Integrations;
 
 use WPCortex\Integrations\Builtin\Email;
 use WPCortex\Integrations\Builtin\HubSpot;
+use WPCortex\Integrations\Builtin\Salesforce;
 use WPCortex\Integrations\Builtin\Slack;
 use WPCortex\Integrations\Builtin\Webhook;
 use WPCortex\Settings;
@@ -56,7 +57,7 @@ final class IntegrationRegistry {
 			return self::$integrations;
 		}
 
-		$list = array( new Webhook(), new Email(), new Slack(), new HubSpot() );
+		$list = array( new Webhook(), new Email(), new Slack(), new HubSpot(), new Salesforce() );
 
 		foreach ( self::theme_integrations() as $integration ) {
 			$list[] = $integration;
