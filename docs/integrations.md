@@ -67,6 +67,15 @@ if ( ! hash_equals( $expected, $_SERVER['HTTP_X_CORTEX_SIGNATURE'] ?? '' ) ) {
 - Any 2xx answer counts as delivered. Anything else is retried.
 - Addresses on the local or private network are refused (`wp_safe_remote_post()`).
 
+## Built-in: Email notification
+
+Emails each lead as plain text to one or more addresses (separated by commas, up to 10). It needs no account anywhere else: the email goes through `wp_mail()`, so whatever sends the site's other email (for example an SMTP plugin) sends it.
+
+- **Content.** The subject is `[Site name] New lead: <name>` or `Lead updated: <name>`. The body lists the details the lead has: name, email, phone, company, website, address and request, then the status, the AI rating (rating, score, intent, interest, budget, timeline, next step) and, with attribution, the channel, campaign, landing page and referrer of the latest visit. It ends with a link to the conversation. An update names what changed.
+- **Replies.** When the visitor left an email address, it is the `Reply-To` address, so answering the notification writes to the visitor.
+- **Changes.** With "Changes to leads" ticked, every change sends another email. Untick it to get one email per lead.
+- **Errors.** When the site cannot send the email, the reason reported by `wp_mail()` is shown in the delivery log and the delivery is retried. An email that was accepted for sending but never arrived is not noticed.
+
 ## Built-in: HubSpot
 
 Creates or updates a HubSpot contact for each lead. It needs the access token of a HubSpot private app with the scopes `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read` and `crm.schemas.contacts.write`.
