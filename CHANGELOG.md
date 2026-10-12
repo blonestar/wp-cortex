@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Admin chat `reload_page` tool: asking the assistant to reload or refresh the page reloads the page you are on, with the chat kept open. It does not reload while the page has unsaved changes (the post in the block editor, or ACF fields); the assistant asks you to save them first.
+
 ## [0.13.0] - 2026-10-12
 
 ### Added

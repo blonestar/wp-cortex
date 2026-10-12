@@ -585,7 +585,21 @@
 		if ( editor ) {
 			context.editor = editorState( editor );
 		}
+		if ( hasUnsavedChanges() ) {
+			context.unsaved = true;
+		}
 		return context;
+	}
+
+	// Whether a reload would discard changes: the post in the block editor, or ACF fields.
+	function hasUnsavedChanges() {
+		var editor = blockEditor();
+		try {
+			if ( editor && 'function' === typeof editor.select.isEditedPostDirty && editor.select.isEditedPostDirty() ) {
+				return true;
+			}
+		} catch ( e ) {}
+		return !! ( window.acf && window.acf.unload && window.acf.unload.changed );
 	}
 
 	/* ---------- Block editor ---------- */
@@ -1280,6 +1294,11 @@
 					reportTab( a.label, clickTab( a.label ) );
 				}
 			} );
+			if ( actions.some( function ( a ) {
+				return a && 'reload' === a.type;
+			} ) ) {
+				reloadPage();
+			}
 			return;
 		}
 		var target;
@@ -1304,6 +1323,23 @@
 		}
 		window.setTimeout( function () {
 			window.location.href = target.href;
+		}, 600 );
+	}
+
+	// Reloads the current page with the panel kept open, unless that would discard
+	// unsaved changes (checked again here: the server only knows the state at send time).
+	function reloadPage() {
+		if ( hasUnsavedChanges() ) {
+			addMessage( 'error', __( 'The page was not reloaded because it has unsaved changes. Save them first.', 'wp-cortex' ), false );
+			scrollBottom();
+			return;
+		}
+		addMessage( 'assistant', __( 'Reloading the page…', 'wp-cortex' ), false );
+		scrollBottom();
+		state.open = true;
+		saveState();
+		window.setTimeout( function () {
+			window.location.reload();
 		}, 600 );
 	}
 

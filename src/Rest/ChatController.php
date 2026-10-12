@@ -62,6 +62,7 @@ final class ChatController {
 					'items'    => array( 'type' => 'string' ),
 				),
 				'editor'      => array( 'type' => 'object' ),
+				'unsaved'     => array( 'type' => 'boolean' ),
 			),
 		);
 
@@ -339,7 +340,7 @@ final class ChatController {
 	 * Sanitized screen context sent by the chat panel.
 	 *
 	 * @param WP_REST_Request $request Request.
-	 * @return array{screen: string, post_id: int, admin_pages: array, tabs: array, editor: array|null}
+	 * @return array{screen: string, post_id: int, admin_pages: array, tabs: array, editor: array|null, unsaved: bool}
 	 */
 	private function screen_context( WP_REST_Request $request ): array {
 		$context = $request->get_param( 'context' );
@@ -353,6 +354,8 @@ final class ChatController {
 			'tabs'        => AdminPages::sanitize_tabs( $context['tabs'] ?? array() ),
 			// Fields of the post open in the block editor, only reported on its edit screen.
 			'editor'      => EditorState::sanitize( $context['editor'] ?? null, $post_id ),
+			// Whether the page has unsaved changes, so reload_page does not discard them.
+			'unsaved'     => ! empty( $context['unsaved'] ),
 		);
 	}
 
