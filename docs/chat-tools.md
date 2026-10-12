@@ -4,7 +4,7 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 | Chat | Built-in tools | Classes | Theme folder | Filter |
 |---|---|---|---|---|
-| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
+| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
 | Visitor | `search_site`, `get_page`, `go_to_page`, `save_contact_details`, `report_issue` | `src/Chat/Tools/Public/` | `wp-cortex/tools/public/` | `wp_cortex_public_chat_tools` |
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
@@ -198,6 +198,12 @@ While the block editor of a post is open, the chat panel sends the post as it is
 | `edit_content` | `replace` the text of a paragraph, heading, list item, preformatted, verse or button block (inline HTML), `insert_before` / `insert_after` HTML (converted to blocks by the editor), `remove` a block |
 
 The editor tools never write to the database. They only validate the change and add a UI action (`edit_post`, `edit_seo`, `edit_fields`, `edit_content`); `assets/js/chat.js` applies it in the editor (`core/editor` `editPost()`, the Yoast SEO store, the ACF JS API, `core/block-editor`), so the post is marked as changed and the user saves it or undoes the change. They need no confirmation card for that reason. The block text attributes (`EditorState::TEXT_BLOCKS`) and ACF field types (`EditorState::FIELD_TYPES`) are listed in both files and must be kept in sync.
+
+## Clearing the cache
+
+`clear_cache` clears the WordPress caches. With `scope: "post"` (the given post, or the post being edited or viewed) it runs `clean_post_cache()` right away; the user must be able to edit the post. With `scope: "site"` it flushes the object cache (`wp_cache_flush()`) and deletes expired transients; `also` can add `all_transients` (every transient in the options table, also unexpired ones) and `rewrite_rules` (`flush_rewrite_rules( false )`, without rewriting `.htaccess`). A site-wide clear needs `manage_options` and never runs on the model's call: it adds an action card like an ability that may change the site, and runs after the user confirms it (see below). The result tells the model whether a persistent object cache is in use, because without one only the database transients and rewrite rules have a lasting effect. It does not clear page caches of caching plugins, the host or a CDN.
+
+Built-in tools confirm calls the same way as abilities by implementing `Chat\Tools\Admin\ConfirmableTool`: the card has a `tool` key (the function name) instead of `ability`, and `ChatAgent::resolve_action()` calls the tool's `run_confirmed()` with the input stored in the card, if the tool is still switched on, within an hour and only once.
 
 ## Abilities of other plugins
 

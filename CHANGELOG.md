@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Admin chat `clear_cache` tool: clears the WordPress cache on request. The cache of one post (the current one by default) is cleared right away; a site-wide clear (object cache and expired transients, optionally every transient and the permalink rules) runs only after you confirm the action card in the chat. It does not clear page caches of caching plugins, the host or a CDN.
+
 ## [0.12.0] - 2026-10-09
 
 ### Added
