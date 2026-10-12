@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-12
+
 ### Added
 
 - Lead integration **Salesforce** (Settings > Leads > Integrations): creates a Salesforce lead for each new lead through Web-to-Lead, with only the organization ID. Campaign parameters, ad click IDs (for example `gclid`), the status and the AI rating go into the custom Lead fields you map in the settings. It sends new leads only, because Web-to-Lead cannot update a lead; a debug email address helps find leads Salesforce dropped.
