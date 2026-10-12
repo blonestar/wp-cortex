@@ -23,6 +23,7 @@ use WPCortex\Chat\Tools\Admin\GetEditorContent;
 use WPCortex\Chat\Tools\Admin\OpenAdminPage;
 use WPCortex\Chat\Tools\Admin\OpenPost;
 use WPCortex\Chat\Tools\Admin\ProposeSkill;
+use WPCortex\Chat\Tools\Admin\ReloadPage;
 use WPCortex\Chat\Tools\Admin\SelectTab;
 use WPCortex\Chat\Tools\Admin\UseSkill;
 use WPCortex\Chat\Tools\AgentLoop;
@@ -181,7 +182,7 @@ final class ChatAgent {
 	 * @param int    $conversation_id Conversation ID.
 	 * @param string $action_id       Action ID from the card.
 	 * @param bool   $run             True to run the action, false to cancel it.
-	 * @param array  $context         Screen context: screen, post_id, admin_pages, tabs.
+	 * @param array  $context         Screen context: screen, post_id, admin_pages, tabs, unsaved.
 	 * @param int    $user_id         Current user.
 	 * @return array{conversation_id: int, title: string, items: array, actions: array}|WP_Error
 	 */
@@ -447,6 +448,7 @@ final class ChatAgent {
 			new OpenPost(),
 			new OpenAdminPage(),
 			new SelectTab(),
+			new ReloadPage(),
 			new EditPost(),
 			new EditSeo(),
 			new EditFields(),

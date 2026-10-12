@@ -62,7 +62,7 @@ final class AdminContext extends ToolContext {
 	/**
 	 * Constructor.
 	 *
-	 * @param array      $screen      Screen context sent by the browser: screen, post_id, admin_pages, tabs, editor.
+	 * @param array      $screen      Screen context sent by the browser: screen, post_id, admin_pages, tabs, editor, unsaved.
 	 * @param int        $user_id     Current user.
 	 * @param array      $skills      Active skills offered in this turn (empty when skills are off).
 	 * @param SkillStore $skill_store Skill store.
@@ -123,6 +123,14 @@ final class AdminContext extends ToolContext {
 		$editor = $this->screen['editor'] ?? null;
 
 		return is_array( $editor ) ? $editor : null;
+	}
+
+	/**
+	 * Whether the browser reported unsaved changes on the page the user is on (the post in
+	 * the block editor, or ACF fields).
+	 */
+	public function has_unsaved_changes(): bool {
+		return ! empty( $this->screen['unsaved'] );
 	}
 
 	/**
