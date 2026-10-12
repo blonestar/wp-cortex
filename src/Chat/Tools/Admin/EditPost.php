@@ -149,7 +149,7 @@ final class EditPost extends AdminTool {
 			);
 		}
 
-		$lines[] = 'To change these fields, call edit_post. When the user asks for suggestions (for example titles or an excerpt), only suggest them and wait: call edit_post only after the user picks or accepts one. Only existing terms can be assigned; never invent term names. Editor tools (edit_post and the other editor tools) need no confirmation card: they change the editor right away but do not save the post; after calling them, tell the user to review the changes and save the post.';
+		$lines[] = 'To change these fields, call edit_post. When the user asks for suggestions (for example titles or an excerpt), only suggest them and wait: call edit_post only after the user picks or accepts one. Only existing terms can be assigned; never invent term names. Editor tools (edit_post and the other editor tools) need no confirmation card: they change the editor right away but do not save the post; after calling them, tell the user to review the changes and save the post (do not save it yourself unless the user asked for that).';
 
 		return $lines;
 	}

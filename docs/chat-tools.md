@@ -4,7 +4,7 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 | Chat | Built-in tools | Classes | Theme folder | Filter |
 |---|---|---|---|---|
-| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
+| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `save_post`, `publish_post`, `set_post_status`, `preview_post`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
 | Visitor | `search_site`, `get_page`, `go_to_page`, `save_contact_details`, `report_issue` | `src/Chat/Tools/Public/` | `wp-cortex/tools/public/` | `wp_cortex_public_chat_tools` |
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
@@ -187,7 +187,7 @@ Both contexts:
 
 ## Editor tools
 
-While the block editor of a post is open, the chat panel sends the post as it is in the editor (including unsaved changes) with every message: title, excerpt, slug, term IDs of the taxonomies the user can assign, the Yoast SEO title, meta description and focus keyphrase (when Yoast SEO is active), the blocks (client ID, block name, depth and the inline HTML of text blocks) and the ACF fields of a simple type. `EditorState::sanitize()` cleans it (and drops it when the user cannot edit the post); ACF field types, labels and choices come from ACF, and only top-level fields of the field groups shown for the post are kept.
+While the block editor of a post is open, the chat panel sends the post as it is in the editor (including unsaved changes) with every message: title, excerpt, slug, status, term IDs of the taxonomies the user can assign, the Yoast SEO title, meta description and focus keyphrase (when Yoast SEO is active), the blocks (client ID, block name, depth and the inline HTML of text blocks) and the ACF fields of a simple type. `EditorState::sanitize()` cleans it (and drops it when the user cannot edit the post); ACF field types, labels and choices come from ACF, and only top-level fields of the field groups shown for the post are kept.
 
 | Tool | Changes |
 |---|---|
@@ -199,13 +199,30 @@ While the block editor of a post is open, the chat panel sends the post as it is
 
 The editor tools never write to the database. They only validate the change and add a UI action (`edit_post`, `edit_seo`, `edit_fields`, `edit_content`); `assets/js/chat.js` applies it in the editor (`core/editor` `editPost()`, the Yoast SEO store, the ACF JS API, `core/block-editor`), so the post is marked as changed and the user saves it or undoes the change. They need no confirmation card for that reason. The block text attributes (`EditorState::TEXT_BLOCKS`) and ACF field types (`EditorState::FIELD_TYPES`) are listed in both files and must be kept in sync.
 
+### Saving, publishing and previewing
+
+On request the chat can also save the post open in the editor. These tools do not write to the database either: they add a `save_post` UI action (`Chat\Tools\Admin\EditorSave`) and `chat.js` saves the post through the editor (`core/editor` `editPost()` for the status and date, then `savePost()`), exactly as the editor's own buttons do, so the user's capabilities, revisions, meta boxes and save hooks all apply.
+
+| Tool | Does | Confirmation card |
+|---|---|---|
+| `save_post` | saves the post with the status it has in the editor (Save draft / Update) | when the post is published or private, or its status was changed to one of those in the editor |
+| `publish_post` | publishes the post, or schedules it with `date` (`YYYY-MM-DD HH:MM`, site time, in the future); needs `publish_post` for the post, and refuses a post that is already published | always |
+| `set_post_status` | switches the post to `draft` (also unpublish, unschedule) or `pending` and saves it | when the post is published or private |
+| `preview_post` | prepares a preview like the Preview button (`__unstableSaveForPreview()`: a draft is saved, changes of a published post are autosaved) and shows a link in the chat | never |
+
+A save that changes what visitors see never runs on the model's call. The tool adds an action card (`ConfirmableTool`, see below) and its `run_confirmed()` checks the user's capabilities again and returns the UI action in the `ui_action` key of its result; `ChatAgent::resolve_action()` takes it out and returns it with the UI actions of the reply. Only that action has `confirmed: true`, and `chat.js` refuses to save a post that is or would become published without it. The card of such a tool is marked `client` and shows "Sent to the editor" instead of "Done", because the save itself happens in the browser.
+
+The browser saves after the changes of the same reply ("change the title and save" works in one message) and before a navigation or reload, which are skipped when the save fails. It refuses when the post is no longer open, is locked by another user, is being saved or is empty. The outcome is shown in the chat ("The draft is saved.", or the error of the editor); when the save fails, the status and date it set are put back, so a later manual save does not publish by accident. The model does not see the outcome in the same reply: it sees the saved status and whether the editor has unsaved changes with the next message. Publishing now also clears a later date set in the editor.
+
+The chat never saves or publishes a post that is not open in the editor, and has no tool to trash or delete posts.
+
 ## Clearing the cache
 
 `reload_page` reloads the page the user is on (admin screen, editor or front end) with the chat panel kept open; it takes no arguments and opens nothing else. The chat panel reports whether the page has unsaved changes (`unsaved` in the screen context: the post in the block editor is dirty, or ACF fields changed), and the tool refuses to reload while it does, or after an editor tool changed the post in the same reply. The browser checks again right before reloading. A navigation in the same reply wins over the reload.
 
 `clear_cache` clears the WordPress caches. With `scope: "post"` (the given post, or the post being edited or viewed) it runs `clean_post_cache()` right away; the user must be able to edit the post. With `scope: "site"` it flushes the object cache (`wp_cache_flush()`) and deletes expired transients; `also` can add `all_transients` (every transient in the options table, also unexpired ones) and `rewrite_rules` (`flush_rewrite_rules( false )`, without rewriting `.htaccess`). A site-wide clear needs `manage_options` and never runs on the model's call: it adds an action card like an ability that may change the site, and runs after the user confirms it (see below). The result tells the model whether a persistent object cache is in use, because without one only the database transients and rewrite rules have a lasting effect. It does not clear page caches of caching plugins, the host or a CDN.
 
-Built-in tools confirm calls the same way as abilities by implementing `Chat\Tools\Admin\ConfirmableTool`: the card has a `tool` key (the function name) instead of `ability`, and `ChatAgent::resolve_action()` calls the tool's `run_confirmed()` with the input stored in the card, if the tool is still switched on, within an hour and only once.
+Built-in tools confirm calls the same way as abilities by implementing `Chat\Tools\Admin\ConfirmableTool`: the card has a `tool` key (the function name) instead of `ability`, and `ChatAgent::resolve_action()` calls the tool's `run_confirmed()` with the input stored in the card, if the tool is still switched on, within an hour and only once. A result with a `ui_action` key hands that action to the browser (the save tools above).
 
 ## Abilities of other plugins
 

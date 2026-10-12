@@ -7,6 +7,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 ### Added
 
 - Visitor chat setting **Conversation memory** (`public_chat_history`, Settings > Visitor chat): how many previous messages of the conversation the assistant sees when it answers, from 2 to 100. The default is 50, up from the fixed 12 until now, so the assistant no longer loses the start of a longer conversation; the total text sent stays capped, so a longer memory cannot be abused to run up provider costs.
+- Admin chat tools that save the post open in the block editor, on request: `save_post` (Save draft / Update), `publish_post` (publish now, or schedule for a date), `set_post_status` (switch to draft or pending review) and `preview_post` (a preview link in the chat). The post is saved by the editor itself, as if you clicked its button. A draft is saved right away; updating a published post, publishing, scheduling and taking a published post offline run only after you confirm the action card in the chat. "Change the title and save" works in one message. The assistant never saves on its own, only saves the post that is open in the editor, and cannot trash or delete posts. Each tool can be switched off under Settings > Chat tools.
 - Admin chat `reload_page` tool: asking the assistant to reload or refresh the page reloads the page you are on, with the chat kept open. It does not reload while the page has unsaved changes (the post in the block editor, or ACF fields); the assistant asks you to save them first.
 
 ## [0.13.0] - 2026-10-12
