@@ -10,6 +10,14 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 - Admin chat tools that save the post open in the block editor, on request: `save_post` (Save draft / Update), `publish_post` (publish now, or schedule for a date), `set_post_status` (switch to draft or pending review) and `preview_post` (a preview link in the chat). The post is saved by the editor itself, as if you clicked its button. A draft is saved right away; updating a published post, publishing, scheduling and taking a published post offline run only after you confirm the action card in the chat. "Change the title and save" works in one message. The assistant never saves on its own, only saves the post that is open in the editor, and cannot trash or delete posts. Each tool can be switched off under Settings > Chat tools.
 - Admin chat `reload_page` tool: asking the assistant to reload or refresh the page reloads the page you are on, with the chat kept open. It does not reload while the page has unsaved changes (the post in the block editor, or ACF fields); the assistant asks you to save them first.
 
+### Changed
+
+- Admin chat: the assistant can take up to 15 steps (tool calls) per message, up from 7, so longer requests in the editor fit in one message.
+
+### Fixed
+
+- Chat: a request that needs more steps than allowed no longer ends with "The assistant needed too many steps to answer" and the loss of everything done so far. The assistant now uses its last step to say what it did, what is left and what it could not do, and the changes it already made are kept.
+
 ## [0.13.0] - 2026-10-12
 
 ### Added
