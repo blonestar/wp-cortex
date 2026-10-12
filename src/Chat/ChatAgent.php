@@ -47,7 +47,7 @@ defined( 'ABSPATH' ) || exit;
  */
 final class ChatAgent {
 
-	private const MAX_ITERATIONS    = 8;
+	private const MAX_ITERATIONS    = 16;
 	private const HISTORY_LIMIT     = 30;
 	private const MAX_PAYLOAD_CHARS = 12000;
 	private const MAX_RESULT_ITEMS  = 12;

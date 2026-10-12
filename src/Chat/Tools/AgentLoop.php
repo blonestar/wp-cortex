@@ -9,6 +9,7 @@ namespace WPCortex\Chat\Tools;
 
 use WordPress\AiClient\Messages\DTO\Message;
 use WordPress\AiClient\Messages\DTO\MessagePart;
+use WordPress\AiClient\Messages\DTO\ModelMessage;
 use WordPress\AiClient\Messages\DTO\UserMessage;
 use WordPress\AiClient\Tools\DTO\FunctionResponse;
 use WPCortex\Chat\PromptFactory;
@@ -18,9 +19,15 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Calls the model until it answers without function calls, running the calls through
- * the registry in between.
+ * the registry in between. The last allowed model call is told to answer without
+ * functions, so a long task ends with a report of what was done instead of an error.
  */
 final class AgentLoop {
+
+	/**
+	 * System instruction added to the last allowed model call.
+	 */
+	private const FINAL_STEP_INSTRUCTION = 'You have used every step available for this message. Do not call any more functions: they will not run. Answer now, in the language of the user: say briefly what you did, what is still left to do, and what you could not do with the functions you have. The user can ask you to continue in the next message.';
 
 	/**
 	 * Runs the loop.
@@ -29,7 +36,7 @@ final class AgentLoop {
 	 * @param string        $system         System instruction.
 	 * @param ToolRegistry  $tools          Tools of the turn.
 	 * @param string        $chat           Chat whose model is used: 'admin' or 'public'.
-	 * @param int           $max_iterations Maximum number of model calls.
+	 * @param int           $max_iterations Maximum number of model calls, the last of which only answers.
 	 * @param callable|null $on_response    Optional; gets the function name and the response of
 	 *                                      an available tool and returns the response sent to the model.
 	 * @return array{messages: Message[], text: string}|WP_Error All messages including the final model message, and its text.
@@ -40,7 +47,10 @@ final class AgentLoop {
 		$functions = $tools->declarations();
 
 		for ( $i = 0; $i < $max_iterations; $i++ ) {
-			$builder = PromptFactory::builder( $messages, $system, $functions, $chat );
+			$is_last = $max_iterations - 1 === $i;
+			// The functions stay declared: some providers reject a history with function
+			// calls when no functions are declared.
+			$builder = PromptFactory::builder( $messages, $is_last ? $system . "\n\n" . self::FINAL_STEP_INSTRUCTION : $system, $functions, $chat );
 
 			if ( is_wp_error( $builder ) ) {
 				return $builder;
@@ -53,8 +63,20 @@ final class AgentLoop {
 			}
 
 			$model_message = $result->toMessage();
-			$messages[]    = $model_message;
 			$reply         = PromptFactory::parse( $model_message );
+
+			if ( $is_last && $reply['calls'] ) {
+				// The calls are not run, so they are kept out of the history as well.
+				$text       = '' !== $reply['text'] ? $reply['text'] : __( 'I ran out of steps before I could finish this request. Ask me to continue, or split the request into smaller parts.', 'wp-cortex' );
+				$messages[] = new ModelMessage( array( new MessagePart( $text ) ) );
+
+				return array(
+					'messages' => $messages,
+					'text'     => $text,
+				);
+			}
+
+			$messages[] = $model_message;
 
 			if ( ! $reply['calls'] ) {
 				return array(
@@ -79,6 +101,7 @@ final class AgentLoop {
 			}
 		}
 
+		// Only reached when no model call is allowed at all.
 		return new WP_Error( 'wp_cortex_too_many_steps', __( 'The assistant needed too many steps to answer. Please try a more specific question.', 'wp-cortex' ) );
 	}
 }

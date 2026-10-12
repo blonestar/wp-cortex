@@ -56,7 +56,7 @@ final class PublicChatAgent {
 	private const IMAGE_ONLY = '[The visitor sent this image without a message.]';
 	private const IMAGE_NOTE = '[The visitor attached an image to this message.]';
 
-	private const MAX_ITERATIONS = 5;
+	private const MAX_ITERATIONS = 6;
 	private const MAX_SOURCES    = 6;
 
 	/**
