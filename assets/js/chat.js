@@ -650,6 +650,7 @@
 			title: String( select.getEditedPostAttribute( 'title' ) || '' ),
 			excerpt: String( select.getEditedPostAttribute( 'excerpt' ) || '' ),
 			slug: String( select.getEditedPostAttribute( 'slug' ) || '' ),
+			status: String( select.getEditedPostAttribute( 'status' ) || '' ),
 			terms: {},
 			fields: acfFields().map( function ( field ) {
 				return { key: field.get( 'key' ), value: acfValue( field ) };
@@ -929,10 +930,189 @@
 		return text;
 	}
 
+	// Statuses in which the post is visible on the site (EditorSave::LIVE).
+	function isLiveStatus( status ) {
+		return 'publish' === status || 'private' === status;
+	}
+
+	function saveResultText( mode, status ) {
+		if ( 'publish' === mode ) {
+			return 'future' === status ? __( 'The post is scheduled.', 'wp-cortex' ) : __( 'The post is published.', 'wp-cortex' );
+		}
+		if ( 'status' === mode ) {
+			return 'pending' === status ? __( 'The post is saved as pending review.', 'wp-cortex' ) : __( 'The post is switched to draft and saved.', 'wp-cortex' );
+		}
+		if ( isLiveStatus( status ) ) {
+			return __( 'The post is updated; the changes are live.', 'wp-cortex' );
+		}
+		return 'draft' === status ? __( 'The draft is saved.', 'wp-cortex' ) : __( 'The post is saved.', 'wp-cortex' );
+	}
+
+	// save_post action (save_post, publish_post, set_post_status): saves the post through
+	// the editor, as if the user clicked its button. A save that leaves the post live, or
+	// takes it offline, runs only when it comes from a confirmed action card. Resolves
+	// with whether the post was saved.
+	function savePostAction( action ) {
+		var fail = function ( text ) {
+			addMessage( 'error', text, false );
+			scrollBottom();
+			return Promise.resolve( false );
+		};
+		var editor = blockEditor();
+		if ( ! editor || editor.select.getCurrentPostId() !== action.post_id ) {
+			return fail( __( 'The post was not saved: it is no longer open in the editor.', 'wp-cortex' ) );
+		}
+		var select = editor.select;
+		var edits = {};
+		if ( 'publish' === action.mode ) {
+			edits.status = 'future' === action.status && action.date ? 'future' : 'publish';
+			if ( 'future' === edits.status ) {
+				edits.date = String( action.date );
+			} else if ( 'function' === typeof select.isEditedPostBeingScheduled && select.isEditedPostBeingScheduled() ) {
+				// Publish now, also when a later date is set in the editor.
+				edits.date = null;
+			}
+		} else if ( 'status' === action.mode ) {
+			edits.status = 'pending' === action.status ? 'pending' : 'draft';
+		}
+		var previous = {};
+		var saved, target;
+		try {
+			saved = String( select.getCurrentPostAttribute( 'status' ) || '' );
+			target = edits.status || String( select.getEditedPostAttribute( 'status' ) || '' );
+			Object.keys( edits ).forEach( function ( key ) {
+				previous[ key ] = select.getEditedPostAttribute( key );
+			} );
+			if ( true !== action.confirmed && ( isLiveStatus( saved ) || isLiveStatus( target ) ) ) {
+				return fail( __( 'The post was not saved: this change affects the published post and needs your confirmation. Ask again to get a confirmation card.', 'wp-cortex' ) );
+			}
+			if ( 'function' === typeof select.isPostLocked && select.isPostLocked() ) {
+				return fail( __( 'The post was not saved: another user is editing it.', 'wp-cortex' ) );
+			}
+			if ( select.isSavingPost() ) {
+				return fail( __( 'The post is already being saved. Try again in a moment.', 'wp-cortex' ) );
+			}
+			if ( ! select.isEditedPostSaveable() ) {
+				return fail( __( 'The post was not saved: it has no title or content yet.', 'wp-cortex' ) );
+			}
+		} catch ( e ) {
+			return fail( __( 'The post could not be saved from the chat. Save it in the editor.', 'wp-cortex' ) );
+		}
+		// A status the save did not store must not stay in the editor for the next save.
+		var failed = function ( reason ) {
+			try {
+				if ( Object.keys( previous ).length ) {
+					editor.dispatch.editPost( previous );
+				}
+			} catch ( e ) {}
+			var text = __( 'The post could not be saved. Check the notices in the editor.', 'wp-cortex' );
+			if ( reason ) {
+				text += ' ' + reason;
+			}
+			return fail( text );
+		};
+		var pending = addMessage( 'assistant', __( 'Saving the post…', 'wp-cortex' ), false );
+		scrollBottom();
+		var done = function () {
+			if ( pending.parentNode ) {
+				pending.parentNode.removeChild( pending );
+			}
+		};
+		var request;
+		try {
+			if ( Object.keys( edits ).length ) {
+				editor.dispatch.editPost( edits );
+			}
+			request = editor.dispatch.savePost();
+		} catch ( e ) {
+			done();
+			return failed( '' );
+		}
+		return Promise.resolve( request ).then( function () {
+			done();
+			var status = String( select.getCurrentPostAttribute( 'status' ) || '' );
+			var ok = 'function' !== typeof select.didPostSaveRequestSucceed || select.didPostSaveRequestSucceed();
+			// The status asked for must be the saved one ("publish" with a later date becomes "future").
+			if ( edits.status && status !== edits.status && ! ( 'publish' === edits.status && 'future' === status ) ) {
+				ok = false;
+			}
+			if ( ! ok ) {
+				var error = null;
+				try {
+					error = editor.data.select( 'core' ).getLastEntitySaveError( 'postType', select.getCurrentPostType(), action.post_id );
+				} catch ( e ) {}
+				return failed( error && error.message ? String( error.message ).replace( /<[^>]*>/g, '' ) : '' );
+			}
+			addMessage( 'assistant', saveResultText( action.mode, status ), false );
+			scrollBottom();
+			return true;
+		}, function () {
+			done();
+			return failed( '' );
+		} );
+	}
+
+	// preview_post action: prepares the preview like the Preview button of the editor (a
+	// draft is saved, changes of a published post are autosaved) and shows a link to it.
+	// A link, not a new tab: browsers block tabs opened after the reply arrives.
+	function previewPostAction( action ) {
+		var editor = blockEditor();
+		if ( ! editor || editor.select.getCurrentPostId() !== action.post_id ) {
+			addMessage( 'error', __( 'No preview: the post is no longer open in the editor.', 'wp-cortex' ), false );
+			return Promise.resolve();
+		}
+		var show = function ( link ) {
+			var url;
+			try {
+				url = new URL( String( link || '' ), window.location.href );
+			} catch ( e ) {
+				url = null;
+			}
+			if ( ! url || -1 === [ 'http:', 'https:' ].indexOf( url.protocol ) ) {
+				addMessage( 'error', __( 'The preview could not be prepared. Use the Preview button of the editor.', 'wp-cortex' ), false );
+				return;
+			}
+			var message = addMessage( 'assistant', __( 'The preview is ready:', 'wp-cortex' ) + ' ', false );
+			var a = el( 'a', '', __( 'Open preview', 'wp-cortex' ) );
+			a.href = url.href;
+			a.target = 'wp-cortex-preview-' + action.post_id;
+			a.rel = 'noopener';
+			message.appendChild( a );
+			scrollBottom();
+		};
+		// Without the editor's own preview save, the link shows the post as it was last saved.
+		var fallback = function () {
+			var link = '';
+			try {
+				link = editor.select.getEditedPostPreviewLink() || '';
+			} catch ( e ) {}
+			show( link || action.url );
+		};
+		var prepare = editor.dispatch.__unstableSaveForPreview;
+		if ( 'function' !== typeof prepare ) {
+			fallback();
+			return Promise.resolve();
+		}
+		var request;
+		try {
+			request = prepare();
+		} catch ( e ) {
+			fallback();
+			return Promise.resolve();
+		}
+		return Promise.resolve( request ).then( function ( link ) {
+			if ( link ) {
+				show( link );
+			} else {
+				fallback();
+			}
+		}, fallback );
+	}
+
 	function actionStatusText( action ) {
 		switch ( action.status ) {
 			case 'done':
-				return __( 'Done.', 'wp-cortex' );
+				return action.client ? __( 'Sent to the editor.', 'wp-cortex' ) : __( 'Done.', 'wp-cortex' );
 			case 'cancelled':
 				return __( 'Cancelled.', 'wp-cortex' );
 			case 'running':
@@ -1283,6 +1463,34 @@
 			}
 		} );
 		scrollBottom();
+		// Saving comes after the changes of the same reply, and before leaving the page:
+		// when the post could not be saved, the page is neither left nor reloaded.
+		var save = actions.filter( function ( a ) {
+			return a && 'save_post' === a.type;
+		} ).pop();
+		var preview = actions.filter( function ( a ) {
+			return a && 'preview_post' === a.type;
+		} ).pop();
+		if ( ! save && ! preview ) {
+			leavePage( actions );
+			return;
+		}
+		( save ? savePostAction( save ) : Promise.resolve( true ) ).then( function ( saved ) {
+			if ( ! saved ) {
+				return false;
+			}
+			return ( preview ? previewPostAction( preview ) : Promise.resolve() ).then( function () {
+				return true;
+			} );
+		} ).then( function ( saved ) {
+			if ( saved ) {
+				leavePage( actions );
+			}
+		} );
+	}
+
+	// Navigation, tab and reload actions of a reply.
+	function leavePage( actions ) {
 		// Only one page can be opened: the last navigation wins, as on the server.
 		var nav = actions.filter( function ( a ) {
 			return a && 'navigate' === a.type && a.url;

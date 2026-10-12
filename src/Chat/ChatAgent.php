@@ -22,9 +22,13 @@ use WPCortex\Chat\Tools\Admin\EditSeo;
 use WPCortex\Chat\Tools\Admin\GetEditorContent;
 use WPCortex\Chat\Tools\Admin\OpenAdminPage;
 use WPCortex\Chat\Tools\Admin\OpenPost;
+use WPCortex\Chat\Tools\Admin\PreviewPost;
 use WPCortex\Chat\Tools\Admin\ProposeSkill;
+use WPCortex\Chat\Tools\Admin\PublishPost;
 use WPCortex\Chat\Tools\Admin\ReloadPage;
+use WPCortex\Chat\Tools\Admin\SavePost;
 use WPCortex\Chat\Tools\Admin\SelectTab;
+use WPCortex\Chat\Tools\Admin\SetPostStatus;
 use WPCortex\Chat\Tools\Admin\UseSkill;
 use WPCortex\Chat\Tools\AgentLoop;
 use WPCortex\Chat\Tools\Tool;
@@ -212,10 +216,11 @@ final class ChatAgent {
 			return new WP_Error( 'wp_cortex_action_resolved', __( 'This action was already run or cancelled.', 'wp-cortex' ), array( 'status' => 409 ) );
 		}
 
-		$tool    = isset( $action['tool'] ) ? self::confirmable_tool( (string) $action['tool'] ) : null;
-		$name    = (string) ( $action['ability'] ?? $action['tool'] ?? '' );
-		$expired = time() - (int) ( $action['created'] ?? 0 ) > self::ACTION_TTL;
-		$allowed = isset( $action['tool'] )
+		$tool       = isset( $action['tool'] ) ? self::confirmable_tool( (string) $action['tool'] ) : null;
+		$ui_actions = array();
+		$name       = (string) ( $action['ability'] ?? $action['tool'] ?? '' );
+		$expired    = time() - (int) ( $action['created'] ?? 0 ) > self::ACTION_TTL;
+		$allowed    = isset( $action['tool'] )
 			? null !== $tool && Settings::tool_enabled( ToolContext::ADMIN, $name )
 			: in_array( $name, Settings::chat_abilities(), true ) && Settings::tool_enabled( ToolContext::ADMIN, ( new AbilityTool( $name ) )->name() );
 
@@ -235,6 +240,12 @@ final class ChatAgent {
 
 			$result = null !== $tool ? $tool->run_confirmed( (array) ( $action['input'] ?? array() ) ) : AbilityTool::run( $name, $action['input'] ?? null );
 			$failed = is_wp_error( $result );
+
+			// A built-in tool that finishes in the browser (saving the post in the editor).
+			if ( null !== $tool && is_array( $result ) && is_array( $result['ui_action'] ?? null ) ) {
+				$ui_actions[] = $result['ui_action'];
+				unset( $result['ui_action'] );
+			}
 
 			$action['status'] = $failed ? 'failed' : 'done';
 
@@ -263,7 +274,8 @@ final class ChatAgent {
 				),
 			),
 			$context,
-			$user_id
+			$user_id,
+			$ui_actions
 		);
 	}
 
@@ -277,9 +289,10 @@ final class ChatAgent {
 	 *                             added to the transcript, an action item replaces its card.
 	 * @param array  $context      Screen context.
 	 * @param int    $user_id      Current user.
+	 * @param array  $ui_actions   UI actions of a confirmed action card, run before those of the answer.
 	 * @return array{conversation_id: int, title: string, items: array, actions: array}
 	 */
-	private function turn( array $conversation, string $title, string $message, array $items, array $context, int $user_id ): array {
+	private function turn( array $conversation, string $title, string $message, array $items, array $context, int $user_id, array $ui_actions = array() ): array {
 		$conversation_id = (int) $conversation['id'];
 		$transcript      = $conversation['transcript'];
 		$history         = $this->decode_messages( $conversation['messages'] );
@@ -314,7 +327,7 @@ final class ChatAgent {
 			'conversation_id' => $conversation_id,
 			'title'           => $title,
 			'items'           => $items,
-			'actions'         => $actions,
+			'actions'         => array_merge( $ui_actions, $actions ),
 		);
 	}
 
@@ -454,6 +467,10 @@ final class ChatAgent {
 			new EditFields(),
 			new GetEditorContent(),
 			new EditContent(),
+			new SavePost(),
+			new PublishPost(),
+			new SetPostStatus(),
+			new PreviewPost(),
 			new ClearCache(),
 			new ProposeSkill(),
 			new UseSkill(),
