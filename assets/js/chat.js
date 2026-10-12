@@ -939,13 +939,13 @@
 		var pending = 'pending' === action.status;
 		var card = el( 'div', P + 'card ' + P + 'action' + ( action.destructive ? ' ' + P + 'action-destructive' : '' ) );
 		card.setAttribute( 'data-action-id', String( action.id ) );
-		card.appendChild( el( 'p', P + 'card-title', pending ? __( 'Run this action?', 'wp-cortex' ) : ( action.label || action.ability ) ) );
+		card.appendChild( el( 'p', P + 'card-title', pending ? __( 'Run this action?', 'wp-cortex' ) : ( action.label || action.ability || action.tool ) ) );
 
 		var badges = el( 'div', P + 'badges' );
 		if ( pending ) {
-			badges.appendChild( el( 'span', P + 'badge', action.label || action.ability ) );
+			badges.appendChild( el( 'span', P + 'badge', action.label || action.ability || action.tool ) );
 		}
-		badges.appendChild( el( 'code', P + 'author', action.ability || '' ) );
+		badges.appendChild( el( 'code', P + 'author', action.ability || action.tool || '' ) );
 		if ( action.destructive ) {
 			badges.appendChild( el( 'span', P + 'badge ' + P + 'badge-destructive', __( 'Destructive', 'wp-cortex' ) ) );
 		}

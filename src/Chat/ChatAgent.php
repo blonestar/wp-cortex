@@ -13,6 +13,8 @@ use WordPress\AiClient\Messages\DTO\MessagePart;
 use WordPress\AiClient\Messages\DTO\UserMessage;
 use WPCortex\Chat\Tools\Admin\AbilityTool;
 use WPCortex\Chat\Tools\Admin\AdminContext;
+use WPCortex\Chat\Tools\Admin\ClearCache;
+use WPCortex\Chat\Tools\Admin\ConfirmableTool;
 use WPCortex\Chat\Tools\Admin\EditContent;
 use WPCortex\Chat\Tools\Admin\EditFields;
 use WPCortex\Chat\Tools\Admin\EditPost;
@@ -169,11 +171,12 @@ final class ChatAgent {
 
 	/**
 	 * Runs or cancels an action the assistant proposed (an ability that may change the
-	 * site), then lets the assistant answer with the outcome.
+	 * site, or a call of a built-in ConfirmableTool), then lets the assistant answer with
+	 * the outcome.
 	 *
 	 * Only the arguments stored with the action card are used, never values from the
-	 * browser; the ability must still be allowed under Settings > Chat tools and checks
-	 * its own permissions.
+	 * browser; the ability or tool must still be allowed under Settings > Chat tools and
+	 * checks its own permissions.
 	 *
 	 * @param int    $conversation_id Conversation ID.
 	 * @param string $action_id       Action ID from the card.
@@ -208,16 +211,19 @@ final class ChatAgent {
 			return new WP_Error( 'wp_cortex_action_resolved', __( 'This action was already run or cancelled.', 'wp-cortex' ), array( 'status' => 409 ) );
 		}
 
-		$name    = (string) ( $action['ability'] ?? '' );
+		$tool    = isset( $action['tool'] ) ? self::confirmable_tool( (string) $action['tool'] ) : null;
+		$name    = (string) ( $action['ability'] ?? $action['tool'] ?? '' );
 		$expired = time() - (int) ( $action['created'] ?? 0 ) > self::ACTION_TTL;
-		$allowed = in_array( $name, Settings::chat_abilities(), true ) && Settings::tool_enabled( ToolContext::ADMIN, ( new AbilityTool( $name ) )->name() );
+		$allowed = isset( $action['tool'] )
+			? null !== $tool && Settings::tool_enabled( ToolContext::ADMIN, $name )
+			: in_array( $name, Settings::chat_abilities(), true ) && Settings::tool_enabled( ToolContext::ADMIN, ( new AbilityTool( $name ) )->name() );
 
 		if ( ! $run ) {
 			$action['status'] = 'cancelled';
 			$note             = sprintf( 'I cancelled the action "%1$s" (%2$s). Do not run it.', $action['label'] ?? $name, $name );
 		} elseif ( $expired || ! $allowed ) {
 			$action['status'] = 'failed';
-			$action['error']  = $expired ? __( 'The action expired. Ask the assistant again.', 'wp-cortex' ) : __( 'This ability is no longer allowed for the chat.', 'wp-cortex' );
+			$action['error']  = $expired ? __( 'The action expired. Ask the assistant again.', 'wp-cortex' ) : ( isset( $action['tool'] ) ? __( 'This tool is no longer allowed for the chat.', 'wp-cortex' ) : __( 'This ability is no longer allowed for the chat.', 'wp-cortex' ) );
 			$note             = sprintf( 'I tried to run the action "%1$s" (%2$s), but it was not run: %3$s', $action['label'] ?? $name, $name, $action['error'] );
 		} else {
 			// Mark the card first, so a second click cannot run the action twice.
@@ -226,7 +232,7 @@ final class ChatAgent {
 			$conversation['transcript'][ $index ]['action'] = $action;
 			$this->store->save( $conversation_id, $user_id, $conversation['title'], $conversation['messages'], $conversation['transcript'] );
 
-			$result = AbilityTool::run( $name, $action['input'] ?? null );
+			$result = null !== $tool ? $tool->run_confirmed( (array) ( $action['input'] ?? array() ) ) : AbilityTool::run( $name, $action['input'] ?? null );
 			$failed = is_wp_error( $result );
 
 			$action['status'] = $failed ? 'failed' : 'done';
@@ -446,6 +452,7 @@ final class ChatAgent {
 			new EditFields(),
 			new GetEditorContent(),
 			new EditContent(),
+			new ClearCache(),
 			new ProposeSkill(),
 			new UseSkill(),
 		);
@@ -464,6 +471,21 @@ final class ChatAgent {
 		}
 
 		return $tools;
+	}
+
+	/**
+	 * Built-in tool that runs a call after the user confirms its action card, by function name.
+	 *
+	 * @param string $name Function name.
+	 */
+	private static function confirmable_tool( string $name ): ?ConfirmableTool {
+		foreach ( self::builtin_tools( false ) as $tool ) {
+			if ( $tool instanceof ConfirmableTool && $tool->name() === $name ) {
+				return $tool;
+			}
+		}
+
+		return null;
 	}
 
 	/**
