@@ -76,6 +76,15 @@ Emails each lead as plain text to one or more addresses (separated by commas, up
 - **Changes.** With "Changes to leads" ticked, every change sends another email. Untick it to get one email per lead.
 - **Errors.** When the site cannot send the email, the reason reported by `wp_mail()` is shown in the delivery log and the delivery is retried. An email that was accepted for sending but never arrived is not noticed.
 
+## Built-in: Slack
+
+Posts each lead as a message to a Slack channel through an [incoming webhook](https://api.slack.com/messaging/webhooks). Create one at api.slack.com/apps > your app > Incoming Webhooks > Add New Webhook; the webhook decides the channel.
+
+- **Webhook URL.** Only `https://hooks.slack.com/services/…` (or `hooks.slack-gov.com`) is accepted. Anyone who has the URL can post to the channel, so it is stored like a secret: it is not shown again once saved, and leaving the field empty keeps it. Workflow Builder webhooks (`/triggers/…`) expect their own variables and are not supported; use the Webhook integration for them.
+- **Content.** A headline (`New lead: <name>` or `Lead updated: <name>`, with what changed), the same details as the email notification, and an **Open conversation** button. The visitor's text is escaped, so it cannot add links or mentions such as `@channel`.
+- **Changes.** With "Changes to leads" ticked, every change posts another message. Untick it to get one message per lead.
+- **Errors.** Slack's answer (for example `channel_is_archived` or `no_service`) is shown in the delivery log, and the delivery is retried.
+
 ## Built-in: HubSpot
 
 Creates or updates a HubSpot contact for each lead. It needs the access token of a HubSpot private app with the scopes `crm.objects.contacts.read`, `crm.objects.contacts.write`, `crm.schemas.contacts.read` and `crm.schemas.contacts.write`.

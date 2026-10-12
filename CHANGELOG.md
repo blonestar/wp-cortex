@@ -6,6 +6,7 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- Lead integration **Slack** (Settings > Leads > Integrations): posts each new lead, and its changes if you want them, to a Slack channel through an incoming webhook, with the lead's details and a button that opens the conversation.
 - Lead integration **Email notification** (Settings > Leads > Integrations): emails each new lead, and its changes if you want them, to one or more addresses through the site's own mail. The email lists the contact details, request, status, AI rating and how the visitor found the site, links to the conversation, and a reply goes to the visitor.
 - Admin chat `clear_cache` tool: clears the WordPress cache on request. The cache of one post (the current one by default) is cleared right away; a site-wide clear (object cache and expired transients, optionally every transient and the permalink rules) runs only after you confirm the action card in the chat. It does not clear page caches of caching plugins, the host or a CDN.
 
