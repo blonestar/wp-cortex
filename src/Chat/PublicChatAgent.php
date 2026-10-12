@@ -46,8 +46,8 @@ defined( 'ABSPATH' ) || exit;
 final class PublicChatAgent {
 
 	public const MAX_MESSAGE_LENGTH = 2000;
-	public const MAX_HISTORY_ITEMS  = 12;
 	public const MAX_HISTORY_TEXT   = 6000;
+	public const MAX_HISTORY_TOTAL  = 72000;
 
 	/**
 	 * Model text for a visitor message that is only an image, and the note that replaces
@@ -171,18 +171,28 @@ final class PublicChatAgent {
 	}
 
 	/**
+	 * Number of previous messages sent to the model with each new one
+	 * (the public_chat_history setting).
+	 */
+	public static function history_limit(): int {
+		return max( Settings::PUBLIC_CHAT_HISTORY_MIN, min( Settings::PUBLIC_CHAT_HISTORY_MAX, (int) Settings::get( 'public_chat_history' ) ) );
+	}
+
+	/**
 	 * Model messages from the previous turns sent by the browser.
 	 *
-	 * Only text is accepted, the list is capped and starts at a user message. Earlier
-	 * images are not sent again: a note in the text says that the message had one.
+	 * Only text is accepted. The list is capped at the public_chat_history setting and at
+	 * MAX_HISTORY_TOTAL characters, the oldest turns going first, and starts at a user
+	 * message. Earlier images are not sent again: a note in the text says that the message
+	 * had one.
 	 *
 	 * @param array $history Items with role, text and, for visitor messages, image (bool).
 	 * @return Message[]
 	 */
 	private function history_messages( array $history ): array {
-		$messages = array();
+		$turns = array();
 
-		foreach ( array_slice( array_values( $history ), -self::MAX_HISTORY_ITEMS ) as $item ) {
+		foreach ( array_slice( array_values( $history ), -self::history_limit() ) as $item ) {
 			$role = is_array( $item ) ? (string) ( $item['role'] ?? '' ) : '';
 			$text = is_array( $item ) ? trim( (string) ( $item['text'] ?? '' ) ) : '';
 
@@ -190,17 +200,39 @@ final class PublicChatAgent {
 				$text = trim( self::IMAGE_NOTE . ' ' . $text );
 			}
 
-			if ( '' === $text || ( ! $messages && 'user' !== $role ) ) {
+			if ( '' === $text || ! in_array( $role, array( 'user', 'assistant' ), true ) ) {
 				continue;
 			}
 
-			$part = new MessagePart( mb_substr( $text, 0, self::MAX_HISTORY_TEXT ) );
+			$turns[] = array(
+				'role' => $role,
+				'text' => mb_substr( $text, 0, self::MAX_HISTORY_TEXT ),
+			);
+		}
 
-			if ( 'user' === $role ) {
-				$messages[] = new UserMessage( array( $part ) );
-			} elseif ( 'assistant' === $role ) {
-				$messages[] = new ModelMessage( array( $part ) );
+		// The latest turns that fit the total, whatever the setting allows.
+		$kept  = array();
+		$total = 0;
+
+		foreach ( array_reverse( $turns ) as $turn ) {
+			$total += mb_strlen( $turn['text'] );
+
+			if ( $total > self::MAX_HISTORY_TOTAL ) {
+				break;
 			}
+
+			array_unshift( $kept, $turn );
+		}
+
+		while ( $kept && 'user' !== $kept[0]['role'] ) {
+			array_shift( $kept );
+		}
+
+		$messages = array();
+
+		foreach ( $kept as $turn ) {
+			$part       = new MessagePart( $turn['text'] );
+			$messages[] = 'user' === $turn['role'] ? new UserMessage( array( $part ) ) : new ModelMessage( array( $part ) );
 		}
 
 		return $messages;

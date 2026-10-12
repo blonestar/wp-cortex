@@ -24,8 +24,9 @@
 	var cfg = window.wpCortexPublicChat || {};
 	var __ = wp.i18n.__;
 	var STORE_KEY = 'wpCortexPublicChat';
-	var MAX_STORED = 40;
-	var MAX_HISTORY = 12;
+	var MAX_HISTORY = cfg.history || 50;
+	// Sources and notices are stored as items too, so keep more than the history needs.
+	var MAX_STORED = Math.max( 40, MAX_HISTORY * 2 );
 	var NAVIGATE_DELAY = 1200;
 	var PRESENCE_INTERVAL = 60000;
 	var THUMB_SIDE = 320;
