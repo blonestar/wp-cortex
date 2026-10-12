@@ -913,6 +913,11 @@ final class SettingsPage {
 		echo ' ' . esc_html__( 'messages per visitor per hour', 'wp-cortex' );
 		$this->row_end( __( 'Protects your AI provider account from abuse. Visitors are counted by IP address.', 'wp-cortex' ) );
 
+		$this->row_start( __( 'Conversation memory', 'wp-cortex' ) );
+		$this->number( 'public_chat_history', Settings::PUBLIC_CHAT_HISTORY_MIN, Settings::PUBLIC_CHAT_HISTORY_MAX );
+		echo ' ' . esc_html__( 'previous messages sent with each new message', 'wp-cortex' );
+		$this->row_end( __( 'How much of the conversation the assistant sees when it answers; the visitor\'s messages and its own answers both count. A higher number keeps long conversations coherent but makes each message cost more. Older messages are also left out once the conversation is very long.', 'wp-cortex' ) );
+
 		$this->row_start( __( 'Images', 'wp-cortex' ) );
 		$this->checkbox( 'public_chat_images', __( 'Let visitors attach images, for example a screenshot of a problem', 'wp-cortex' ), (bool) Settings::get( 'public_chat_images' ) );
 		echo '<br /><label>' . esc_html__( 'At most', 'wp-cortex' ) . ' ';

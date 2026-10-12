@@ -69,7 +69,7 @@ final class PublicChatController {
 					'history'     => array(
 						'type'     => 'array',
 						'default'  => array(),
-						'maxItems' => 50,
+						'maxItems' => Settings::PUBLIC_CHAT_HISTORY_MAX,
 						'items'    => array(
 							'type'       => 'object',
 							'properties' => array(

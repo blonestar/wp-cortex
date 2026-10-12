@@ -120,6 +120,7 @@ final class FrontendChat {
 					'placeholder' => $placeholder,
 					'label'       => (string) Settings::get( 'public_chat_launcher_label' ),
 					'maxLength'   => PublicChatAgent::MAX_MESSAGE_LENGTH,
+					'history'     => PublicChatAgent::history_limit(),
 					'images'      => VisitorImages::enabled(),
 					'attachIcon'  => (bool) Settings::get( 'public_chat_attach_icon' ),
 					'imageSide'   => VisitorImages::MAX_SIDE,

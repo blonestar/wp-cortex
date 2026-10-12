@@ -60,6 +60,12 @@ final class Settings {
 	public const PUBLIC_CHAT_PLACEHOLDER_MAX = 80;
 
 	/**
+	 * Range of the number of previous messages the visitor chat sends to the model.
+	 */
+	public const PUBLIC_CHAT_HISTORY_MIN = 2;
+	public const PUBLIC_CHAT_HISTORY_MAX = 100;
+
+	/**
 	 * Visitor chat appearance choices: setting key => allowed values (the first is the default).
 	 */
 	public const PUBLIC_CHAT_CHOICES = array(
@@ -146,6 +152,7 @@ final class Settings {
 			'public_chat_model'          => '',
 			'public_chat_reasoning'      => '',
 			'public_chat_rate_limit'     => 20,
+			'public_chat_history'        => 50,
 			'public_chat_images'         => false,
 			'public_chat_attach_icon'    => false,
 			'public_chat_image_limit'    => 10,
@@ -439,6 +446,7 @@ final class Settings {
 			'public_chat_model'        => $public_custom ? self::sanitize_model( $input['public_chat_model'] ?? '' ) : '',
 			'public_chat_reasoning'    => $public_custom ? sanitize_key( (string) ( $input['public_chat_reasoning'] ?? '' ) ) : '',
 			'public_chat_rate_limit'   => self::clamp( $input['public_chat_rate_limit'] ?? $defaults['public_chat_rate_limit'], 1, 1000 ),
+			'public_chat_history'      => self::clamp( $input['public_chat_history'] ?? $defaults['public_chat_history'], self::PUBLIC_CHAT_HISTORY_MIN, self::PUBLIC_CHAT_HISTORY_MAX ),
 			'public_chat_images'       => ! empty( $input['public_chat_images'] ),
 			'public_chat_attach_icon'  => ! empty( $input['public_chat_attach_icon'] ),
 			'public_chat_image_limit'  => self::clamp( $input['public_chat_image_limit'] ?? $defaults['public_chat_image_limit'], 1, 1000 ),
