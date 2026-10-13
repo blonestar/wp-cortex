@@ -655,6 +655,11 @@
 			excerpt: String( select.getEditedPostAttribute( 'excerpt' ) || '' ),
 			slug: String( select.getEditedPostAttribute( 'slug' ) || '' ),
 			status: String( select.getEditedPostAttribute( 'status' ) || '' ),
+			template: String( select.getEditedPostAttribute( 'template' ) || '' ),
+			parent: parseInt( select.getEditedPostAttribute( 'parent' ), 10 ) || 0,
+			menu_order: parseInt( select.getEditedPostAttribute( 'menu_order' ), 10 ) || 0,
+			author: parseInt( select.getEditedPostAttribute( 'author' ), 10 ) || 0,
+			featured_media: parseInt( select.getEditedPostAttribute( 'featured_media' ), 10 ) || 0,
 			terms: {},
 			fields: acfFields().map( function ( field ) {
 				return { key: field.get( 'key' ), value: acfValue( field ) };
@@ -867,8 +872,13 @@
 
 	function applyPostChanges( editor, changes ) {
 		var edits = {};
-		[ 'title', 'excerpt', 'slug' ].forEach( function ( key ) {
+		[ 'title', 'excerpt', 'slug', 'template' ].forEach( function ( key ) {
 			if ( 'string' === typeof changes[ key ] ) {
+				edits[ key ] = changes[ key ];
+			}
+		} );
+		[ 'parent', 'menu_order', 'author', 'featured_media' ].forEach( function ( key ) {
+			if ( 'number' === typeof changes[ key ] ) {
 				edits[ key ] = changes[ key ];
 			}
 		} );
@@ -876,6 +886,23 @@
 			if ( -1 !== ( cfg.editorTaxonomies || [] ).indexOf( base ) && Array.isArray( changes.terms[ base ] ) ) {
 				edits[ base ] = changes.terms[ base ];
 			}
+		} );
+		// Terms created by create_terms: added to the terms the post has in the editor.
+		Object.keys( changes.add_terms || {} ).forEach( function ( base ) {
+			if ( -1 === ( cfg.editorTaxonomies || [] ).indexOf( base ) || ! Array.isArray( changes.add_terms[ base ] ) ) {
+				return;
+			}
+			var ids = ( edits[ base ] || editor.select.getEditedPostAttribute( base ) || [] ).slice();
+			changes.add_terms[ base ].forEach( function ( id ) {
+				if ( -1 === ids.indexOf( id ) ) {
+					ids.push( id );
+				}
+			} );
+			edits[ base ] = ids;
+			// The editor lists the terms it loaded earlier; make it load the new ones.
+			try {
+				editor.data.dispatch( 'core' ).invalidateResolutionForStoreSelector( 'getEntityRecords' );
+			} catch ( e ) {}
 		} );
 		if ( ! Object.keys( edits ).length ) {
 			return false;

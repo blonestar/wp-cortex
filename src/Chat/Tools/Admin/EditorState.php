@@ -96,6 +96,12 @@ final class EditorState {
 			// Status set in the editor; it differs from the saved one until the post is saved.
 			'status'      => sanitize_key( (string) ( $raw['status'] ?? '' ) ),
 			'terms'       => array(),
+			// Post settings; null when the post type does not have them or the user cannot change them.
+			'template'    => self::templates( $post ) ? self::clip( sanitize_text_field( (string) ( $raw['template'] ?? '' ) ), 200 ) : null,
+			'parent'      => is_post_type_hierarchical( $post->post_type ) ? absint( $raw['parent'] ?? 0 ) : null,
+			'menu_order'  => post_type_supports( $post->post_type, 'page-attributes' ) ? (int) ( $raw['menu_order'] ?? 0 ) : null,
+			'author'      => self::can_set_author( $post ) ? absint( $raw['author'] ?? 0 ) : null,
+			'image'       => self::has_featured_image( $post ) ? absint( $raw['featured_media'] ?? 0 ) : null,
 			'seo'         => null,
 			'blocks'      => null,
 			'fields'      => array(),
@@ -155,6 +161,42 @@ final class EditorState {
 		}
 
 		return $taxonomies;
+	}
+
+	/**
+	 * Templates the post can use, without the default one.
+	 *
+	 * @param \WP_Post $post Post.
+	 * @return array<string, string> Template slug or file => name.
+	 */
+	public static function templates( \WP_Post $post ): array {
+		$templates = array();
+
+		foreach ( (array) wp_get_theme()->get_page_templates( $post, $post->post_type ) as $slug => $name ) {
+			$templates[ (string) $slug ] = wp_strip_all_tags( (string) $name );
+		}
+
+		return $templates;
+	}
+
+	/**
+	 * Whether the user can change the author of the post in the editor.
+	 *
+	 * @param \WP_Post $post Post.
+	 */
+	public static function can_set_author( \WP_Post $post ): bool {
+		$type = get_post_type_object( $post->post_type );
+
+		return $type && post_type_supports( $post->post_type, 'author' ) && current_user_can( $type->cap->edit_others_posts );
+	}
+
+	/**
+	 * Whether the post has a featured image in the editor.
+	 *
+	 * @param \WP_Post $post Post.
+	 */
+	public static function has_featured_image( \WP_Post $post ): bool {
+		return post_type_supports( $post->post_type, 'thumbnail' ) && current_theme_supports( 'post-thumbnails', $post->post_type ) && current_user_can( 'upload_files' );
 	}
 
 	/**
