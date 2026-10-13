@@ -4,6 +4,8 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-13
+
 ### Added
 
 - Admin chat: the assistant can now work with any block in the block editor, not only text. On request it inserts a block the editor allows in the post, including the site's custom and ACF blocks, or a registered block pattern (for example "insert the hero" or "add a hero with the title ..."), moves a block before, after or inside another block, and duplicates blocks. The new `list_block_types` tool lets it find blocks and patterns by name; `edit_content` got the operations `insert_block`, `insert_pattern`, `move`, `duplicate` and `set_fields`. A pattern's headings and paragraphs and the simple fields of an ACF block (text, textarea, WYSIWYG, number, email, URL, select, radio, true/false, range) can be filled as the block is inserted, and those fields changed later; repeaters, images and other complex fields are left for you to fill. The assistant also sees the field values of ACF blocks and the main attributes of other blocks (for example an image's URL). As before, everything is applied in the editor only and nothing is saved until you save the post. `list_block_types` can be switched off under Settings > Chat tools.
