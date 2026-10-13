@@ -29,6 +29,9 @@ final class EditorState {
 	public const MAX_BLOCK_TEXT_LENGTH  = 4000;
 	public const MAX_FIELDS             = 80;
 	public const MAX_FIELD_VALUE_LENGTH = 4000;
+	public const MAX_BLOCK_TYPES        = 400;
+	public const MAX_BLOCK_ATTRIBUTES   = 8;
+	public const MAX_ATTRIBUTE_LENGTH   = 200;
 
 	/**
 	 * Blocks whose text can be replaced, with the attribute that holds it. Keep in sync
@@ -85,17 +88,25 @@ final class EditorState {
 		}
 
 		$state = array(
-			'title'   => self::clip( sanitize_text_field( (string) ( $raw['title'] ?? '' ) ), self::MAX_TITLE_LENGTH ),
-			'excerpt' => post_type_supports( $post->post_type, 'excerpt' )
+			'title'       => self::clip( sanitize_text_field( (string) ( $raw['title'] ?? '' ) ), self::MAX_TITLE_LENGTH ),
+			'excerpt'     => post_type_supports( $post->post_type, 'excerpt' )
 				? self::clip( sanitize_textarea_field( (string) ( $raw['excerpt'] ?? '' ) ), self::MAX_EXCERPT_LENGTH )
 				: null,
-			'slug'    => self::clip( sanitize_title( (string) ( $raw['slug'] ?? '' ) ), self::MAX_SLUG_LENGTH ),
+			'slug'        => self::clip( sanitize_title( (string) ( $raw['slug'] ?? '' ) ), self::MAX_SLUG_LENGTH ),
 			// Status set in the editor; it differs from the saved one until the post is saved.
-			'status'  => sanitize_key( (string) ( $raw['status'] ?? '' ) ),
-			'terms'   => array(),
-			'seo'     => null,
-			'blocks'  => null,
-			'fields'  => array(),
+			'status'      => sanitize_key( (string) ( $raw['status'] ?? '' ) ),
+			'terms'       => array(),
+			// Post settings; null when the post type does not have them or the user cannot change them.
+			'template'    => self::templates( $post ) ? self::clip( sanitize_text_field( (string) ( $raw['template'] ?? '' ) ), 200 ) : null,
+			'parent'      => is_post_type_hierarchical( $post->post_type ) ? absint( $raw['parent'] ?? 0 ) : null,
+			'menu_order'  => post_type_supports( $post->post_type, 'page-attributes' ) ? (int) ( $raw['menu_order'] ?? 0 ) : null,
+			'author'      => self::can_set_author( $post ) ? absint( $raw['author'] ?? 0 ) : null,
+			'image'       => self::has_featured_image( $post ) ? absint( $raw['featured_media'] ?? 0 ) : null,
+			'seo'         => null,
+			'blocks'      => null,
+			'fields'      => array(),
+			// Block types the editor allows in the post (name => title), for list_block_types.
+			'block_types' => array(),
 		);
 
 		$terms = is_array( $raw['terms'] ?? null ) ? $raw['terms'] : array();
@@ -116,6 +127,10 @@ final class EditorState {
 
 		if ( is_array( $raw['blocks'] ?? null ) ) {
 			$state['blocks'] = self::sanitize_blocks( $raw['blocks'] );
+		}
+
+		if ( null !== $state['blocks'] && is_array( $raw['block_types'] ?? null ) ) {
+			$state['block_types'] = self::sanitize_block_types( $raw['block_types'] );
 		}
 
 		if ( is_array( $raw['fields'] ?? null ) ) {
@@ -146,6 +161,42 @@ final class EditorState {
 		}
 
 		return $taxonomies;
+	}
+
+	/**
+	 * Templates the post can use, without the default one.
+	 *
+	 * @param \WP_Post $post Post.
+	 * @return array<string, string> Template slug or file => name.
+	 */
+	public static function templates( \WP_Post $post ): array {
+		$templates = array();
+
+		foreach ( (array) wp_get_theme()->get_page_templates( $post, $post->post_type ) as $slug => $name ) {
+			$templates[ (string) $slug ] = wp_strip_all_tags( (string) $name );
+		}
+
+		return $templates;
+	}
+
+	/**
+	 * Whether the user can change the author of the post in the editor.
+	 *
+	 * @param \WP_Post $post Post.
+	 */
+	public static function can_set_author( \WP_Post $post ): bool {
+		$type = get_post_type_object( $post->post_type );
+
+		return $type && post_type_supports( $post->post_type, 'author' ) && current_user_can( $type->cap->edit_others_posts );
+	}
+
+	/**
+	 * Whether the post has a featured image in the editor.
+	 *
+	 * @param \WP_Post $post Post.
+	 */
+	public static function has_featured_image( \WP_Post $post ): bool {
+		return post_type_supports( $post->post_type, 'thumbnail' ) && current_theme_supports( 'post-thumbnails', $post->post_type ) && current_user_can( 'upload_files' );
 	}
 
 	/**
@@ -192,6 +243,9 @@ final class EditorState {
 		switch ( $field['type'] ) {
 			case 'textarea':
 				$value = sanitize_textarea_field( $value );
+				break;
+			case 'wysiwyg':
+				$value = trim( wp_kses_post( $value ) );
 				break;
 			case 'number':
 			case 'range':
@@ -242,8 +296,10 @@ final class EditorState {
 	}
 
 	/**
-	 * Sanitizes the block list: client ID, block name, nesting depth, heading level and,
-	 * for text blocks, their inline HTML.
+	 * Sanitizes the block list: client ID, block name, nesting depth, heading level, for
+	 * text blocks their inline HTML, for ACF blocks the values of the fields the chat can
+	 * fill (BlockCatalog::acf_fields()) and for other blocks a few of their simple
+	 * attributes.
 	 *
 	 * @param array $blocks Blocks from the browser, in document order.
 	 * @return array<int, array<string, mixed>>
@@ -278,9 +334,93 @@ final class EditorState {
 				}
 
 				$row['text'] = self::inline_html( $text );
+			} elseif ( is_array( $block['data'] ?? null ) ) {
+				$fields = self::block_fields( $name, $block['data'] );
+
+				if ( $fields ) {
+					$row['fields'] = $fields;
+				}
+			} elseif ( is_array( $block['attrs'] ?? null ) ) {
+				$attributes = self::block_attributes( $block['attrs'] );
+
+				if ( $attributes ) {
+					$row['attributes'] = $attributes;
+				}
 			}
 
 			$clean[] = $row;
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Values of the fields of an ACF block the chat can fill. ACF keeps them in the
+	 * block's data by field name (saved blocks) or by field key (edited in this session).
+	 *
+	 * @param string $name Block name.
+	 * @param array  $data Block data from the browser.
+	 * @return array<string, string> Field name => value, without empty values.
+	 */
+	private static function block_fields( string $name, array $data ): array {
+		$values = array();
+
+		foreach ( BlockCatalog::acf_fields( $name ) as $field ) {
+			$value = $data[ $field['name'] ] ?? $data[ $field['key'] ] ?? '';
+			$value = self::field_value( $field, is_scalar( $value ) ? self::clip( (string) $value, self::MAX_FIELD_VALUE_LENGTH ) : '' );
+
+			if ( null !== $value && '' !== $value ) {
+				$values[ $field['name'] ] = $value;
+			}
+		}
+
+		return $values;
+	}
+
+	/**
+	 * Sanitizes the simple attributes reported for a block that is neither a text block
+	 * nor an ACF block (for example the URL and alt text of an image).
+	 *
+	 * @param array $attributes Attribute => scalar value.
+	 * @return array<string, string>
+	 */
+	private static function block_attributes( array $attributes ): array {
+		$clean = array();
+
+		foreach ( $attributes as $key => $value ) {
+			if ( count( $clean ) >= self::MAX_BLOCK_ATTRIBUTES ) {
+				break;
+			}
+
+			if ( ! preg_match( '/^[A-Za-z][A-Za-z0-9_]{0,39}$/', (string) $key ) || ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			$value = self::clip( sanitize_text_field( is_bool( $value ) ? ( $value ? 'true' : 'false' ) : (string) $value ), self::MAX_ATTRIBUTE_LENGTH );
+
+			if ( '' !== $value ) {
+				$clean[ (string) $key ] = $value;
+			}
+		}
+
+		return $clean;
+	}
+
+	/**
+	 * Sanitizes the block types the editor allows in the post.
+	 *
+	 * @param array $types Block types from the browser: name, title.
+	 * @return array<string, string> Block name => title.
+	 */
+	private static function sanitize_block_types( array $types ): array {
+		$clean = array();
+
+		foreach ( array_slice( $types, 0, self::MAX_BLOCK_TYPES ) as $type ) {
+			$name = is_array( $type ) ? (string) ( $type['name'] ?? '' ) : '';
+
+			if ( preg_match( '#^[a-z0-9-]+/[a-z0-9-]+$#', $name ) ) {
+				$clean[ $name ] = self::clip( sanitize_text_field( (string) ( $type['title'] ?? '' ) ), 100 );
+			}
 		}
 
 		return $clean;

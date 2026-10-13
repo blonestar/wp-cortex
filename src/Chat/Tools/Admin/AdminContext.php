@@ -114,8 +114,8 @@ final class AdminContext extends ToolContext {
 	 * State of the post open in the block editor, as it is in the editor (possibly not
 	 * saved yet), sanitized by EditorState: title, excerpt (null when the post type has
 	 * none), slug, status, terms (taxonomy => term IDs), seo (Yoast SEO, or null), blocks (null
-	 * when not reported) and fields (ACF, keyed by field key). Null when no block editor
-	 * is open.
+	 * when not reported), fields (ACF, keyed by field key) and block_types (block types
+	 * the editor allows in the post, name => title). Null when no block editor is open.
 	 *
 	 * @return array<string, mixed>|null
 	 */

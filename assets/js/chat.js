@@ -617,6 +617,10 @@
 	var ACF_TYPES = [ 'text', 'textarea', 'number', 'email', 'url', 'select', 'radio', 'true_false', 'range' ];
 	var MAX_BLOCKS = 300;
 	var MAX_FIELDS = 80;
+	// EditorState::MAX_BLOCK_TYPES, MAX_BLOCK_ATTRIBUTES and MAX_ATTRIBUTE_LENGTH.
+	var MAX_BLOCK_TYPES = 400;
+	var MAX_BLOCK_ATTRIBUTES = 8;
+	var MAX_ATTRIBUTE_LENGTH = 200;
 
 	// The block editor of the current post, or null on other screens.
 	function blockEditor() {
@@ -651,6 +655,11 @@
 			excerpt: String( select.getEditedPostAttribute( 'excerpt' ) || '' ),
 			slug: String( select.getEditedPostAttribute( 'slug' ) || '' ),
 			status: String( select.getEditedPostAttribute( 'status' ) || '' ),
+			template: String( select.getEditedPostAttribute( 'template' ) || '' ),
+			parent: parseInt( select.getEditedPostAttribute( 'parent' ), 10 ) || 0,
+			menu_order: parseInt( select.getEditedPostAttribute( 'menu_order' ), 10 ) || 0,
+			author: parseInt( select.getEditedPostAttribute( 'author' ), 10 ) || 0,
+			featured_media: parseInt( select.getEditedPostAttribute( 'featured_media' ), 10 ) || 0,
 			terms: {},
 			fields: acfFields().map( function ( field ) {
 				return { key: field.get( 'key' ), value: acfValue( field ) };
@@ -673,8 +682,45 @@
 		}
 		if ( editor.blocks ) {
 			state.blocks = editorBlocks( editor.blocks );
+			state.block_types = insertableBlockTypes( editor.blocks );
 		}
 		return state;
+	}
+
+	// Block types the editor offers for this post (list_block_types): those of the
+	// inserter that are allowed at the top level of the post.
+	function insertableBlockTypes( store ) {
+		var out = [];
+		if ( ! window.wp.blocks || 'function' !== typeof window.wp.blocks.getBlockTypes ) {
+			return out;
+		}
+		window.wp.blocks.getBlockTypes().forEach( function ( type ) {
+			if ( out.length >= MAX_BLOCK_TYPES || ! window.wp.blocks.hasBlockSupport( type, 'inserter', true ) ) {
+				return;
+			}
+			try {
+				if ( store.canInsertBlockType( type.name ) ) {
+					out.push( { name: type.name, title: String( type.title || '' ) } );
+				}
+			} catch ( e ) {}
+		} );
+		return out;
+	}
+
+	// Scalar values of an object, for the data of an ACF block and the attributes of
+	// other blocks.
+	function scalarValues( source, limit, skipPrivate ) {
+		var out = {};
+		var count = 0;
+		Object.keys( source || {} ).forEach( function ( key ) {
+			var value = source[ key ];
+			if ( count >= limit || -1 === [ 'string', 'number', 'boolean' ].indexOf( typeof value ) || '' === value || ( skipPrivate && '_' === key.charAt( 0 ) ) ) {
+				return;
+			}
+			out[ key ] = value;
+			count++;
+		} );
+		return out;
 	}
 
 	// Blocks in document order, with their text for text blocks.
@@ -693,6 +739,18 @@
 				}
 				if ( 'core/heading' === block.name ) {
 					row.level = block.attributes.level || 2;
+				}
+				if ( ! attr && 0 === block.name.indexOf( 'acf/' ) ) {
+					// Field values of an ACF block, by field name or field key, without the
+					// "_name" entries that only hold field keys.
+					row.data = scalarValues( block.attributes.data, 200, true );
+				} else if ( ! attr ) {
+					row.attrs = scalarValues( block.attributes, MAX_BLOCK_ATTRIBUTES );
+					Object.keys( row.attrs ).forEach( function ( key ) {
+						if ( 'string' === typeof row.attrs[ key ] ) {
+							row.attrs[ key ] = row.attrs[ key ].slice( 0, MAX_ATTRIBUTE_LENGTH );
+						}
+					} );
 				}
 				out.push( row );
 				walk( block.innerBlocks, depth + 1 );
@@ -814,8 +872,13 @@
 
 	function applyPostChanges( editor, changes ) {
 		var edits = {};
-		[ 'title', 'excerpt', 'slug' ].forEach( function ( key ) {
+		[ 'title', 'excerpt', 'slug', 'template' ].forEach( function ( key ) {
 			if ( 'string' === typeof changes[ key ] ) {
+				edits[ key ] = changes[ key ];
+			}
+		} );
+		[ 'parent', 'menu_order', 'author', 'featured_media' ].forEach( function ( key ) {
+			if ( 'number' === typeof changes[ key ] ) {
 				edits[ key ] = changes[ key ];
 			}
 		} );
@@ -823,6 +886,23 @@
 			if ( -1 !== ( cfg.editorTaxonomies || [] ).indexOf( base ) && Array.isArray( changes.terms[ base ] ) ) {
 				edits[ base ] = changes.terms[ base ];
 			}
+		} );
+		// Terms created by create_terms: added to the terms the post has in the editor.
+		Object.keys( changes.add_terms || {} ).forEach( function ( base ) {
+			if ( -1 === ( cfg.editorTaxonomies || [] ).indexOf( base ) || ! Array.isArray( changes.add_terms[ base ] ) ) {
+				return;
+			}
+			var ids = ( edits[ base ] || editor.select.getEditedPostAttribute( base ) || [] ).slice();
+			changes.add_terms[ base ].forEach( function ( id ) {
+				if ( -1 === ids.indexOf( id ) ) {
+					ids.push( id );
+				}
+			} );
+			edits[ base ] = ids;
+			// The editor lists the terms it loaded earlier; make it load the new ones.
+			try {
+				editor.data.dispatch( 'core' ).invalidateResolutionForStoreSelector( 'getEntityRecords' );
+			} catch ( e ) {}
 		} );
 		if ( ! Object.keys( edits ).length ) {
 			return false;
@@ -901,21 +981,23 @@
 				dispatch.updateBlockAttributes( id, attrs );
 			} else if ( 'remove' === op.op ) {
 				dispatch.removeBlock( id, false );
-			} else {
-				var root = id ? store.getBlockRootClientId( id ) || undefined : undefined;
-				var index = id ? store.getBlockIndex( id ) + ( 'insert_after' === op.op ? 1 : 0 ) : ( 'insert_after' === op.op ? store.getBlockCount() : 0 );
-				var blocks = window.wp.blocks.rawHandler( { HTML: op.html } );
-				// New list items next to a list item: insert the items, not a nested list.
-				if ( root && 'core/list' === store.getBlockName( root ) ) {
-					blocks = [].concat.apply( [], blocks.map( function ( block ) {
-						return 'core/list' === block.name ? block.innerBlocks : [ block ];
-					} ) );
+			} else if ( 'duplicate' === op.op ) {
+				dispatch.duplicateBlocks( [ id ], false );
+			} else if ( 'set_fields' === op.op ) {
+				dispatch.updateBlockAttributes( id, { data: acfBlockData( store.getBlockAttributes( id ).data, op.fields || [] ) } );
+			} else if ( 'move' === op.op ) {
+				if ( ! moveBlock( store, dispatch, id, name, op ) ) {
+					failed++;
+					return;
 				}
+			} else {
+				var point = insertPoint( store, id, 'insert_before' === op.op ? 'before' : ( 'insert_after' === op.op ? 'after' : op.position ) );
+				var blocks = newBlocks( store, op, point );
 				if ( ! blocks.length ) {
 					failed++;
 					return;
 				}
-				dispatch.insertBlocks( blocks, index, root, false );
+				dispatch.insertBlocks( blocks, point.index, point.root, false );
 			}
 			applied++;
 		} );
@@ -925,9 +1007,118 @@
 		var text = __( 'Content changed in the editor. Review the changes and save the post to keep them.', 'wp-cortex' );
 		if ( failed ) {
 			/* translators: %d: number of changes */
-			text += ' ' + __( '%d changes could not be applied because their blocks no longer exist.', 'wp-cortex' ).replace( '%d', String( failed ) );
+			text += ' ' + __( '%d changes could not be applied: their blocks no longer exist, or the editor does not allow the block in that place.', 'wp-cortex' ).replace( '%d', String( failed ) );
 		}
 		return text;
+	}
+
+	// Where new or moved blocks go: before or after a block, inside it as its last block,
+	// or (without a block) at the start or end of the post.
+	function insertPoint( store, id, position ) {
+		if ( ! id ) {
+			return { root: undefined, index: 'before' === position ? 0 : store.getBlockCount() };
+		}
+		if ( 'inside' === position ) {
+			return { root: id, index: store.getBlockOrder( id ).length };
+		}
+		return { root: store.getBlockRootClientId( id ) || undefined, index: store.getBlockIndex( id ) + ( 'before' === position ? 0 : 1 ) };
+	}
+
+	// The blocks of an insert operation: HTML converted to blocks, a block by its type,
+	// or a pattern. Empty when the editor does not allow them at that point.
+	function newBlocks( store, op, point ) {
+		var wpBlocks = window.wp.blocks;
+		var blocks;
+		if ( 'insert_block' === op.op ) {
+			var type = wpBlocks.getBlockType( op.name );
+			// A block the post may hold only once (supports.multiple) is not added twice.
+			if ( ! type || ( ! wpBlocks.hasBlockSupport( type, 'multiple', true ) && store.getGlobalBlockCount( op.name ) > 0 ) ) {
+				return [];
+			}
+			var attributes = {};
+			if ( ( op.fields || [] ).length ) {
+				attributes.data = acfBlockData( {}, op.fields );
+			}
+			if ( 0 === op.name.indexOf( 'acf/' ) && type.attributes && type.attributes.name ) {
+				attributes.name = op.name;
+			}
+			blocks = [ wpBlocks.createBlock( op.name, attributes, op.html ? wpBlocks.rawHandler( { HTML: op.html } ) : [] ) ];
+		} else if ( 'insert_pattern' === op.op ) {
+			blocks = wpBlocks.parse( op.content || '' ).filter( function ( block ) {
+				return block && block.name;
+			} );
+			fillTexts( blocks, op.texts || [] );
+		} else {
+			blocks = wpBlocks.rawHandler( { HTML: op.html } );
+			// New list items next to a list item: insert the items, not a nested list.
+			if ( point.root && 'core/list' === store.getBlockName( point.root ) ) {
+				blocks = [].concat.apply( [], blocks.map( function ( block ) {
+					return 'core/list' === block.name ? block.innerBlocks : [ block ];
+				} ) );
+			}
+		}
+		var allowed = blocks.every( function ( block ) {
+			return store.canInsertBlockType( block.name, point.root || null );
+		} );
+		return allowed ? blocks : [];
+	}
+
+	// Sets the text blocks of a pattern, in document order (BlockCatalog::pattern_texts()).
+	function fillTexts( blocks, texts ) {
+		var position = 0;
+		( function walk( list ) {
+			( list || [] ).forEach( function ( block ) {
+				var attr = BLOCK_TEXT[ block.name ];
+				if ( attr ) {
+					if ( 'string' === typeof texts[ position ] && '' !== texts[ position ] ) {
+						block.attributes[ attr ] = texts[ position ];
+					}
+					position++;
+				}
+				walk( block.innerBlocks );
+			} );
+		}( blocks ) );
+	}
+
+	// The data of an ACF block with field values set. ACF keeps a value by field name
+	// with the field key next to it ("_name"), or by field key once the block was
+	// edited in its form; keep whichever the block uses.
+	function acfBlockData( data, fields ) {
+		var out = {};
+		Object.keys( data || {} ).forEach( function ( key ) {
+			out[ key ] = data[ key ];
+		} );
+		fields.forEach( function ( field ) {
+			if ( Object.prototype.hasOwnProperty.call( out, field.key ) ) {
+				out[ field.key ] = field.value;
+			} else {
+				out[ field.name ] = field.value;
+				out[ '_' + field.name ] = field.key;
+			}
+		} );
+		return out;
+	}
+
+	// Moves a block next to or inside the target block. False when the block would end
+	// up inside itself or the editor does not allow it there.
+	function moveBlock( store, dispatch, id, name, op ) {
+		var target = op.target || '';
+		if ( target && ( ! store.getBlockName( target ) || target === id || -1 !== store.getBlockParents( target ).indexOf( id ) ) ) {
+			return false;
+		}
+		var point = insertPoint( store, target, op.position );
+		var from = store.getBlockRootClientId( id ) || '';
+		var to = point.root || '';
+		var index = point.index;
+		if ( ! store.canInsertBlockType( name, to || null ) ) {
+			return false;
+		}
+		// Within one parent the block is taken out first, which shifts the blocks after it.
+		if ( from === to && store.getBlockIndex( id ) < index ) {
+			index--;
+		}
+		dispatch.moveBlockToPosition( id, from, to, index );
+		return true;
 	}
 
 	// Statuses in which the post is visible on the site (EditorSave::LIVE).

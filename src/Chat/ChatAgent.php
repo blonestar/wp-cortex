@@ -15,11 +15,13 @@ use WPCortex\Chat\Tools\Admin\AbilityTool;
 use WPCortex\Chat\Tools\Admin\AdminContext;
 use WPCortex\Chat\Tools\Admin\ClearCache;
 use WPCortex\Chat\Tools\Admin\ConfirmableTool;
+use WPCortex\Chat\Tools\Admin\CreateTerms;
 use WPCortex\Chat\Tools\Admin\EditContent;
 use WPCortex\Chat\Tools\Admin\EditFields;
 use WPCortex\Chat\Tools\Admin\EditPost;
 use WPCortex\Chat\Tools\Admin\EditSeo;
 use WPCortex\Chat\Tools\Admin\GetEditorContent;
+use WPCortex\Chat\Tools\Admin\ListBlockTypes;
 use WPCortex\Chat\Tools\Admin\OpenAdminPage;
 use WPCortex\Chat\Tools\Admin\OpenPost;
 use WPCortex\Chat\Tools\Admin\PreviewPost;
@@ -463,9 +465,11 @@ final class ChatAgent {
 			new SelectTab(),
 			new ReloadPage(),
 			new EditPost(),
+			new CreateTerms(),
 			new EditSeo(),
 			new EditFields(),
 			new GetEditorContent(),
+			new ListBlockTypes(),
 			new EditContent(),
 			new SavePost(),
 			new PublishPost(),
