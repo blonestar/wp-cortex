@@ -20,6 +20,7 @@ use WPCortex\Chat\Tools\Admin\EditFields;
 use WPCortex\Chat\Tools\Admin\EditPost;
 use WPCortex\Chat\Tools\Admin\EditSeo;
 use WPCortex\Chat\Tools\Admin\GetEditorContent;
+use WPCortex\Chat\Tools\Admin\ListBlockTypes;
 use WPCortex\Chat\Tools\Admin\OpenAdminPage;
 use WPCortex\Chat\Tools\Admin\OpenPost;
 use WPCortex\Chat\Tools\Admin\PreviewPost;
@@ -466,6 +467,7 @@ final class ChatAgent {
 			new EditSeo(),
 			new EditFields(),
 			new GetEditorContent(),
+			new ListBlockTypes(),
 			new EditContent(),
 			new SavePost(),
 			new PublishPost(),

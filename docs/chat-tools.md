@@ -4,7 +4,7 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 | Chat | Built-in tools | Classes | Theme folder | Filter |
 |---|---|---|---|---|
-| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `edit_content`, `save_post`, `publish_post`, `set_post_status`, `preview_post`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
+| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, the editor tools `edit_post`, `edit_seo`, `edit_fields`, `get_editor_content`, `list_block_types`, `edit_content`, `save_post`, `publish_post`, `set_post_status`, `preview_post`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
 | Visitor | `search_site`, `get_page`, `go_to_page`, `save_contact_details`, `report_issue` | `src/Chat/Tools/Public/` | `wp-cortex/tools/public/` | `wp_cortex_public_chat_tools` |
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
@@ -187,7 +187,7 @@ Both contexts:
 
 ## Editor tools
 
-While the block editor of a post is open, the chat panel sends the post as it is in the editor (including unsaved changes) with every message: title, excerpt, slug, status, term IDs of the taxonomies the user can assign, the Yoast SEO title, meta description and focus keyphrase (when Yoast SEO is active), the blocks (client ID, block name, depth and the inline HTML of text blocks) and the ACF fields of a simple type. `EditorState::sanitize()` cleans it (and drops it when the user cannot edit the post); ACF field types, labels and choices come from ACF, and only top-level fields of the field groups shown for the post are kept.
+While the block editor of a post is open, the chat panel sends the post as it is in the editor (including unsaved changes) with every message: title, excerpt, slug, status, term IDs of the taxonomies the user can assign, the Yoast SEO title, meta description and focus keyphrase (when Yoast SEO is active), the blocks (client ID, block name, depth, the inline HTML of text blocks, the field values of ACF blocks and a few simple attributes of other blocks), the block types the editor allows at the top level of the post (name and title) and the ACF fields of a simple type. `EditorState::sanitize()` cleans it (and drops it when the user cannot edit the post); ACF field types, labels and choices come from ACF, and only top-level fields of the field groups shown for the post are kept.
 
 | Tool | Changes |
 |---|---|
@@ -195,9 +195,12 @@ While the block editor of a post is open, the chat panel sends the post as it is
 | `edit_seo` | Yoast SEO title, meta description, focus keyphrase (only with Yoast SEO) |
 | `edit_fields` | ACF fields: text, textarea, number, email, URL, select, radio, true/false, range (by field key) |
 | `get_editor_content` | nothing: returns the blocks in pages of about 10,000 characters |
-| `edit_content` | `replace` the text of a paragraph, heading, list item, preformatted, verse or button block (inline HTML), `insert_before` / `insert_after` HTML (converted to blocks by the editor), `remove` a block |
+| `list_block_types` | nothing: returns the block types the editor allows in the post and the block patterns registered for its post type; with `search` also their descriptions, the fields of ACF blocks that can be filled and the text blocks of patterns |
+| `edit_content` | `replace` the text of a paragraph, heading, list item, preformatted, verse or button block (inline HTML), `insert_before` / `insert_after` HTML (converted to blocks by the editor), `insert_block` a block by its type (with `fields` for an ACF block and `html` for the blocks inside it), `insert_pattern` a block pattern (with `texts` for its text blocks), `move` a block before, after or inside another one, `duplicate` a block, `set_fields` of an ACF block, `remove` a block |
 
 The editor tools never write to the database. They only validate the change and add a UI action (`edit_post`, `edit_seo`, `edit_fields`, `edit_content`); `assets/js/chat.js` applies it in the editor (`core/editor` `editPost()`, the Yoast SEO store, the ACF JS API, `core/block-editor`), so the post is marked as changed and the user saves it or undoes the change. They need no confirmation card for that reason. The block text attributes (`EditorState::TEXT_BLOCKS`) and ACF field types (`EditorState::FIELD_TYPES`) are listed in both files and must be kept in sync.
+
+Blocks and patterns (`Chat\Tools\Admin\BlockCatalog`): a block can only be inserted when its type is in the list the editor reported, and the browser checks again that the editor allows it in that place (`canInsertBlockType()`, and `supports.multiple`), so locked templates and allowed block lists keep working; a change the editor refuses is skipped and the user is told. Patterns come from `WP_Block_Patterns_Registry` (those shown in the inserter for the post type, without template patterns); the tool sends the pattern's markup to the browser, which parses it. The text blocks of a pattern are counted in document order on both sides (`BlockCatalog::pattern_texts()`, `fillTexts()` in `chat.js`). For an ACF block the chat fills top-level fields of a simple type or WYSIWYG fields (`BlockCatalog::FIELD_TYPES`) from the field groups assigned to the block, written to the block's `data` attribute as ACF stores it (value by field name, field key under `_name`); repeaters, groups, images and other complex fields are left to the user. A block inserted in a reply gets its client ID in the browser, so the model fills it in the same operation and can address it only from the next message on.
 
 ### Saving, publishing and previewing
 
