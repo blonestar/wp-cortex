@@ -20,7 +20,7 @@ final class ReloadPage extends AdminTool {
 	/**
 	 * UI actions that leave unsaved changes in the editor.
 	 */
-	private const EDIT_ACTIONS = array( 'edit_post', 'edit_seo', 'edit_fields', 'edit_content' );
+	public const EDIT_ACTIONS = array( 'edit_post', 'edit_seo', 'edit_fields', 'edit_content' );
 
 	public function name(): string {
 		return 'reload_page';

@@ -15,6 +15,7 @@ use WPCortex\Chat\Tools\Admin\AbilityTool;
 use WPCortex\Chat\Tools\Admin\AdminContext;
 use WPCortex\Chat\Tools\Admin\ClearCache;
 use WPCortex\Chat\Tools\Admin\ConfirmableTool;
+use WPCortex\Chat\Tools\Admin\CreatePost;
 use WPCortex\Chat\Tools\Admin\CreateTerms;
 use WPCortex\Chat\Tools\Admin\EditContent;
 use WPCortex\Chat\Tools\Admin\EditFields;
@@ -464,6 +465,7 @@ final class ChatAgent {
 			new OpenAdminPage(),
 			new SelectTab(),
 			new ReloadPage(),
+			new CreatePost(),
 			new EditPost(),
 			new CreateTerms(),
 			new EditSeo(),
