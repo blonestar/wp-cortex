@@ -4,7 +4,7 @@ The admin chat and the visitor chat answer by calling **tools** (functions the m
 
 | Chat | Built-in tools | Classes | Theme folder | Filter |
 |---|---|---|---|---|
-| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, the editor tools `edit_post`, `create_terms`, `edit_seo`, `edit_fields`, `get_editor_content`, `list_block_types`, `edit_content`, `save_post`, `publish_post`, `set_post_status`, `preview_post`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
+| Admin | the `wp-cortex/*` abilities, `open_post`, `open_admin_page`, `select_tab`, `reload_page`, `create_post`, the editor tools `edit_post`, `create_terms`, `edit_seo`, `edit_fields`, `get_editor_content`, `list_block_types`, `edit_content`, `save_post`, `publish_post`, `set_post_status`, `preview_post`, `clear_cache`, `propose_skill`, `use_skill` | `src/Chat/Tools/Admin/` | `wp-cortex/tools/admin/` | `wp_cortex_admin_chat_tools` |
 | Visitor | `search_site`, `get_page`, `go_to_page`, `save_contact_details`, `report_issue` | `src/Chat/Tools/Public/` | `wp-cortex/tools/public/` | `wp_cortex_public_chat_tools` |
 
 A theme or a plugin can add tools, change parts of a built-in tool (for example its description or its system prompt lines) or remove a tool.
@@ -218,7 +218,13 @@ A save that changes what visitors see never runs on the model's call. The tool a
 
 The browser saves after the changes of the same reply ("change the title and save" works in one message) and before a navigation or reload, which are skipped when the save fails. It refuses when the post is no longer open, is locked by another user, is being saved or is empty. The outcome is shown in the chat ("The draft is saved.", or the error of the editor); when the save fails, the status and date it set are put back, so a later manual save does not publish by accident. The model does not see the outcome in the same reply: it sees the saved status and whether the editor has unsaved changes with the next message. Publishing now also clears a later date set in the editor.
 
-The chat never saves or publishes a post that is not open in the editor, and has no tool to trash or delete posts.
+The chat never saves or publishes a post that is not open in the editor, and has no tool to trash or delete posts. The only post it creates outside the editor is a new draft from `create_post`, after the user confirms its card (see below).
+
+## Creating posts
+
+`create_post` creates a new draft of any post type the user can create: post types with an admin screen in the menu (`show_ui` and `show_in_menu`, not attachments) for which the user has the post type's `create_posts` capability, so custom post types are offered without any configuration. Its description lists them with their name, singular and plural label and editor (block or classic), and `post_type` is an enum of those names, so the model matches a request such as "create a new testimonial" to the post type by its labels and asks when several match. It takes a `title` and optionally `content` (paragraphs separated by a blank line, inline HTML only, cleaned with `EditorState::inline_html()`; stored as paragraph blocks for the block editor and as plain paragraphs for the classic editor; left out when the post type does not support the editor) and an `excerpt` (when the post type supports excerpts).
+
+It writes to the database, so it is a `ConfirmableTool`: the call only adds an action card, and `run_confirmed()` checks the capability again and creates the post with `wp_insert_post()` as a **draft** by the current user. It never publishes or schedules. Its result carries a `navigate` UI action to the editor of the new draft; the editor tools then work on it from the user's next message (ACF fields with `edit_fields`, terms, featured image and template with `edit_post`, blocks with `edit_content`). The editor tools need the block editor, so for post types that use the classic editor only the title, content and excerpt are filled. The tool refuses while the current page has unsaved changes (or an editor tool changed the post in the same reply), because opening the draft leaves the page.
 
 ## Clearing the cache
 

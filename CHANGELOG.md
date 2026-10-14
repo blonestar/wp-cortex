@@ -4,6 +4,10 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+
+- Admin chat `create_post` tool: the assistant can create a new draft of a post, a page or any custom post type you can create, for example "create a new testimonial": it picks the post type by its name and asks when more than one could match. It sets the title and, optionally, the text and excerpt, shows an action card first and creates the draft only after you confirm it, then opens it in the editor, where the assistant can fill in its fields, terms, blocks and featured image. It never publishes the draft. It can be switched off under Settings > Chat tools.
+
 ## [0.14.0] - 2026-10-13
 
 ### Added
