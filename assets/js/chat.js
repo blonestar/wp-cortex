@@ -733,6 +733,10 @@
 				}
 				var row = { id: block.clientId, name: block.name, depth: depth };
 				var attr = BLOCK_TEXT[ block.name ];
+				// The editor shows "Block contains unexpected or invalid content" for it.
+				if ( false === block.isValid ) {
+					row.invalid = true;
+				}
 				if ( attr ) {
 					// Rich text values (RichTextData) convert to their HTML.
 					row.text = String( null === block.attributes[ attr ] || undefined === block.attributes[ attr ] ? '' : block.attributes[ attr ] );
@@ -964,6 +968,7 @@
 		}
 		var applied = 0;
 		var failed = 0;
+		var changed = false;
 		operations.forEach( function ( op ) {
 			var id = op.block || '';
 			var name = id ? store.getBlockName( id ) : null;
@@ -971,6 +976,12 @@
 				failed++;
 				return;
 			}
+			if ( 'select' === op.op ) {
+				showBlock( editor, id );
+				applied++;
+				return;
+			}
+			changed = true;
 			if ( 'replace' === op.op ) {
 				var attrs = {};
 				if ( ! BLOCK_TEXT[ name ] ) {
@@ -979,6 +990,13 @@
 				}
 				attrs[ BLOCK_TEXT[ name ] ] = op.html;
 				dispatch.updateBlockAttributes( id, attrs );
+			} else if ( 'recover' === op.op ) {
+				var invalid = store.getBlock( id );
+				if ( ! invalid || false !== invalid.isValid ) {
+					failed++;
+					return;
+				}
+				dispatch.replaceBlock( id, recoveredBlock( invalid, invalid.innerBlocks ) );
 			} else if ( 'remove' === op.op ) {
 				dispatch.removeBlock( id, false );
 			} else if ( 'duplicate' === op.op ) {
@@ -1004,12 +1022,39 @@
 		if ( ! applied ) {
 			return false;
 		}
-		var text = __( 'Content changed in the editor. Review the changes and save the post to keep them.', 'wp-cortex' );
+		var text = changed
+			? __( 'Content changed in the editor. Review the changes and save the post to keep them.', 'wp-cortex' )
+			: __( 'The block is selected in the editor.', 'wp-cortex' );
 		if ( failed ) {
 			/* translators: %d: number of changes */
 			text += ' ' + __( '%d changes could not be applied: their blocks no longer exist, or the editor does not allow the block in that place.', 'wp-cortex' ).replace( '%d', String( failed ) );
 		}
 		return text;
+	}
+
+	// Selects a block and scrolls the editor to it (the canvas may be an iframe).
+	function showBlock( editor, id ) {
+		editor.blocksDispatch.selectBlock( id );
+		var frame = document.querySelector( 'iframe[name="editor-canvas"]' );
+		var doc = frame && frame.contentDocument ? frame.contentDocument : document;
+		var node = doc.querySelector( '[data-block="' + id + '"]' );
+		if ( node ) {
+			node.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+		}
+	}
+
+	// Number of blocks the editor shows as "Block contains unexpected or invalid content".
+	function invalidBlockCount( store ) {
+		var count = 0;
+		( function walk( blocks ) {
+			( blocks || [] ).forEach( function ( block ) {
+				if ( false === block.isValid ) {
+					count++;
+				}
+				walk( block.innerBlocks );
+			} );
+		}( store.getBlocks() ) );
+		return count;
 	}
 
 	// Where new or moved blocks go: before or after a block, inside it as its last block,
@@ -1042,14 +1087,14 @@
 			if ( 0 === op.name.indexOf( 'acf/' ) && type.attributes && type.attributes.name ) {
 				attributes.name = op.name;
 			}
-			blocks = [ wpBlocks.createBlock( op.name, attributes, op.html ? wpBlocks.rawHandler( { HTML: op.html } ) : [] ) ];
+			blocks = [ wpBlocks.createBlock( op.name, attributes, op.html ? recoverBlocks( wpBlocks.rawHandler( { HTML: op.html } ) ) : [] ) ];
 		} else if ( 'insert_pattern' === op.op ) {
-			blocks = wpBlocks.parse( op.content || '' ).filter( function ( block ) {
+			blocks = recoverBlocks( wpBlocks.parse( op.content || '' ).filter( function ( block ) {
 				return block && block.name;
-			} );
+			} ) );
 			fillTexts( blocks, op.texts || [] );
 		} else {
-			blocks = wpBlocks.rawHandler( { HTML: op.html } );
+			blocks = recoverBlocks( wpBlocks.rawHandler( { HTML: op.html } ) );
 			// New list items next to a list item: insert the items, not a nested list.
 			if ( point.root && 'core/list' === store.getBlockName( point.root ) ) {
 				blocks = [].concat.apply( [], blocks.map( function ( block ) {
@@ -1058,9 +1103,49 @@
 			}
 		}
 		var allowed = blocks.every( function ( block ) {
-			return store.canInsertBlockType( block.name, point.root || null );
+			return store.canInsertBlockType( block.name, point.root || null ) && nestingAllowed( block.innerBlocks, block.name );
 		} );
 		return allowed ? blocks : [];
+	}
+
+	// A block rebuilt from its attributes, as "Attempt recovery" in the editor does it.
+	function recoveredBlock( block, innerBlocks ) {
+		return window.wp.blocks.createBlock( block.name, block.attributes, innerBlocks );
+	}
+
+	// New blocks (parsed pattern or block markup) with the invalid ones recovered, so
+	// the editor does not show "Block contains unexpected or invalid content" for them
+	// and texts set later are kept when the post is saved.
+	function recoverBlocks( blocks ) {
+		return ( blocks || [] ).map( function ( block ) {
+			var inner = recoverBlocks( block.innerBlocks );
+			if ( false === block.isValid ) {
+				return recoveredBlock( block, inner );
+			}
+			block.innerBlocks = inner;
+			return block;
+		} );
+	}
+
+	// Whether the blocks may be placed inside the parent block: registered block types
+	// that the parent allows (allowedBlocks) and that allow the parent (parent), so
+	// that, for example, a columns block holds only column blocks.
+	function nestingAllowed( blocks, parentName ) {
+		var wpBlocks = window.wp.blocks;
+		var parent = wpBlocks.getBlockType( parentName );
+		return ( blocks || [] ).every( function ( block ) {
+			var type = wpBlocks.getBlockType( block.name );
+			if ( ! type || 'core/missing' === block.name ) {
+				return false;
+			}
+			if ( parent && Array.isArray( parent.allowedBlocks ) && -1 === parent.allowedBlocks.indexOf( block.name ) ) {
+				return false;
+			}
+			if ( Array.isArray( type.parent ) && -1 === type.parent.indexOf( parentName ) ) {
+				return false;
+			}
+			return nestingAllowed( block.innerBlocks, block.name );
+		} );
 	}
 
 	// Sets the text blocks of a pattern, in document order (BlockCatalog::pattern_texts()).
@@ -1174,6 +1259,10 @@
 			Object.keys( edits ).forEach( function ( key ) {
 				previous[ key ] = select.getEditedPostAttribute( key );
 			} );
+			// Broken blocks never go online from the chat; a draft may keep them.
+			if ( ( isLiveStatus( target ) || 'future' === target ) && editor.blocks && invalidBlockCount( editor.blocks ) ) {
+				return fail( __( 'The post was not saved: some blocks are invalid ("Block contains unexpected or invalid content"). Ask the assistant to recover, remove or show them, or fix them in the editor.', 'wp-cortex' ) );
+			}
 			if ( true !== action.confirmed && ( isLiveStatus( saved ) || isLiveStatus( target ) ) ) {
 				return fail( __( 'The post was not saved: this change affects the published post and needs your confirmation. Ask again to get a confirmation card.', 'wp-cortex' ) );
 			}

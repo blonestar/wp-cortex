@@ -95,7 +95,7 @@ final class PreviewPost extends AdminTool {
 
 		return array(
 			'ok'   => true,
-			'note' => 'The chat shows the user a preview link right after your reply. In one short sentence, say the preview link is below; do not write a link yourself.',
+			'note' => 'The chat shows the user a preview link right after your reply. In one short sentence, say the preview link is below; do not write a link yourself.' . EditorSave::invalid_note( EditorSave::invalid_blocks( $admin ) ),
 		);
 	}
 }
