@@ -8,6 +8,14 @@ All notable changes to WP Cortex. The format follows [Keep a Changelog](https://
 
 - Admin chat `create_post` tool: the assistant can create a new draft of a post, a page or any custom post type you can create, for example "create a new testimonial": it picks the post type by its name and asks when more than one could match. It sets the title and, optionally, the text and excerpt, shows an action card first and creates the draft only after you confirm it, then opens it in the editor, where the assistant can fill in its fields, terms, blocks and featured image. It never publishes the draft. It can be switched off under Settings > Chat tools.
 
+### Changed
+
+- Admin chat: while the editor finds blocks of the post invalid, the assistant no longer publishes, schedules or updates the published post. It lists the broken blocks and offers to fix them first; the check runs again in the editor right before saving, also after you confirm the card. A draft can still be saved, with a warning. You can always publish with the editor's own button.
+
+### Fixed
+
+- Admin chat: blocks the assistant inserts no longer end up as "Block contains unexpected or invalid content". A pattern or block markup that the editor finds invalid (for example a pattern written for an older version of a block) is recovered as it is inserted, so the texts filled in are also kept when the post is saved, and content is no longer placed inside a block that does not allow it (such as plain HTML directly in a Columns block instead of in its columns). The assistant now also sees blocks of the post that the editor finds invalid and offers to recover them (as "Attempt recovery" does), remove them or show them in the editor.
+
 ## [0.14.0] - 2026-10-13
 
 ### Added

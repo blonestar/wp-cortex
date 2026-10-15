@@ -14,7 +14,9 @@ defined( 'ABSPATH' ) || exit;
  * themselves: they add a "save_post" UI action and the browser saves the post through
  * the block editor, as if the user clicked its button. A save that changes what
  * visitors see (the post is or becomes published) is shown as an action card first and
- * is sent to the editor only after the user confirms it.
+ * is sent to the editor only after the user confirms it. While the editor finds blocks
+ * of the post invalid ("Block contains unexpected or invalid content"), the post is
+ * not published or updated online from the chat; a draft is saved with a warning.
  */
 final class EditorSave {
 
@@ -80,6 +82,76 @@ final class EditorSave {
 			$edited !== $post->post_status ? sprintf( ' (changed to %s in the editor, not saved yet)', $edited ) : '',
 			$admin->has_unsaved_changes() ? 'yes' : 'none reported'
 		);
+	}
+
+	/**
+	 * Blocks the editor reported as invalid, without those an edit_content action of
+	 * this reply recovers or removes (with the blocks inside a removed block).
+	 *
+	 * @param AdminContext $admin Turn context.
+	 * @return array<int, array{id: string, name: string}>
+	 */
+	public static function invalid_blocks( AdminContext $admin ): array {
+		$fixed = array();
+
+		foreach ( $admin->actions() as $action ) {
+			if ( 'edit_content' !== ( $action['type'] ?? '' ) ) {
+				continue;
+			}
+
+			foreach ( (array) ( $action['operations'] ?? array() ) as $operation ) {
+				if ( in_array( $operation['op'] ?? '', array( 'recover', 'remove' ), true ) ) {
+					$fixed[ (string) $operation['block'] ] = $operation['op'];
+				}
+			}
+		}
+
+		$invalid = array();
+		$removed = null;
+
+		foreach ( (array) ( $admin->editor()['blocks'] ?? array() ) as $block ) {
+			// Blocks follow their parent with a higher depth.
+			if ( null !== $removed && $block['depth'] > $removed ) {
+				continue;
+			}
+
+			$removed = 'remove' === ( $fixed[ $block['id'] ] ?? '' ) ? $block['depth'] : null;
+
+			if ( ! empty( $block['invalid'] ) && ! isset( $fixed[ $block['id'] ] ) ) {
+				$invalid[] = array(
+					'id'   => $block['id'],
+					'name' => $block['name'],
+				);
+			}
+		}
+
+		return $invalid;
+	}
+
+	/**
+	 * Refusal of a save that would put invalid blocks online.
+	 *
+	 * @param array<int, array{id: string, name: string}> $invalid Invalid blocks.
+	 * @return array<string, mixed>
+	 */
+	public static function invalid_error( array $invalid ): array {
+		return array(
+			'ok'             => false,
+			'error'          => sprintf( 'The editor finds %d block(s) of the post invalid ("Block contains unexpected or invalid content"), so the post cannot be published or updated online from the chat until they are fixed. Nothing was saved and no card was shown.', count( $invalid ) ),
+			'invalid_blocks' => $invalid,
+			'next'           => 'Tell the user which blocks are broken and offer the choices: recover them (edit_content "recover", rebuilt from their settings; custom HTML changes in them can be lost), remove them (edit_content "remove"), or show them in the editor (edit_content "select") to fix by hand. Do nothing before the user picks one. Once they are fixed, the user can ask to publish again; they can also publish with the editor button themselves.',
+		);
+	}
+
+	/**
+	 * Warning for a save or preview that keeps invalid blocks.
+	 *
+	 * @param array<int, array{id: string, name: string}> $invalid Invalid blocks.
+	 */
+	public static function invalid_note( array $invalid ): string {
+		return $invalid
+			? sprintf( ' Warning: the editor finds %d block(s) invalid (%s). Tell the user they stay broken (and cannot be published from the chat) and offer to recover, remove or show them (edit_content "recover", "remove", "select").', count( $invalid ), implode( ', ', wp_list_pluck( $invalid, 'id' ) ) )
+			: '';
 	}
 
 	/**

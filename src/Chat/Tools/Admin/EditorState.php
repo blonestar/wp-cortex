@@ -296,7 +296,8 @@ final class EditorState {
 	}
 
 	/**
-	 * Sanitizes the block list: client ID, block name, nesting depth, heading level, for
+	 * Sanitizes the block list: client ID, block name, nesting depth, whether the editor
+	 * found the block invalid, heading level, for
 	 * text blocks their inline HTML, for ACF blocks the values of the fields the chat can
 	 * fill (BlockCatalog::acf_fields()) and for other blocks a few of their simple
 	 * attributes.
@@ -320,6 +321,10 @@ final class EditorState {
 				'name'  => $name,
 				'depth' => min( 20, absint( $block['depth'] ?? 0 ) ),
 			);
+
+			if ( ! empty( $block['invalid'] ) ) {
+				$row['invalid'] = true;
+			}
 
 			if ( 'core/heading' === $name ) {
 				$row['level'] = min( 6, max( 1, absint( $block['level'] ?? 2 ) ) );

@@ -76,7 +76,13 @@ final class SavePost extends AdminTool implements ConfirmableTool {
 			return EditorSave::error( __( 'No post is open in the editor.', 'wp-cortex' ) );
 		}
 
-		$edited = EditorSave::edited_status( $admin, $post );
+		$edited  = EditorSave::edited_status( $admin, $post );
+		$invalid = EditorSave::invalid_blocks( $admin );
+
+		// A scheduled post goes online on its own later.
+		if ( $invalid && ( 'future' === $post->post_status || 'future' === $edited ) ) {
+			return EditorSave::invalid_error( $invalid );
+		}
 
 		if ( ! EditorSave::is_live( $post->post_status ) && ! EditorSave::is_live( $edited ) ) {
 			EditorSave::queue( $admin, array( 'mode' => 'save' ) );
@@ -84,8 +90,12 @@ final class SavePost extends AdminTool implements ConfirmableTool {
 			return array(
 				'ok'     => true,
 				'status' => 'sent_to_editor',
-				'note'   => 'The editor saves the post right after your reply and the chat shows the user whether it worked. In one short sentence, say the post is being saved.',
+				'note'   => 'The editor saves the post right after your reply and the chat shows the user whether it worked. In one short sentence, say the post is being saved.' . EditorSave::invalid_note( $invalid ),
 			);
+		}
+
+		if ( $invalid ) {
+			return EditorSave::invalid_error( $invalid );
 		}
 
 		$title = EditorSave::title( $post );

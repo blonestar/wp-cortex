@@ -122,7 +122,7 @@ final class SetPostStatus extends AdminTool implements ConfirmableTool {
 			return array(
 				'ok'     => true,
 				'status' => 'sent_to_editor',
-				'note'   => 'The editor changes the status and saves the post right after your reply; the chat shows the user whether it worked. In one short sentence, say it is being saved.',
+				'note'   => 'The editor changes the status and saves the post right after your reply; the chat shows the user whether it worked. In one short sentence, say it is being saved.' . EditorSave::invalid_note( EditorSave::invalid_blocks( $admin ) ),
 			);
 		}
 

@@ -113,6 +113,12 @@ final class PublishPost extends AdminTool implements ConfirmableTool {
 			return EditorSave::error( __( 'The post is already published. Use save_post to put its changes online.', 'wp-cortex' ) );
 		}
 
+		$invalid = EditorSave::invalid_blocks( $admin );
+
+		if ( $invalid ) {
+			return EditorSave::invalid_error( $invalid );
+		}
+
 		$input = array( 'post_id' => $post->ID );
 		$title = EditorSave::title( $post );
 		$raw   = trim( (string) ( $args['date'] ?? '' ) );

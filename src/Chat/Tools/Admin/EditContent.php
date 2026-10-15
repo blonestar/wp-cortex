@@ -15,7 +15,8 @@ defined( 'ABSPATH' ) || exit;
  * Changes the blocks of the post open in the block editor: replaces the text of a text
  * block, inserts new content (HTML converted to blocks by the editor), a block by its
  * type or a block pattern, moves, duplicates or removes a block and fills the fields of
- * an ACF block. Like edit_post, it only changes the editor; the user saves the post or
+ * an ACF block, recovers a block the editor found invalid and selects a block to show
+ * it to the user. Like edit_post, it only changes the editor; the user saves the post or
  * undoes it.
  */
 final class EditContent extends AdminTool {
@@ -43,6 +44,8 @@ final class EditContent extends AdminTool {
 		'duplicate'      => true,
 		'set_fields'     => true,
 		'remove'         => true,
+		'recover'        => true,
+		'select'         => true,
 	);
 
 	public function name(): string {
@@ -83,7 +86,7 @@ final class EditContent extends AdminTool {
 			. '"insert_block" adds a block by its type (name from list_block_types), optionally with fields (ACF blocks) and html (the blocks inside a block that holds other blocks). '
 			. '"insert_pattern" adds a block pattern (pattern name from list_block_types), optionally with texts for its text blocks. '
 			. '"move" puts a block (with the blocks inside it) next to or inside the target block. "duplicate" copies a block right after itself. '
-			. '"set_fields" changes fields of an ACF block. "remove" deletes a block. '
+			. '"set_fields" changes fields of an ACF block. "remove" deletes a block. "recover" rebuilds a block that get_editor_content marks "invalid" (what "Attempt recovery" in the editor does). "select" selects a block and scrolls to it, to show it to the user (changes nothing). '
 			. 'insert_block, insert_pattern and move take position: "before" or "after" the reference block (without one: the start or the end of the post), or "inside" it as its last block. '
 			. 'Use block IDs from get_editor_content. The change is applied in the editor only and is not saved. Call it only when the user asks for the change or accepts content you suggested.';
 	}
@@ -113,7 +116,7 @@ final class EditContent extends AdminTool {
 							),
 							'html'     => array(
 								'type'        => 'string',
-								'description' => 'For replace: the new inline HTML text of the block. For insert_before / insert_after: the HTML of the new content. For insert_block: optional HTML of the blocks placed inside the new block.',
+								'description' => 'For replace: the new inline HTML text of the block. For insert_before / insert_after: the HTML of the new content. For insert_block: optional HTML of the blocks placed inside the new block. Plain HTML becomes standard blocks (paragraph, heading, list, quote, image, ...); for a block that only holds certain blocks (core/columns holds core/column) use block markup such as <!-- wp:column --><div class="wp-block-column">...</div><!-- /wp:column -->.',
 							),
 							'name'     => array(
 								'type'        => 'string',
@@ -170,6 +173,7 @@ final class EditContent extends AdminTool {
 	public function instructions( ToolContext $context ): array {
 		return array(
 			'To change the content in the editor, call edit_content with the block IDs from get_editor_content, with the same rules as edit_post: when asked for a suggestion or a draft, show it first and apply it only after the user accepts it, unless the user directly asked to change the content. Change only the blocks the request is about.',
+			'Blocks that get_editor_content marks "invalid" show "Block contains unexpected or invalid content" in the editor, and the post cannot be published or updated online from the chat while they exist. When you find them, tell the user and offer to recover them ("recover", rebuilt from their settings; custom HTML changes in them can be lost), remove them or show them ("select"); change them only after the user picks one, unless they asked you to fix the content. The editor already recovers invalid blocks of the patterns and block markup you insert, and skips blocks inside another block that it does not allow there (for example anything but column blocks directly in a columns block).',
 			'A block you insert gets its ID only in the editor, so you cannot change it later in the same reply: give its content in the same operation (fields and html of insert_block, texts of insert_pattern). When the user asks for a block without saying what goes in it, insert it as it is and say what is left to fill in.',
 		);
 	}
@@ -266,6 +270,11 @@ final class EditContent extends AdminTool {
 						$operation['texts'][] = is_scalar( $text ) ? EditorState::inline_html( mb_substr( (string) $text, 0, EditorState::MAX_BLOCK_TEXT_LENGTH ) ) : '';
 					}
 					break;
+				case 'recover':
+					if ( ! $this->is_invalid( $editor, $id ) ) {
+						return $this->error( sprintf( 'Operation %d: the block is not invalid; recover only blocks that get_editor_content marks "invalid".', $number ) );
+					}
+					break;
 				case 'move':
 					$target = (string) ( $item['target'] ?? '' );
 
@@ -324,7 +333,7 @@ final class EditContent extends AdminTool {
 			'ok'         => true,
 			'operations' => count( $operations ),
 			'saved'      => false,
-			'note'       => 'Queued for the editor. A block the editor does not allow in that place is skipped, and the user is told.',
+			'note'       => 'Queued for the editor. A block the editor does not allow in that place (or with blocks inside it that it does not allow) is skipped, and the user is told. Call get_editor_content in the next reply to check the result.',
 		);
 	}
 
@@ -360,6 +369,22 @@ final class EditContent extends AdminTool {
 		}
 
 		return $fields;
+	}
+
+	/**
+	 * Whether the editor reported the block as invalid.
+	 *
+	 * @param array  $editor Editor state.
+	 * @param string $id     Block client ID.
+	 */
+	private function is_invalid( array $editor, string $id ): bool {
+		foreach ( (array) ( $editor['blocks'] ?? array() ) as $block ) {
+			if ( $block['id'] === $id ) {
+				return ! empty( $block['invalid'] );
+			}
+		}
+
+		return false;
 	}
 
 	/**
